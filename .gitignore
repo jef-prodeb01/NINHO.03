@@ -6,3 +6,7 @@ credenciais.md
 
 # Pastas em desenvolvimento / planejamento
 planejamento_governanca/
+
+# Arquivos CSV de insumos brutos na raiz
+META_ORIENTACAO_IA*.csv
+/*.csv
