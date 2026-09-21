@@ -20,10 +20,11 @@
 ## Ordem de Execução
 
 ```sql
--- 1. Criar tabelas (executar uma vez)
+-- 1. Criar tabelas (executar UMA VEZ apenas se o schema NÃO possuir as tabelas META_)
+-- SE AS TABELAS META_* JÁ EXISTIREM NO SCHEMA, PULE ESTE PASSO:
 @01_create_meta_tables.sql
 
--- 2. Inserir dados (executar nesta ordem)
+-- 2. Inserir / Acrescentar dados (executar nesta ordem — scripts preparados com MERGE/idempotência)
 @01_meta_glossario.sql
 @02_meta_metrica.sql
 @03_meta_objeto.sql

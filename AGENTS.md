@@ -42,21 +42,35 @@ analisa insumos, deriva entendimento, valida com o engenheiro e gera SQL.
 > **Se você perceber que está gerando SQL sem ter todas as informações, PARE.**
 > É melhor pedir uma vez a mais do que gerar SQL errado.
 
-### ⚠️ REGRA INICIAL — NOME DO PROJETO E ENGENHEIRO RESPONSÁVEL
+### ⚠️ REGRA INICIAL — IDENTIFICAÇÃO E ESTADO DO SCHEMA (OBRIGATÓRIA)
 
-> **SEMPRE no início de qualquer sessão, ANTES de qualquer outra ação:**
-> 1. **Peça o nome do projeto** — se não estiver em `NOME_PROJETO.txt` ou INTAKE
-> 2. **Peça o nome do engenheiro responsável** — para registro nas documentações
+> **SEMPRE no início de qualquer sessão, ANTES de qualquer ação ou geração de scripts:**
+> 1. **Peça o nome do projeto** — se não estiver em `NOME_PROJETO.txt` ou INTAKE.
+> 2. **Peça o nome do engenheiro responsável** — para registro nas documentações.
+> 3. **Pergunte o estado de execução no schema:**
+>    - **Pergunta A:** É a primeira vez que este processo está sendo executado neste schema/DW? (Sim / Não)
+>    - **Pergunta B:** As tabelas `META_*` já existem no schema alvo? (Sim / Não)
+>
+> **Comportamento estrito conforme as respostas:**
+> - **CENÁRIO 1: Primeira execução e NÃO tem tabelas `META_*` no schema:**
+>   - Gera o script `inserts/meta_projeto/01_create_meta_tables.sql` (CREATE TABLE das 8 tabelas `META_*` + triggers).
+>   - Gera todos os scripts de INSERT do zero (incluindo todas as 36 orientações de IA e regras universais `GLOBAL`, mais os metadados do `<PROJETO>`).
+> - **CENÁRIO 2: JÁ existem tabelas `META_*` no schema (reexecução, novo projeto compartilhando o schema ou atualização):**
+>   - **NÃO** gera nem executa `CREATE TABLE` (pula a Subfase 3b / `01_create_meta_tables.sql`).
+>   - Nos scripts de metadados (Subfase 3c), **APENAS ACRESCENTA**:
+>     - Utiliza `MERGE INTO` (ou `INSERT ... WHERE NOT EXISTS`) para inserir apenas as novidades do `<PROJETO>`, sem duplicar registros e sem tentar recriar tabelas existentes.
 >
 > **Se NÃO tiver essas informações → PERGUNTE ANTES de prosseguir com qualquer coisa.**
 > **NUNCA use placeholders** (`<NOME_PROJETO>`, `<INGENHEIRO>`) em nenhum artefato.
 >
-> **Formato da pergunta:**
+> **Formato da pergunta inicial:**
 > ```
 > 📋 INFORMAÇÕES INICIAIS NECESSÁRIAS:
 >
 > 1. **Nome do projeto:** (ex: SEI, SIPAR, E-CAC)
 > 2. **Nome do engenheiro responsável:** (para registro em PROJETO_VERSION.md)
+> 3. **É a primeira vez executando neste schema?** (Sim / Não)
+> 4. **As tabelas META_* já existem no schema alvo?** (Sim / Não)
 > ```
 
 ### Checklist de INSUMOS OBRIGATÓRIOS (verificar ANTES de qualquer geração)
@@ -65,21 +79,23 @@ Antes de **qualquer** geração, verifique se TODOS os itens abaixo estão prese
 
 | # | Insumo | Obrigatório? | Onde encontrar | O que validar |
 |---|--------|:-----------:|---------------|---------------|
-| 0 | **Nome do engenheiro responsável** | ✅ Sim | INTAKE ou conversa | Não está vazio ou placeholder |
-| 1 | **Nome do projeto** | ✅ Sim | `NOME_PROJETO.txt` ou INTAKE | Não está `<NOME_PROJETO>` ou placeholder |
-| 2 | **Schema alvo** | ✅ Sim | INTAKE ou conversa | Não está `<SCHEMA_ALVO>` |
-| 3 | **DDL completo** (fatos + dimensões) | ✅ Sim | `entrega/ddl/ddl_completo.sql` | Contém CREATE TABLE de todas as tabelas |
-| 4 | **Amostras dos dados** | ✅ Sim | `entrega/amostras/` | Contém amostra de cada tabela fato |
-| 5 | **Regras de negócio** (aditividade, unidades, restrições) | ✅ Sim | INTAKE seção 4 | Pelo menos uma regra por medida |
-| 6 | **Grão de cada fato** | ✅ Sim | INTAKE seção 4 ou amostras | Definido explicitamente OU derivável das amostras |
+| 0a | **Nome do engenheiro responsável** | ✅ Sim | INTAKE ou conversa | Não está vazio ou placeholder |
+| 0b | **Nome do projeto** | ✅ Sim | `NOME_PROJETO.txt` ou INTAKE | Não está `<NOME_PROJETO>` ou placeholder |
+| 0c | **Primeira execução no schema?** | ✅ Sim | INTAKE ou conversa | Resposta explícita (Sim / Não) |
+| 0d | **Tabelas META_* já existem no schema?** | ✅ Sim | INTAKE ou conversa | Resposta explícita (Sim / Não) |
+| 1 | **Schema alvo** | ✅ Sim | INTAKE ou conversa | Não está `<SCHEMA_ALVO>` |
+| 2 | **DDL completo** (fatos + dimensões) | ✅ Sim | `entrega/ddl/ddl_completo.sql` | Contém CREATE TABLE de todas as tabelas |
+| 3 | **Amostras dos dados** | ✅ Sim | `entrega/amostras/` | Contém amostra de cada tabela fato |
+| 4 | **Regras de negócio** (aditividade, unidades, restrições) | ✅ Sim | INTAKE seção 4 | Pelo menos uma regra por medida |
+| 5 | **Grão de cada fato** | ✅ Sim | INTAKE seção 4 ou amostras | Definido explicitamente OU derivável das amostras |
 
 **Itens OPCIONAIS** (refinam, mas não bloqueiam):
 
 | # | Insumo | Obrigatório? | Onde encontrar |
 |---|--------|:-----------:|---------------|
-| 7 | Relatório ETL | ❌ Não | INTAKE seção 3 |
-| 8 | Regras RLS | ❌ Não (só se multi-tenant) | INTAKE seção 4.1 |
-| 9 | Perguntas dos usuários | ❌ Não (mas recomendado) | INTAKE seção 5 |
+| 6 | Relatório ETL | ❌ Não | INTAKE seção 3 |
+| 7 | Regras RLS | ❌ Não (só se multi-tenant) | INTAKE seção 4.1 |
+| 8 | Perguntas dos usuários | ❌ Não (mas recomendado) | INTAKE seção 5 |
 
 **Se faltar QUALQUER item obrigatório → NÃO prosseguir para Fase 2.**
 
@@ -229,38 +245,43 @@ Baseie-se em `exemplo_tabelas/01_views_analiticas.sql` e gere cada view em um ar
 #### Subfase 3b — CREATE TABLE das META_
 
 > ⚠️ **VERIFICAÇÃO ANTES DE GERAR CREATE TABLE:**
+> - [ ] **Tabelas META_* NÃO existem no schema?**
+>   - **Se JÁ EXISTIREM tabelas META_ no schema → PULE ESTA SUBFASE**. Nunca recrie nem tente executar CREATE TABLE onde as tabelas já foram criadas.
 > - [ ] Documento de entendimento está validado?
 > - [ ] Todas as tabelas fato e dimensão estão documentadas?
 >
 > **Se alguma tabela fato/dimensão não estiver no documento de entendimento → PARE e peça ao engenheiro.**
 
 Baseie-se em `exemplo_tabelas/01_create_meta_tables.sql` e gere o arquivo:
-- `inserts/meta_projeto/01_create_meta_tables.sql` — CREATE TABLE das 8 META_ + triggers
+- `inserts/meta_projeto/01_create_meta_tables.sql` — CREATE TABLE das 8 META_ + triggers (apenas para schemas novos)
 
-#### Subfase 3c — INSERTs das META_
+#### Subfase 3c — INSERTs das META_ (Modo Idempotente / Apenas Acrescentar)
 
 > ⚠️ **VERIFICAÇÃO ANTES DE GERAR INSERTs META_:**
-> - [ ] CREATE TABLE das META_ foi gerado e validado?
 > - [ ] Documento de entendimento está completo e validado?
 > - [ ] Valores de domínio estão nas amostras ou no INTAKE?
+> - [ ] Modo de carga definido:
+>   - **Schema novo:** insere toda a carga do zero.
+>   - **Schema com tabelas já existentes:** **APENAS ACRESCENTA** utilizando `MERGE INTO` ou `WHERE NOT EXISTS`, sem duplicar registros globais e associando as novidades a `PROJETO = '<PROJETO>'`.
 >
 > **Se faltar valores de domínio e não estiverem nas amostras → PARE e peça ao engenheiro.**
 > **NUNCA invente valores de domínio — eles vêm das amostras ou do engenheiro.**
 
-Os INSERTs ficam em arquivos separados dos CREATE TABLE:
-- `inserts/meta_projeto/01_meta_glossario.sql` — INSERTs META_GLOSSARIO (com sinônimos!)
+Os INSERTs/MERGEs ficam em arquivos separados dos CREATE TABLE:
+- `inserts/meta_projeto/01_meta_glossario.sql` — INSERTs/MERGEs META_GLOSSARIO (com sinônimos!)
   > ⚠️ **Se não há sinônimos nos insumos → pergunte ao engenheiro. Não invente sinônimos.**
-- `inserts/meta_projeto/02_meta_metrica.sql` — INSERTs META_METRICA (com SQL pronto)
+- `inserts/meta_projeto/02_meta_metrica.sql` — INSERTs/MERGEs META_METRICA (com SQL pronto)
   > ⚠️ **Se a aditividade de alguma medida não está definida → PARE e peça ao engenheiro antes de gerar o INSERT dessa medida.**
-- `inserts/meta_projeto/03_meta_objeto.sql` — INSERTs META_OBJETO (governança)
-- `inserts/meta_projeto/04_meta_relacionamento.sql` — INSERTs META_RELACIONAMENTO
+- `inserts/meta_projeto/03_meta_objeto.sql` — INSERTs/MERGEs META_OBJETO (governança)
+- `inserts/meta_projeto/04_meta_relacionamento.sql` — INSERTs/MERGEs META_RELACIONAMENTO
   > ⚠️ **Se os relacionamentos (joins) não estão no documento de entendimento → PARE e peça ao engenheiro.**
-- `inserts/meta_projeto/05_meta_regra_negocio.sql` — INSERTs META_REGRA_NEGOCIO (com status_regra)
+- `inserts/meta_projeto/05_meta_regra_negocio.sql` — INSERTs/MERGEs META_REGRA_NEGOCIO (com status_regra)
   > ⚠️ **Se as regras de negócio não estão no INTAKE seção 4 → PARE e peça ao engenheiro.**
-- `inserts/meta_projeto/06_meta_consulta_negocio.sql` — INSERTs META_CONSULTA_NEGOCIO (com SQL validado)
+- `inserts/meta_projeto/06_meta_consulta_negocio.sql` — INSERTs/MERGEs META_CONSULTA_NEGOCIO (com SQL validado)
   > ⚠️ **Se as perguntas dos usuários não estão no INTAKE seção 5 → PARE e peça ao engenheiro. Não gere perguntas inventadas.**
-- `inserts/meta_projeto/07_meta_orientacao_ia.sql` — INSERTs META_ORIENTACAO_IA
-- `inserts/meta_projeto/08_meta_valor_dominio.sql` — INSERTs META_VALOR_DOMINIO (com descrição + ind_ativo)
+- `inserts/meta_projeto/07_meta_orientacao_ia.sql` — INSERTS/MERGEs META_ORIENTACAO_IA
+  > ⚠️ **OBRIGATÓRIO:** Deve conter o catálogo completo com as **36 orientações de IA** (WORKFLOW ordens 1-9, PRINCIPIO ordens 1-11, VALIDACAO ordens 1-8, DESVIO ordens 1-3, RESPOSTA ordens 1-5) geradas com `MERGE INTO` e escopo `GLOBAL` (adaptadas para `<PROJETO>` onde aplicável).
+- `inserts/meta_projeto/08_meta_valor_dominio.sql` — INSERTs/MERGEs META_VALOR_DOMINIO (com descrição + ind_ativo)
   > ⚠️ **Se os valores de domínio não estão nas amostras → PARE e peça ao engenheiro. Não inferia valores de domínio.**
 
 > **IMPORTANTE:** 
