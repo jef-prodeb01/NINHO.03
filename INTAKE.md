@@ -12,6 +12,9 @@ possível começar; os demais refinam o resultado.
 | **Nome do Projeto** (sigla curta em maiúsculas, ex: SEI, SIPAR) | `<informe o nome/sigla>` |
 | **Engenheiro de Dados Responsável** | `<informe seu nome>` |
 | **Schema Alvo no Oracle** | `<informe o schema de destino>` |
+| **Primeira execução neste schema?** | `[ ] Sim  [ ] Não` |
+| **Tabelas META_* já existem no schema?** | `[ ] Sim  [ ] Não` |
+| **Se já existem, projetos já cadastrados:** | `<listar ou informar nenhum>` |
 | **Data de Início** | `<AAAA-MM-DD>` |
 
 ---
