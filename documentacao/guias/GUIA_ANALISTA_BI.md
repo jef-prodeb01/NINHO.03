@@ -1,9 +1,11 @@
-# Guia do Analista de BI & Analytics — Modelagem, DAX e Consumo
+# Padrão Corporativo de Handoff para Business Intelligence — Especificação de Entrega para Power BI
 
-Este guia estabelece os padrões corporativos de Business Intelligence para **Analistas de BI**, **Engenheiros de Analytics** e **Desenvolvedores de Dashboards** que consomem os modelos de dados gerados pelo **Planejador de DW** e pela **Camada Semântica**, tanto no **Microsoft Power BI** quanto no **Apache Superset**.
+Este guia estabelece os padrões corporativos de Business Intelligence que o **Engenheiro de Dados** e a IA do **NINHO** devem aplicar na geração do artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (armazenado em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`), entregável essencial para que a equipe externa de **Analistas de BI** e **Desenvolvedores de Painéis** construa relatórios no **Microsoft Power BI** e **Apache Superset** com autonomia e conformidade.
 
-> **Público-Alvo:** Analistas de BI, Engenheiros de Analytics e Desenvolvedores de Painéis.  
-> **Fontes de Dados:** Data Warehouse Oracle (`DIM_*`, `FATO_*`), Views Vigentes (`VW_DIM_*_ATUAL`), Visões de Negócio (`VW_EVENTO`, `VW_KPI_*`) e Metas (`META_*`).  
+> 🛡️ **Aviso de Arquitetura & Governança da Plataforma:**  
+> O **NINHO** é uma plataforma de engenharia analítica de uso **100% exclusivo para Engenheiros de Dados**. O Analista de BI **não acessa o repositório NINHO nem possui módulos de execução no sistema**.  
+> Este documento funciona como o **manual canônico de referência corporativa**: ele dita todas as diretrizes técnicas que devem compor o entregável do projeto. Ao finalizar o DW, o Engenheiro de Dados exporta o guia gerado do projeto e o entrega ao Analista de BI fora do NINHO.  
+> **Fontes de Dados do DW:** Data Warehouse Oracle (`DIM_*`, `FATO_*`), Views Vigentes (`VW_DIM_*_ATUAL`), Visões de Negócio (`VW_EVENTO`, `VW_KPI_*`) e Metas (`META_*`).  
 > **Objetivo:** Garantir modelos analíticos com altíssima performance no motor VertiPaq, integridade matemática em cálculos DAX/SQL, governança de dimensões de tempo e padronização visual corporativa.
 
 ---

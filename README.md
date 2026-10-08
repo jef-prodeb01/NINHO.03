@@ -10,13 +10,14 @@ Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que aut
 
 > ⚡ **Precisa de comandos rápidos ou queries operacionais?** Consulte o [**Guia Central de Comandos Rápidos & Cheat Sheet**](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md) com sumário interativo ancorado cobrindo Python, Hop, Shell, Oracle SQL, DAX e Prompts da IA.
 
+> 🛡️ **Público-Alvo Exclusivo:** O **NINHO** é uma plataforma corporativa 100% focada em **Engenheiros de Dados**. O Analista de BI **não possui acesso ao NINHO** e **não executa módulos**. Em vez disso, ao concluir o planejamento do DW, a plataforma gera automaticamente o artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`). O Engenheiro de Dados exporta este guia e entrega à equipe externa de BI para orientar e acelerar a construção do painel no Power BI com máxima conformidade.
+
 Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse diretamente os manuais, formulários e pastas correspondentes:
 
 | Seu Papel / Desafio Atual | O que você deve ler | Onde colocar seus arquivos | Módulo de Execução | Onde ficam os resultados |
 | :--- | :--- | :--- | :--- | :--- |
-| 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md) | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) |
+| 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md) | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(inclui Guia de BI para Handoff)* |
 | 🧠 **Engenheiro de Dados**<br/>*(Criar Camada Semântica & Metadados)* | 📘 [**Guia de Camada Semântica**](documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md)<br/>📋 [Formulário INTAKE_SEMANTICA](modulos/camada_semantica/INTAKE_SEMANTICA.md) | 📥 [`entrega/camada_semantica/`](entrega/camada_semantica/) | ⚙️ [`modulos/camada_semantica/`](modulos/camada_semantica/README.md) | 📤 [`saida/camada_semantica/`](saida/camada_semantica/) |
-| 📊 **Analista de BI & Analytics**<br/>*(Construir Dashboards Power BI / Superset)* | 📘 [**Guia do Analista de BI**](documentacao/guias/GUIA_ANALISTA_BI.md)<br/>📐 [Template de BI por Projeto](modulos/planejador_dw/templates/12_guia_analista_bi_template.md) | *(Consome as Views e Tabelas do DW)* | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md) | 📤 [`saida/planejador_dw/<PROJETO>/08_datasets_bi/`](saida/planejador_dw/README.md) |
 | 🛡️ **Engenheiro de Governança**<br/>*(Lakehouse Mongo, LAI e LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>🏛️ [Arquitetura Framework](modulos/governanca_dados/ARQUITETURA_FRAMEWORK.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) | ⚙️ [`modulos/governanca_dados/`](modulos/governanca_dados/README.md) | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) |
 | ✅ **Líder Técnico / QA**<br/>*(Validação, Qualidade e Catálogo)* | 📋 [**Checklist de Validação**](documentacao/checklists/CHECKLIST_VALIDACAO.md)<br/>📜 [Convenções DW](core/convencoes/CONVENCOES_DW.md) | 📚 [Catálogo de Projetos](documentacao/catalogo_projetos/PROJETO_RESUMO.md) | 🧠 [`core/`](core/README.md) | 📚 [`documentacao/`](documentacao/README.md) |
 
@@ -113,7 +114,7 @@ flowchart LR
 3. **Geração Automatizada de Código DW (`saida/planejador_dw/`):** A IA gera todos os DDLs (`STG_*`, `ODI_DIM_*`, `DIM_*`, `FATO_*`), procedures de manutenção, pipelines Hop, extratores Python e o `RELATORIO_ESTRATEGIAS.md`.
 4. **Handoff Automático & Documentação Central (`/concluir-dw`):** O pipeline **não para** no DW! Com o comando `/concluir-dw` ou via script CLI, a plataforma consolida os DDLs, transfere/gera amostras, move relatórios, preenche o `INTAKE_SEMANTICA.md` e atualiza o catálogo corporativo (`PROJETO_RESUMO.md` e `PROJETO_VERSION.md`).
 5. **Geração da Camada Semântica (`saida/camada_semantica/`):** A IA gera as views analíticas (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`) e os scripts de carga para as 8 tabelas `META_*`.
-6. **Consumo Analítico & Governança:** Analistas de BI consomem o `GUIA_ANALISTA_BI_<PROJETO>.md` com Star Schema e DAX pronto, enquanto o time de governança conecta o catálogo ao Lakehouse Mongo / AWS DataZone.
+6. **Handoff para BI & Governança:** O Engenheiro de Dados exporta o `GUIA_ANALISTA_BI_<PROJETO>.md` (gerado na pasta `08_datasets_bi/`) e o entrega à equipe externa de BI para a construção autônoma dos painéis no Power BI. Paralelamente, o time de governança conecta o catálogo ao Lakehouse Mongo / AWS DataZone.
 
 ---
 
@@ -132,5 +133,5 @@ Copie e cole os comandos abaixo diretamente no chat para interagir com o agente:
 > `/iniciar-semantica`  
 > *(ou: "Os insumos do DW estão prontos em `entrega/camada_semantica/`. Por favor, estruture as views analíticas (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`) e gere os scripts de carga para as 8 tabelas `META_*`.")*
 
-### 4. Para Solicitar um Guia Customizado de Power BI:
-> *"Gere o guia de implementação para o analista de BI (`GUIA_ANALISTA_BI_<PROJETO>.md`) em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`, detalhando o Star Schema, configuração da DIM_TEMPO e as fórmulas DAX dos KPIs."*
+### 4. Para Gerar o Guia de Handoff para o Analista de BI:
+> *"Gere o guia de entrega para o analista de BI (`GUIA_ANALISTA_BI_<PROJETO>.md`) em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`, detalhando o Star Schema, configuração da DIM_TEMPO, catálogo de tabelas e as fórmulas DAX dos KPIs."*

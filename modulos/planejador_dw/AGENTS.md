@@ -115,9 +115,9 @@ saida/planejador_dw/<NOME_PROJETO>/
 │   └── wf_carga_<dominio>.hwf
 ├── 07_extratores_python/               # Se houver APIs REST
 │   └── extract_api_<entidade>.py
-├── 08_datasets_bi/                     # Especificação de consumo
+├── 08_datasets_bi/                     # Especificações e entregáveis de consumo
 │   ├── superset_dataset_<fato>.yaml    # Dataset declarativo Superset
-│   └── GUIA_ANALISTA_BI_<PROJETO>.md   # Guia de modelagem Power BI, DAX e Star Schema
+│   └── GUIA_ANALISTA_BI_<PROJETO>.md   # Artefato entregável para o Analista de BI externo (Power BI, DAX, Star Schema)
 ├── 09_relatorio_estrategias/
 │   └── RELATORIO_ESTRATEGIAS.md        # Linhagem De/Para, SSH do ODI e Sizing
 ├── 10_testes_integridade/
@@ -125,6 +125,8 @@ saida/planejador_dw/<NOME_PROJETO>/
 └── 11_dicionario_dados/
     └── dicionario_dados.html           # Dicionário interativo com busca para negócio
 ```
+
+> 💡 **Nota de Entrega do Guia de BI:** O Analista de BI **não possui acesso ao NINHO**. Ao finalizar o DW, a IA deve preencher o `GUIA_ANALISTA_BI_<PROJETO>.md` com base no template corporativo `12_guia_analista_bi_template.md`. O Engenheiro de Dados exporta este documento e o entrega ao time externo de BI.
 
 ---
 

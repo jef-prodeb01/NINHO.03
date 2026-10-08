@@ -89,6 +89,9 @@ modulos/planejador_dw/
     ├── 09_apache_hop_workflow_template.hwf # Workflow XML do Apache Hop
     ├── 10_python_api_extractor_template.py # Extrator Python com OAuth2, flatten e oracledb
     ├── 11_superset_dataset_template.yaml   # Dataset declarativo YAML do Superset
+    ├── 12_guia_analista_bi_template.md     # Template corporativo do guia entregável para Power BI
+    ├── 13_testes_integridade_template.sql  # Template de validações pós-carga do DW
+    ├── 14_dicionario_dados_template.html   # Template interativo do dicionário de dados
     └── RELATORIO_ESTRATEGIAS_MODELO.md     # Template do relatório executivo e de linhagem
 ```
 
@@ -107,7 +110,7 @@ A estrutura gerada para cada projeto inclui:
 - `05_procedimentos_manutencao/`: Script da procedure `PRC_POS_CARGA_FATO` (se Estratégia A).
 - `06_pipelines_hop/`: Arquivos `.hpl` e `.hwf` para ingestão de arquivos.
 - `07_extratores_python/`: Scripts `.py` para ingestão de APIs.
-- `08_datasets_bi/`: Datasets YAML do Superset e especificações DAX para Power BI.
+- `08_datasets_bi/`: Datasets YAML do Superset e o entregável `GUIA_ANALISTA_BI_<PROJETO>.md` para a equipe externa de BI.
 - `09_relatorio_estrategias/`: Relatório completo `RELATORIO_ESTRATEGIAS.md`.
 
 ---

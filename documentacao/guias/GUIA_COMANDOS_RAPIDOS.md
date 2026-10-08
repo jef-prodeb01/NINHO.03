@@ -42,7 +42,7 @@ Clique em qualquer tópico ou comando abaixo para navegar diretamente para a ins
   - [5.3 Coleta de Estatísticas em Cascata com Paralelismo](#53-coleta-estatisticas-dbms-stats)
   - [5.4 Consultar Tamanho Físico e Espaço Ocupado por Tabelas/Índices](#54-tamanho-fisico-tablespace)
   - [5.5 Consultar Consultas Ofensoras e Consumo de Temp/PGA](#55-consultas-ofensoras-temp)
-- [6. Fórmulas Canônicas DAX para o Analista de BI (Power BI)](#6-formulas-dax-powerbi)
+- [6. Fórmulas Canônicas DAX para Composição do Guia de Handoff de BI (Power BI)](#6-formulas-dax-powerbi)
   - [6.1 Divisão Segura contra Erros de Divisão por Zero](#61-dax-divisao-segura)
   - [6.2 Acumulado no Ano (Year-to-Date - YTD)](#62-dax-acumulado-ytd)
   - [6.3 Variações Periódicas (Month-over-Month & Year-over-Year %)](#63-dax-variacoes-mom-yoy)
@@ -747,9 +747,9 @@ ORDER BY CONSUMO_TEMP_MB DESC;
 ---
 
 <a id="6-formulas-dax-powerbi"></a>
-## 6. Fórmulas Canônicas DAX para o Analista de BI (Power BI)
+## 6. Fórmulas Canônicas DAX para Composição do Guia de Handoff de BI (Power BI)
 
-> **Regra de Arquitetura:** Todas as métricas devem ser centralizadas na tabela técnica vazia **`_Medidas`**. Nunca referencie colunas da Fato diretamente sem agregação.
+> **Regra de Handoff & Governança:** O Engenheiro de Dados e a IA do NINHO utilizam estes padrões canônicos para estruturar o entregável `GUIA_ANALISTA_BI_<PROJETO>.md` destinado à equipe externa de BI. Todas as métricas devem ser centralizadas na tabela técnica vazia **`_Medidas`** ou **`_Medidas_<PROJETO>`**. Nunca referencie colunas da Fato diretamente sem agregação explícita.
 
 <a id="61-dax-divisao-segura"></a>
 ### 6.1 Divisão Segura contra Erros de Divisão por Zero
