@@ -202,9 +202,9 @@
 
     <div class="search-bar">
         <input type="text" id="searchInput" class="search-input" placeholder="Buscar por tabela, coluna, fórmula ou conceito de negócio...">
-        <button class="filter-btn active" onclick="filterCategory('ALL')">Todas</button>
-        <button class="filter-btn" onclick="filterCategory('FATO')">Fatos</button>
-        <button class="filter-btn" onclick="filterCategory('DIM')">Dimensões</button>
+        <button class="filter-btn active" onclick="filterCategory('ALL', event)">Todas</button>
+        <button class="filter-btn" onclick="filterCategory('FATO', event)">Fatos</button>
+        <button class="filter-btn" onclick="filterCategory('DIM', event)">Dimensões</button>
     </div>
 
     <!-- TABELA FATO EXEMPLO -->
@@ -332,9 +332,10 @@
     });
 
     // Filtro por Categoria (Fatos, Dimensões, Todas)
-    function filterCategory(cat) {
+    function filterCategory(cat, ev) {
         document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
+        const btnTarget = ev ? ev.target : (window.event ? window.event.target : null);
+        if (btnTarget) btnTarget.classList.add('active');
 
         const cards = document.querySelectorAll('.table-card');
         cards.forEach(card => {

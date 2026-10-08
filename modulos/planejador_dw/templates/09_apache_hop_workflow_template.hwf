@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <workflow>
-  <name>wf_carga_<sistema>_<dominio></name>
+  <name>wf_carga_${SISTEMA}_${DOMINIO}</name>
   <name_sync_with_filename>Y</name_sync_with_filename>
   <description>Workflow Apache Hop para orquestracao da ingestao de dados para o Oracle DW</description>
   <extended_description/>
@@ -37,7 +37,7 @@
       <attributes/>
       <connections>
         <connection>
-          <name><CONEXAO_ORACLE_DW></name>
+          <name>${CONEXAO_ORACLE_DW}</name>
           <waitfor>5</waitfor>
           <waittime>millisecond</waittime>
         </connection>
@@ -52,7 +52,7 @@
       <description>Dispara pipeline de ingestao do arquivo para a tabela STG</description>
       <type>PIPELINE</type>
       <attributes/>
-      <filename>${PROJECT_HOME}/pipelines/pipe_stg_<sistema>_<dominio>_<entidade>.hpl</filename>
+      <filename>${PROJECT_HOME}/pipelines/pipe_stg_${SISTEMA}_${DOMINIO}_${ENTIDADE}.hpl</filename>
       <params_from_previous>N</params_from_previous>
       <exec_per_row>N</exec_per_row>
       <clear_rows>N</clear_rows>

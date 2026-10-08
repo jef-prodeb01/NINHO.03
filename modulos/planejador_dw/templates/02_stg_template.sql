@@ -37,6 +37,6 @@ CREATE TABLE "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"
 COMMENT ON TABLE "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>" IS 'Tabela de staging para aterrissagem dos dados operacionais da entidade <ENTIDADE>.';
 COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"."ID_<ENTIDADE>" IS 'Identificador natural/operacional unico na origem.';
 COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"."DATA_<EVENTO>" IS 'Data e hora do evento na origem.';
-COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<DOMINIO>_<ENTIDADE>"."RESUMO" IS 'Descritivo textual detalhado em formato CLOB.';
+COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"."RESUMO" IS 'Descritivo textual detalhado em formato CLOB.';
 COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"."ID_LOTE" IS 'Identificador sequencial do lote de carga para rastreabilidade de micro-lotes.';
 COMMENT ON COLUMN "<SCHEMA_ALVO>"."STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>"."DTC_EXTRACAO" IS 'Data e hora exata em que o registro aterrissou na camada de staging.';
