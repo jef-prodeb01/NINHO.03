@@ -14,3 +14,4 @@ Este módulo automatiza a criação de uma camada semântica robusta e auto-expl
 4. **Governança:** A documentação do projeto é registrada em `documentacao/catalogo_projetos/`.
 
 Consulte o manual operacional em [`documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md`](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) e as convenções em [`core/convencoes/CONVENCOES_SEMANTICA.md`](../../core/convencoes/CONVENCOES_SEMANTICA.md).
+

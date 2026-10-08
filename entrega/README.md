@@ -17,3 +17,4 @@ Este diretório centraliza todos os insumos, arquivos brutos, DDLs e especifica�
   - `relatorios_etl/`: Relatórios de carga, periodicidade e volumetria.
 - **[`governanca_dados/`](governanca_dados/)**: Insumos para catálogo e governança.
   - Arquivos de regras de negócio, tabelas de classificação LAI e mapeamento de dados pessoais (LGPD).
+

@@ -1,4 +1,4 @@
-# Inserts — Meta Projeto
+# Saída da Camada Semântica — Meta Projeto
 
 > **Atenção:** Este diretório contém os CREATE TABLE e INSERTs das 8 tabelas META_ para execução no banco.
 > O engenheiro deve validar cada script antes de executar.
@@ -42,7 +42,7 @@
 2. Engenheiro revisa cada script
 3. Engenheiro valida SQL das perguntas (06_meta_consulta_negocio.sql)
 4. Engenheiro confirma execução
-5. IA atualiza PROJETO_RESUMO.md
+5. IA atualiza documentacao/catalogo_projetos/PROJETO_RESUMO.md
 ```
 
 ## Regras

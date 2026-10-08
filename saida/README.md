@@ -18,3 +18,4 @@ Este diretório centraliza **todas as saídas e scripts gerados** pelos módulos
 - **[`governanca_dados/`](governanca_dados/)**: Artefatos e catálogos gerados.
   - `schemas_mongo/`: Esquemas de validação JSON Schema / BSON para coleções MongoDB.
   - `aws_datazone/`: Definições de Metadata Forms e publicação no Amazon DataZone.
+

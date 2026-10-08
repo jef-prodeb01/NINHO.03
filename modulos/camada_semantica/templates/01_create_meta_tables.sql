@@ -3,7 +3,7 @@
 -- =============================================================
 -- Rode este script UMA VEZ no início do projeto.
 -- Ele cria as 8 tabelas de catálogo semântico e as triggers de auditoria.
--- Os INSERTs ficam em arquivos separados (inserts/meta_projeto/).
+-- Os INSERTs ficam em arquivos separados (saida/camada_semantica/meta_projeto/).
 --
 -- NOTA MULTI-PROJETO:
 -- Todas as tabelas possuem a coluna PROJETO (DEFAULT 'GLOBAL').

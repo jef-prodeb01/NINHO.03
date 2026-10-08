@@ -1,7 +1,7 @@
 -- =============================================================
 -- TEMPLATE — Validações da camada semântica (Oracle 12c+)
 -- =============================================================
--- Rode DEPOIS de views (inserts/vw_analiticas/), META_ (inserts/meta_projeto/01_create_meta_tables.sql) e INSERTs (inserts/meta_projeto/01-08.sql) estarem no ar.
+-- Rode DEPOIS de views (saida/camada_semantica/vw_analiticas/), META_ (saida/camada_semantica/meta_projeto/01_create_meta_tables.sql) e INSERTs (saida/camada_semantica/meta_projeto/01-08.sql) estarem no ar.
 --
 -- Este script NÃO altera dados — apenas reporta problemas. Rode cada
 -- bloco separadamente e trate qualquer linha retornada como pendência

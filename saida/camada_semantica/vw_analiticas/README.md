@@ -1,4 +1,4 @@
-# Inserts — Views Analíticas
+# Saída da Camada Semântica — Views Analíticas
 
 > **Atenção:** Este diretório contém as views analíticas geradas pela IA.
 > O engenheiro deve validar cada view antes de executar.
@@ -6,7 +6,7 @@
 ## Como a IA gera as views
 
 ```
-1. IA usa exemplo_tabelas/01_views_analiticas.sql como base
+1. IA usa modulos/camada_semantica/templates/01_views_analiticas.sql como base
 2. IA gera um arquivo por view (ex: VW_PROJETO_DIM_CIDADE.sql)
 3. Engenheiro valida a view
 4. Engenheiro confirma execução
@@ -33,7 +33,7 @@
 ### Executando de fora (caminho absoluto)
 
 ```sql
--- Executar de dentro da pasta inserts/
+-- Executar de dentro da pasta saida/camada_semantica/
 @vw_analiticas/VW_PROJETO_DIM_CIDADE.sql
 ```
 

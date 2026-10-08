@@ -215,10 +215,10 @@ END FN_META_RLS_PREDICADO;
 -- NOTAS
 -- =============================================================
 -- 1. Escolha a estratégia de RLS e documente a escolha em
---    PROJETO_RESUMO.md, seção 6 (Regras de Acesso).
+--    documentacao/catalogo_projetos/PROJETO_RESUMO.md, seção 6 (Regras de Acesso).
 -- 2. Estratégia C/D (VPD) é a mais robusta contra acesso ad-hoc, mas
 --    exige mais cuidado: erros na função de predicado afetam TODAS as
 --    consultas ao objeto, inclusive as da própria IA/BI.
 -- 3. Teste sempre com usuários de diferentes segmentos antes de
---    liberar em produção (ver inserts/meta_projeto/09_validacoes.sql, seção de RLS).
+--    liberar em produção (ver saida/camada_semantica/meta_projeto/09_validacoes.sql, seção de RLS).
 COMMIT;

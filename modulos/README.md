@@ -20,3 +20,4 @@ Este diretório reúne os módulos especializados do framework. Cada módulo pos
 > **Data Lakehouse Governamental (MongoDB + AWS Glue & DataZone)**
 - Arquitetura de governança moderna sem Amazon S3 para setor público.
 - Estratégia de multi-órgãos em MongoDB (`gov_*`), envelope canônico com blocos `_org` e `_governance` (LAI/LGPD), e integração com AWS Glue Data Catalog e Amazon DataZone.
+

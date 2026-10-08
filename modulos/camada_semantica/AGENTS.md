@@ -13,10 +13,10 @@ junto ao engenheiro de dados e gerar os artefatos finais.
 
 ```mermaid
 flowchart LR
-    ENG[Engenheiro de dados] -->|entrega insumos<br/>GUIA_ENGENHEIRO_DADOS.md| VC[Você, agente]
+    ENG[Engenheiro de dados] -->|entrega insumos<br/>GUIA_ENGENHEIRO_SEMANTICA.md| VC[Você, agente]
     VC -->|1. documento de<br/>entendimento| ENG
     ENG -->|2. valida/corrige| VC
-    VC -->|3. scripts SQL<br/>um por um<br/>inserts/vw_analiticas/<br/>inserts/meta_projeto/| ENG
+    VC -->|3. scripts SQL<br/>um por um<br/>saida/camada_semantica/vw_analiticas/<br/>saida/camada_semantica/meta_projeto/| ENG
     ENG -->|4. executa no Oracle| DB[(DW Oracle)]
 ```
 
@@ -34,7 +34,7 @@ analisa insumos, deriva entendimento, valida com o engenheiro e gera SQL.
 > **Como pedir informação faltante:**
 > ```
 > ❌ FALTA: [descreva exatamente o que falta]
-> 📍 ONDE: [onde a informação deve estar — ex: INTAKE seção 4, entrega/amostras/]
+> 📍 ONDE: [onde a informação deve estar — ex: INTAKE seção 4, entrega/camada_semantica/amostras/]
 > 📝 POR QUE: [por que é obrigatória — ex: sem isso a view terá lógica errada]
 > ✅ O QUE PRECISO: [o que o engenheiro precisa entregar]
 > ```
@@ -53,7 +53,7 @@ analisa insumos, deriva entendimento, valida com o engenheiro e gera SQL.
 >
 > **Comportamento estrito conforme as respostas:**
 > - **CENÁRIO 1: Primeira execução e NÃO tem tabelas `META_*` no schema:**
->   - Gera o script `inserts/meta_projeto/01_create_meta_tables.sql` (CREATE TABLE das 8 tabelas `META_*` + triggers).
+>   - Gera o script `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` (CREATE TABLE das 8 tabelas `META_*` + triggers).
 >   - Gera todos os scripts de INSERT do zero (incluindo todas as 36 orientações de IA e regras universais `GLOBAL`, mais os metadados do `<PROJETO>`).
 > - **CENÁRIO 2: JÁ existem tabelas `META_*` no schema (reexecução, novo projeto compartilhando o schema ou atualização):**
 >   - **NÃO** gera nem executa `CREATE TABLE` (pula a Subfase 3b / `01_create_meta_tables.sql`).
@@ -68,7 +68,7 @@ analisa insumos, deriva entendimento, valida com o engenheiro e gera SQL.
 > 📋 INFORMAÇÕES INICIAIS NECESSÁRIAS:
 >
 > 1. **Nome do projeto:** (ex: SEI, SIPAR, E-CAC)
-> 2. **Nome do engenheiro responsável:** (para registro em PROJETO_VERSION.md)
+> 2. **Nome do engenheiro responsável:** (para registro em documentacao/catalogo_projetos/PROJETO_VERSION.md)
 > 3. **É a primeira vez executando neste schema?** (Sim / Não)
 > 4. **As tabelas META_* já existem no schema alvo?** (Sim / Não)
 > ```
@@ -84,8 +84,8 @@ Antes de **qualquer** geração, verifique se TODOS os itens abaixo estão prese
 | 0c | **Primeira execução no schema?** | ✅ Sim | INTAKE ou conversa | Resposta explícita (Sim / Não) |
 | 0d | **Tabelas META_* já existem no schema?** | ✅ Sim | INTAKE ou conversa | Resposta explícita (Sim / Não) |
 | 1 | **Schema alvo** | ✅ Sim | INTAKE ou conversa | Não está `<SCHEMA_ALVO>` |
-| 2 | **DDL completo** (fatos + dimensões) | ✅ Sim | `entrega/ddl/ddl_completo.sql` | Contém CREATE TABLE de todas as tabelas |
-| 3 | **Amostras dos dados** | ✅ Sim | `entrega/amostras/` | Contém amostra de cada tabela fato |
+| 2 | **DDL completo** (fatos + dimensões) | ✅ Sim | `entrega/camada_semantica/ddl/ddl_completo.sql` | Contém CREATE TABLE de todas as tabelas |
+| 3 | **Amostras dos dados** | ✅ Sim | `entrega/camada_semantica/amostras/` | Contém amostra de cada tabela fato |
 | 4 | **Regras de negócio** (aditividade, unidades, restrições) | ✅ Sim | INTAKE seção 4 | Pelo menos uma regra por medida |
 | 5 | **Grão de cada fato** | ✅ Sim | INTAKE seção 4 ou amostras | Definido explicitamente OU derivável das amostras |
 
@@ -106,12 +106,12 @@ Antes de **qualquer** geração, verifique se TODOS os itens abaixo estão prese
 
 1. Leia [README.md](README.md) para entender o processo completo.
 
-2. **Liste e leia os arquivos da pasta `entrega/`:**
-   - Execute `list_dir` em `entrega/`, `entrega/ddl/`, `entrega/amostras/`
+2. **Liste e leia os arquivos da pasta `entrega/camada_semantica/`:**
+   - Execute `list_dir` em `entrega/camada_semantica/`, `entrega/camada_semantica/ddl/`, `entrega/camada_semantica/amostras/`
    - Leia cada arquivo encontrado (exceto README.md)
    - Valide se os arquivos estão presentes e com conteúdo
 
-3. **Leia [INTAKE.md](INTAKE.md) completo** para extrair informações preenchidas:
+3. **Leia [INTAKE_SEMANTICA.md](INTAKE_SEMANTICA.md) completo** para extrair informações preenchidas:
    - Nome do projeto (seção 0 ou cabeçalho)
    - DDL referenciado (seção 1)
    - Amostras referenciadas (seção 2)
@@ -120,18 +120,18 @@ Antes de **qualquer** geração, verifique se TODOS os itens abaixo estão prese
 
 4. **Verifique o nome do projeto:**
    - Tente ler `NOME_PROJETO.txt` na raiz do workspace
-   - Leia [INTAKE.md](INTAKE.md) e procure por `NOME_PROJETO` ou campo de nome
+   - Leia [INTAKE_SEMANTICA.md](INTAKE_SEMANTICA.md) e procure por `NOME_PROJETO` ou campo de nome
    - **Se NÃO encontrar o nome do projeto em nenhum lugar → PERGUNTE ao engenheiro ANTES de prosseguir**
    - Formato da pergunta:
      ```
      ❌ FALTA: Nome do projeto não foi informado
-     📍 ONDE: Deveria estar em NOME_PROJETO.txt ou INTAKE.md
+     📍 ONDE: Deveria estar em NOME_PROJETO.txt ou INTAKE_SEMANTICA.md
      📝 POR QUE: Sem o nome do projeto, não é possível gerar nomes de views, tabelas ou schemas corretos
      ✅ O QUE PRECISO: O nome curto do projeto (ex: SEI, SIPAR, E-CAC)
      ```
 
-5. Encaminhe [GUIA_ENGENHEIRO_DADOS.md](GUIA_ENGENHEIRO_DADOS.md) ao
-   engenheiro (ou use [INTAKE.md](INTAKE.md) como checklist).
+5. Encaminhe [GUIA_ENGENHEIRO_SEMANTICA.md](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) ao
+   engenheiro (ou use [INTAKE_SEMANTICA.md](INTAKE_SEMANTICA.md) como checklist).
 
 6. **Verifique o checklist de insumos obrigatórios abaixo.** Se faltar QUALQUER item:
    - **PARE** e peça ao engenheiro com a mensagem formatada (ver regra de ouro).
@@ -222,7 +222,7 @@ entendimento aqui se propagam para todas as views e tabelas META_.
 
 **IMPORTANTE:** Gere os scripts **um por um**, validando com o engenheiro antes de prosseguir para o próximo.
 
-Use os templates em [exemplo_tabelas/](exemplo_tabelas/) como base para gerar os scripts em `inserts/`.
+Use os templates em [templates/](templates/) como base para gerar os scripts em `saida/camada_semantica/`.
 
 #### Subfase 3a — Views Analíticas
 
@@ -234,10 +234,10 @@ Use os templates em [exemplo_tabelas/](exemplo_tabelas/) como base para gerar os
 > **Se faltar DDL de alguma tabela fato ou dimensão → PARE e peça ao engenheiro.**
 > **Se o grão ou aditividade não estiver definido → PARE e peça ao engenheiro.**
 
-Baseie-se em `exemplo_tabelas/01_views_analiticas.sql` e gere cada view em um arquivo separado:
-- `inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` — uma por dimensão
-- `inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql` — uma por fato
-- `inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` — uma por pergunta
+Baseie-se em `templates/01_views_analiticas.sql` e gere cada view em um arquivo separado:
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` — uma por dimensão
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql` — uma por fato
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` — uma por pergunta
 
 > ⚠️ **NUNCA gere uma view sem saber o grão e a aditividade da medida correspondente.**
 > Se a aditividade não foi informada pelo engenheiro → marque como "a confirmar" e **NÃO gere a view** até validação.
@@ -252,8 +252,8 @@ Baseie-se em `exemplo_tabelas/01_views_analiticas.sql` e gere cada view em um ar
 >
 > **Se alguma tabela fato/dimensão não estiver no documento de entendimento → PARE e peça ao engenheiro.**
 
-Baseie-se em `exemplo_tabelas/01_create_meta_tables.sql` e gere o arquivo:
-- `inserts/meta_projeto/01_create_meta_tables.sql` — CREATE TABLE das 8 META_ + triggers (apenas para schemas novos)
+Baseie-se em `templates/01_create_meta_tables.sql` e gere o arquivo:
+- `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` — CREATE TABLE das 8 META_ + triggers (apenas para schemas novos)
 
 #### Subfase 3c — INSERTs das META_ (Modo Idempotente / Apenas Acrescentar)
 
@@ -268,25 +268,25 @@ Baseie-se em `exemplo_tabelas/01_create_meta_tables.sql` e gere o arquivo:
 > **NUNCA invente valores de domínio — eles vêm das amostras ou do engenheiro.**
 
 Os INSERTs/MERGEs ficam em arquivos separados dos CREATE TABLE:
-- `inserts/meta_projeto/01_meta_glossario.sql` — INSERTs/MERGEs META_GLOSSARIO (com sinônimos!)
+- `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` — INSERTs/MERGEs META_GLOSSARIO (com sinônimos!)
   > ⚠️ **Se não há sinônimos nos insumos → pergunte ao engenheiro. Não invente sinônimos.**
-- `inserts/meta_projeto/02_meta_metrica.sql` — INSERTs/MERGEs META_METRICA (com SQL pronto)
+- `saida/camada_semantica/meta_projeto/02_meta_metrica.sql` — INSERTs/MERGEs META_METRICA (com SQL pronto)
   > ⚠️ **Se a aditividade de alguma medida não está definida → PARE e peça ao engenheiro antes de gerar o INSERT dessa medida.**
-- `inserts/meta_projeto/03_meta_objeto.sql` — INSERTs/MERGEs META_OBJETO (governança)
-- `inserts/meta_projeto/04_meta_relacionamento.sql` — INSERTs/MERGEs META_RELACIONAMENTO
+- `saida/camada_semantica/meta_projeto/03_meta_objeto.sql` — INSERTs/MERGEs META_OBJETO (governança)
+- `saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql` — INSERTs/MERGEs META_RELACIONAMENTO
   > ⚠️ **Se os relacionamentos (joins) não estão no documento de entendimento → PARE e peça ao engenheiro.**
-- `inserts/meta_projeto/05_meta_regra_negocio.sql` — INSERTs/MERGEs META_REGRA_NEGOCIO (com status_regra)
+- `saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql` — INSERTs/MERGEs META_REGRA_NEGOCIO (com status_regra)
   > ⚠️ **Se as regras de negócio não estão no INTAKE seção 4 → PARE e peça ao engenheiro.**
-- `inserts/meta_projeto/06_meta_consulta_negocio.sql` — INSERTs/MERGEs META_CONSULTA_NEGOCIO (com SQL validado)
+- `saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql` — INSERTs/MERGEs META_CONSULTA_NEGOCIO (com SQL validado)
   > ⚠️ **Se as perguntas dos usuários não estão no INTAKE seção 5 → PARE e peça ao engenheiro. Não gere perguntas inventadas.**
-- `inserts/meta_projeto/07_meta_orientacao_ia.sql` — INSERTS/MERGEs META_ORIENTACAO_IA
+- `saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql` — INSERTS/MERGEs META_ORIENTACAO_IA
   > ⚠️ **OBRIGATÓRIO:** Deve conter o catálogo completo com as **36 orientações de IA** (WORKFLOW ordens 1-9, PRINCIPIO ordens 1-11, VALIDACAO ordens 1-8, DESVIO ordens 1-3, RESPOSTA ordens 1-5) geradas com `MERGE INTO` e escopo `GLOBAL` (adaptadas para `<PROJETO>` onde aplicável).
-- `inserts/meta_projeto/08_meta_valor_dominio.sql` — INSERTs/MERGEs META_VALOR_DOMINIO (com descrição + ind_ativo)
+- `saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql` — INSERTs/MERGEs META_VALOR_DOMINIO (com descrição + ind_ativo)
   > ⚠️ **Se os valores de domínio não estão nas amostras → PARE e peça ao engenheiro. Não inferia valores de domínio.**
 
 > **IMPORTANTE:** 
-> - CREATE TABLE fica em `inserts/meta_projeto/01_create_meta_tables.sql`
-> - INSERTs ficam em `inserts/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`
+> - CREATE TABLE fica em `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`
+> - INSERTs ficam em `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`
 > - Nunca misture CREATE com INSERT
 > - O engenheiro deve validar cada arquivo antes de executar
 >
@@ -304,8 +304,8 @@ Os INSERTs/MERGEs ficam em arquivos separados dos CREATE TABLE:
 > **Se RLS se aplica mas os filtros não estão definidos → PARE e peça ao engenheiro.**
 > **Se RLS não se aplica, pule esta subfase (RLS é opcional).**
 
-- `inserts/meta_projeto/02_rls.sql` — RLS opcional (só se INTAKE 4.1 indicar acesso restrito)
-- `inserts/meta_projeto/09_validacoes.sql` — Checagens de integridade entre META_ e teste de execução
+- `saida/camada_semantica/meta_projeto/02_rls.sql` — RLS opcional (só se INTAKE 4.1 indicar acesso restrito)
+- `saida/camada_semantica/meta_projeto/09_validacoes.sql` — Checagens de integridade entre META_ e teste de execução
 
 > ⚠️ **VERIFICAÇÃO ANTES DE GERAR VALIDAÇÕES:**
 > - [ ] Todos os INSERTs das META_ foram gerados?
@@ -313,7 +313,7 @@ Os INSERTs/MERGEs ficam em arquivos separados dos CREATE TABLE:
 >
 > **Se faltar algum INSERT ou view → PARE e peça ao engenheiro.**
 
-> **Referência:** Os arquivos em [exemplo_tabelas/](exemplo_tabelas/) são modelos base. Use-os como referência de nível de detalhe esperado.
+> **Referência:** Os arquivos em [templates/](templates/) são modelos base. Use-os como referência de nível de detalhe esperado.
 
 ### Arquitetura em 3 Camadas
 
@@ -359,15 +359,15 @@ MV (mv_<projeto>_kpi_*) — opcional
 > META_RELACIONAMENTO, META_REGRA_NEGOCIO, META_CONSULTA_NEGOCIO,
 > META_ORIENTACAO_IA, META_VALOR_DOMINIO).
 >
-> **IMPORTANTE:** CREATE TABLE fica em `inserts/meta_projeto/01_create_meta_tables.sql`,
-> INSERTs ficam em `inserts/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`. Nunca misture CREATE com INSERT.
+> **IMPORTANTE:** CREATE TABLE fica em `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`,
+> INSERTs ficam em `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`. Nunca misture CREATE com INSERT.
 
 ### Fase 4 — Entrega e validação
 
 > ⚠️ **VERIFICAÇÃO ANTES DA ENTREGA:**
 > - [ ] Todos os scripts foram gerados (views + META_)?
 > - [ ] Cada script foi validado pelo engenheiro individualmente?
-> - [ ] `inserts/meta_projeto/09_validacoes.sql` foi gerado?
+> - [ ] `saida/camada_semantica/meta_projeto/09_validacoes.sql` foi gerado?
 >
 > **Se qualquer script está faltando → PARE e peça ao engenheiro.**
 
@@ -383,21 +383,19 @@ do catálogo).
 >
 > **Se qualquer verificação falhar → PARE e peça ao engenheiro.**
 
-**IMPORTANTE:** Nunca sobrescreva os modelos em `exemplo_tabelas/`. Sempre gere primeiro em `exemplo_tabelas/` e só copie para a raiz após validação do engenheiro.
+**IMPORTANTE:** Nunca sobrescreva os modelos em `templates/`. Sempre use `templates/PROJETO_RESUMO_MODELO.md` e `templates/PROJETO_VERSION_MODELO.md` como base para alimentar a pasta `documentacao/catalogo_projetos/`.
 
 #### Fluxo de geração
 
 ```
-1. IA gera em exemplo_tabelas/PROJETO_RESUMO_MODELO.md
-2. IA gera em exemplo_tabelas/PROJETO_VERSION_MODELO.md
-3. Engenheiro valida conteúdo
-4. Engenheiro confirma → IA copia para raiz
-5. PROJETO_RESUMO.md e PROJETO_VERSION.md atualizados
+1. IA preenche PROJETO_RESUMO.md e PROJETO_VERSION.md em documentacao/catalogo_projetos/
+2. Engenheiro valida o conteúdo gerado
+3. PROJETO_RESUMO.md e PROJETO_VERSION.md aprovados e salvos
 ```
 
 #### Cenário A — Projeto novo (primeira geração)
 
-Gere em `exemplo_tabelas/PROJETO_RESUMO_MODELO.md`:
+Gere em `documentacao/catalogo_projetos/PROJETO_RESUMO.md` (usando `templates/PROJETO_RESUMO_MODELO.md` como guia):
 1. **DDL completo** de todas as tabelas FATO e DIM (CREATE TABLE + CONSTRAINTS + COMMENTS)
 2. **Amostras** (10 linhas) de cada tabela
 3. **Regras de aditividade** por medida
@@ -407,7 +405,7 @@ Gere em `exemplo_tabelas/PROJETO_RESUMO_MODELO.md`:
 7. **Perguntas dos usuários**
 8. **Versão:** 1.0
 
-Gere em `exemplo_tabelas/PROJETO_VERSION_MODELO.md`:
+Gere em `documentacao/catalogo_projetos/PROJETO_VERSION.md` (usando `templates/PROJETO_VERSION_MODELO.md` como guia):
 1. **Versão:** 1.0
 2. **Data** e **Responsável**
 3. **Tabelas FATO** com linhas e última carga
@@ -420,10 +418,10 @@ Gere em `exemplo_tabelas/PROJETO_VERSION_MODELO.md`:
 #### Cenário B — Atualização incremental (mudança no projeto)
 
 Quando o engenheiro informar uma mudança (nova tabela, coluna nova, regra alterada, etc.):
-1. Gere os scripts SQL de UPDATE/INSERT
-2. Atualize os modelos em `exemplo_tabelas/`:
-   - Atualize `exemplo_tabelas/PROJETO_RESUMO_MODELO.md`
-   - Atualize `exemplo_tabelas/PROJETO_VERSION_MODELO.md`
+1. Gere os scripts SQL de UPDATE/INSERT em `saida/camada_semantica/`
+2. Atualize os documentos em `documentacao/catalogo_projetos/`:
+   - Atualize `documentacao/catalogo_projetos/PROJETO_RESUMO.md`
+   - Atualize `documentacao/catalogo_projetos/PROJETO_VERSION.md`
    - Atualize o DDL da tabela alterada
    - Atualize a amostra da tabela alterada
    - Atualize a seção de regras se houver mudança
@@ -435,16 +433,13 @@ Quando o engenheiro informar uma mudança (nova tabela, coluna nova, regra alter
      - Resumo das mudanças (ADICIONADO, ATUALIZADO, REMOVIDO)
      - Impacto (quantas views/regras/perguntas foram afetadas)
      - Scripts gerados
-3. **Só após validação do engenheiro**, copie para a raiz:
-   - `exemplo_tabelas/PROJETO_RESUMO_MODELO.md` → `PROJETO_RESUMO.md`
-   - `exemplo_tabelas/PROJETO_VERSION_MODELO.md` → `PROJETO_VERSION.md`
 
-> **Regra de ouro:** O PROJETO_RESUMO.md é a **"fonte única da verdade"**.
+> **Regra de ouro:** O `PROJETO_RESUMO.md` é a **"fonte única da verdade"**.
 > Se mudou no projeto, mudou no PROJETO_RESUMO.md.
 > Se mudou no PROJETO_RESUMO.md, a IA gera SQL correto na próxima vez.
 >
-> **NUNCA sobrescreva os modelos em exemplo_tabelas/ com dados reais.**
-> Sempre gere em `exemplo_tabelas/PROJETO_RESUMO_MODELO.md` e só copie para a raiz após validação.
+> **NUNCA sobrescreva os modelos em templates/ com dados reais do cliente.**
+> Mantenha os modelos limpos e preencha sempre em `documentacao/catalogo_projetos/`.
 
 ## Regras que você DEVE seguir
 
@@ -469,17 +464,17 @@ Quando o engenheiro informar uma mudança (nova tabela, coluna nova, regra alter
    - Nunca somar uma medida marcada como `NAO_ADITIVA` em `META_METRICA` — sempre recalcular a partir do detalhe.
    - Medida `SEMI_ADITIVA` só soma dentro da restrição declarada em `META_METRICA.FILTROS_OBRIGATORIOS` (ex.: só por período, só por um nível da hierarquia).
    - Se houver RLS, todo SQL gerado para `META_CONSULTA_NEGOCIO` deve respeitar o filtro de segmento — nunca sugerir bypass.
-8. **INSERTs em arquivos separados** — CREATE TABLE fica em `inserts/meta_projeto/01_create_meta_tables.sql`,
-   INSERTs ficam em `inserts/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`. Nunca misture CREATE com INSERT.
+8. **INSERTs em arquivos separados** — CREATE TABLE fica em `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`,
+   INSERTs ficam em `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` a `08_meta_valor_dominio.sql`. Nunca misture CREATE com INSERT.
 9. **Validação de `META_CONSULTA_NEGOCIO`** — antes de gerar INSERTs, apresente
    o catálogo de perguntas com SQL base para validação do engenheiro.
    Só gere INSERTs após aprovação.
-10. **Documentação completa** — sempre atualize PROJETO_RESUMO.md com DDLs,
+10. **Documentação completa** — sempre atualize `documentacao/catalogo_projetos/PROJETO_RESUMO.md` com DDLs,
     INSERTs, amostras e histórico. O arquivo deve andar junto com o projeto.
 11. **Nomenclatura** — siga os prefixos e padrões de nomes definidos em
-    [CONVENCOES.md](CONVENCOES.md); não invente convenção nova sem atualizar esse arquivo.
+    [CONVENCOES_SEMANTICA.md](../../core/convencoes/CONVENCOES_SEMANTICA.md); não invente convenção nova sem atualizar esse arquivo.
 12. **Rode as validações** — depois de gerar os 10 scripts, rode
-    `inserts/meta_projeto/09_validacoes.sql` e resolva qualquer órfão/falha antes de
+    `saida/camada_semantica/meta_projeto/09_validacoes.sql` e resolva qualquer órfão/falha antes de
     considerar a entrega pronta.
 13. **Multi-Projeto e Coluna PROJETO (com herança GLOBAL)** — todas as 8 tabelas `META_*` possuem a coluna `PROJETO VARCHAR2(50) DEFAULT 'GLOBAL' NOT NULL`:
     - Ao gerar INSERTs específicos do projeto, declare explicitamente `PROJETO = '<PROJETO>'`.
@@ -520,7 +515,7 @@ Quando precisar de informação, use EXATAMENTE este formato:
 
 ```
 ❌ FALTA: [descreva exatamente o que falta]
-📍 ONDE: [onde a informação deve estar — ex: INTAKE seção 4, entrega/amostras/]
+📍 ONDE: [onde a informação deve estar — ex: INTAKE seção 4, entrega/camada_semantica/amostras/]
 📝 POR QUE: [por que é obrigatória — ex: sem isso a view terá lógica errada]
 ✅ O QUE PRECISO: [o que o engenheiro precisa entregar]
 ```
@@ -553,14 +548,14 @@ Fase 4 (Entrega) → NÃO VALIDADA → NÃO INICIE Fase 5
 
 - [ ] Documento de entendimento validado pelo engenheiro
 - [ ] Scripts gerados, revisados e sem placeholders
-  (inserts/vw_analiticas/ + inserts/meta_projeto/01_meta_glossario.sql a 08_meta_valor_dominio.sql)
+  (saida/camada_semantica/vw_analiticas/ + saida/camada_semantica/meta_projeto/01_meta_glossario.sql a 08_meta_valor_dominio.sql)
 - [ ] Toda view encapsula a regra de aditividade do seu recorte
-- [ ] **PROJETO_RESUMO.md atualizado com DDLs, amostras, regras e views**
-- [ ] **PROJETO_VERSION.md atualizado com versão e histórico de mudanças**
+- [ ] **documentacao/catalogo_projetos/PROJETO_RESUMO.md atualizado com DDLs, amostras, regras e views**
+- [ ] **documentacao/catalogo_projetos/PROJETO_VERSION.md atualizado com versão e histórico de mudanças**
 - [ ] `META_CONSULTA_NEGOCIO` cobre as perguntas dos usuários (INTAKE 5)
 - [ ] `META_REGRA_NEGOCIO` inclui as regras do cliente + as universais
 - [ ] Blocos de sincronização (catálogo e domínio) apontam para as
       tabelas reais do projeto
-- [ ] `inserts/meta_projeto/09_validacoes.sql` executado sem órfãos nem falhas de execução
+- [ ] `saida/camada_semantica/meta_projeto/09_validacoes.sql` executado sem órfãos nem falhas de execução
 - [ ] Se houver RLS (INTAKE 4.1), estratégia escolhida documentada em PROJETO_RESUMO.md
 - [ ] Instruções de execução e validação entregues junto

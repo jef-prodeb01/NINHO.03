@@ -1,0 +1,99 @@
+# ==============================================================================
+# TEMPLATE APACHE SUPERSET: ESPECIFICAÇÃO DECLARATIVA DE DATASET
+# ==============================================================================
+# Padrão Modern Data Stack: Dataset versionado em YAML para GitOps
+# Conecta na View Semântica (VW_KPI_*) ou diretamente na Fato (FATO_*)
+# ==============================================================================
+
+table_name: VW_KPI_<DOMINIO>_<ASSUNTO>
+main_dttm_col: DTC_EVENTO
+description: Dataset analitico consolidado para dashboards do dominio <DOMINIO>
+default_endpoint: null
+offset: 0
+cache_timeout: 3600
+schema: <SCHEMA_ALVO>
+sql: |
+  SELECT 
+      f.DIM_<ENTIDADE_1>,
+      d1.SIGLA_<ENTIDADE_1>,
+      d1.DS_<ENTIDADE_1>,
+      f.DIM_TEMPO,
+      t.DTC_DATA AS DTC_EVENTO,
+      t.NUM_ANO,
+      t.NUM_MES,
+      t.NOM_MES,
+      f.TOT_<EVENTO>,
+      f.QTD_<MEDIDA_ADICIONAL>,
+      f.VAL_<METRICA_FINANCEIRA>
+  FROM <SCHEMA_ALVO>.FATO_<SISTEMA>_<DOMINIO>_<EVENTO> f
+  JOIN <SCHEMA_ALVO>.DIM_<SISTEMA>_<DOMINIO>_<ENTIDADE_1> d1
+    ON d1.DIMENSION_KEY = f.DIM_<SISTEMA>_<DOMINIO>_<ENTIDADE_1>
+  JOIN <SCHEMA_ALVO>.DIM_TEMPO t
+    ON t.DIMENSION_KEY = f.DIM_TEMPO
+
+columns:
+  - column_name: DTC_EVENTO
+    verbose_name: Data do Evento
+    is_dttm: true
+    is_active: true
+    type: TIMESTAMP
+    groupby: true
+    filterable: true
+    description: Data de ocorrencia registrada na dimensao tempo
+
+  - column_name: SIGLA_<ENTIDADE_1>
+    verbose_name: Sigla da Entidade
+    is_dttm: false
+    is_active: true
+    type: VARCHAR
+    groupby: true
+    filterable: true
+    description: Sigla resumida da entidade cadastrada
+
+  - column_name: DS_<ENTIDADE_1>
+    verbose_name: Nome / Descricao
+    is_dttm: false
+    is_active: true
+    type: VARCHAR
+    groupby: true
+    filterable: true
+    description: Descricao completa da entidade
+
+  - column_name: NUM_ANO
+    verbose_name: Ano
+    is_dttm: false
+    is_active: true
+    type: INTEGER
+    groupby: true
+    filterable: true
+
+  - column_name: NOM_MES
+    verbose_name: Mes
+    is_dttm: false
+    is_active: true
+    type: VARCHAR
+    groupby: true
+    filterable: true
+
+metrics:
+  - metric_name: total_ocorrencias
+    verbose_name: Total de Ocorrencias
+    metric_type: count
+    expression: SUM(TOT_<EVENTO>)
+    description: Contagem absoluta de ocorrencias do evento
+    d3format: ",d"
+
+  - metric_name: valor_total
+    verbose_name: Valor Total (R$)
+    metric_type: sum
+    expression: SUM(VAL_<METRICA_FINANCEIRA>)
+    description: Soma financeira acumulada no periodo
+    d3format: "$,.2f"
+
+  - metric_name: ticket_medio
+    verbose_name: Ticket Medio (R$)
+    metric_type: average
+    expression: SUM(VAL_<METRICA_FINANCEIRA>) / NULLIF(SUM(TOT_<EVENTO>), 0)
+    description: Valor medio por ocorrencia registrada
+    d3format: "$,.2f"
+

@@ -1,4 +1,4 @@
-# Inserts — Guia de Execução
+# Saída da Camada Semântica — Scripts SQL de Execução
 
 > **Atenção:** Este diretório contém os scripts SQL gerados pela IA para execução no Oracle.
 > O engenheiro deve validar cada script antes de executar.
@@ -7,7 +7,7 @@
 ## Estrutura
 
 ```
-inserts/
+saida/camada_semantica/
 ├── vw_analiticas/           ← views DIM, EVENTO, KPI (um arquivo por view)
 │   └── README.md
 └── meta_projeto/            ← CREATE TABLE + INSERTs META_
@@ -30,7 +30,7 @@ inserts/
 ### 1. Views Analíticas
 
 ```sql
--- Executar de dentro da pasta inserts/
+-- Executar de dentro da pasta saida/camada_semantica/
 @vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
 @vw_analiticas/VW_<PROJETO>_EVENTO.sql
 @vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
@@ -39,7 +39,7 @@ inserts/
 ### 2. Tabelas META_
 
 ```sql
--- Executar de dentro da pasta inserts/
+-- Executar de dentro da pasta saida/camada_semantica/
 @meta_projeto/01_create_meta_tables.sql
 @meta_projeto/01_meta_glossario.sql
 @meta_projeto/02_meta_metrica.sql
@@ -70,7 +70,7 @@ inserts/
 2. Engenheiro revisa cada script
 3. Engenheiro valida SQL das perguntas (06_meta_consulta_negocio.sql)
 4. Engenheiro confirma execução
-5. IA atualiza PROJETO_RESUMO.md
+5. IA atualiza documentacao/catalogo_projetos/PROJETO_RESUMO.md
 ```
 
 ## Regras
@@ -78,5 +78,5 @@ inserts/
 - ❌ Nunca execute INSERTs sem validar primeiro
 - ❌ Nunca altere INSERTs diretamente no Oracle
 - ✅ Sempre valide SQL das perguntas antes de executar 06_meta_consulta_negocio.sql
-- ✅ Sempre atualize PROJETO_RESUMO.md após execução
+- ✅ Sempre atualize documentacao/catalogo_projetos/PROJETO_RESUMO.md após execução
 - ✅ INSERTs ficam em arquivos separados — nunca misture CREATE com INSERT

@@ -1,4 +1,4 @@
-# CONVENCOES.md — Dicionário de convenções do template
+# CONVENCOES_SEMANTICA.md — Dicionário de Convenções da Camada Semântica
 
 > Objetivo: qualquer engenheiro ou IA que assuma o projeto deve
 > conseguir prever o nome/tipo de uma coluna ou objeto sem precisar
@@ -26,7 +26,7 @@
 
 Nunca usar `NUMBER(1)`/`BOOLEAN`. Sempre `CHAR(1) DEFAULT 'S' NOT NULL`
 com domínio `'S'` / `'N'` (ver Seção "Armadilhas Oracle vs. Postgres"
-do [README.md](README.md)). Colunas booleanas começam com `ind_`.
+do [README.md](../../modulos/camada_semantica/README.md)). Colunas booleanas começam com `ind_`.
 
 ## Nomenclatura de views (arquitetura em 3 camadas)
 
@@ -43,7 +43,7 @@ do [README.md](README.md)). Colunas booleanas começam com `ind_`.
 
 ## Tabelas META_ e objetos semânticos
 
-- `META_OBJETO.NOME_OBJETO` deve ser **idêntico** ao nome físico da view/tabela em maiúsculas (ex.: objeto físico `VW_SEI_EVENTO` → `NOME_OBJETO = 'VW_SEI_EVENTO'`). Isso é o que permite validar integridade entre META_ e o schema real (ver `inserts/meta_projeto/09_validacoes.sql`).
+- `META_OBJETO.NOME_OBJETO` deve ser **idêntico** ao nome físico da view/tabela em maiúsculas (ex.: objeto físico `VW_SEI_EVENTO` → `NOME_OBJETO = 'VW_SEI_EVENTO'`). Isso é o que permite validar integridade entre META_ e o schema real (ver `saida/camada_semantica/meta_projeto/09_validacoes.sql`).
 - `META_RELACIONAMENTO.OBJETO_ORIGEM`/`OBJETO_DESTINO` também devem bater exatamente com `META_OBJETO.NOME_OBJETO` — não são FKs de banco (o design é intencionalmente livre para não travar a ordem de carga), mas devem ser validadas com o script de validações.
 
 ## Coluna PROJETO nas Tabelas META_ (Multi-Projeto e RLS)
@@ -78,4 +78,4 @@ Todas as 8 tabelas `META_*` possuem a coluna:
 
 Nunca deixe um placeholder `<...>` sem substituir em scripts entregues
 — é o primeiro item do checklist final em
-[CHECKLIST_VALIDACAO.md](CHECKLIST_VALIDACAO.md).
+[CHECKLIST_VALIDACAO.md](../../documentacao/checklists/CHECKLIST_VALIDACAO.md).

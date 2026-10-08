@@ -1,15 +1,19 @@
 # Planejador de Data Warehouses (DW Planner)
 
-Módulo corporativo para **planejamento, arquitetura e modelagem dimensional de Data Warehouses Oracle** a partir de fontes heterogêneas de dados (Bancos Relacionais, Arquivos/Planilhas em FTP/SFTP e APIs Web).
+Módulo corporativo para **planejamento, arquitetura e modelagem dimensional automatizada de Data Warehouses Oracle** a partir de fontes heterogêneas de dados (Bancos Relacionais OLTP, Arquivos/Planilhas em SFTP e APIs Web).
 
 > **Papel do Módulo:** Atuar como um **Arquiteto de Dados Sênior Automatizado**.  
-> Ele **não executa** a carga massiva dos dados, mas projeta toda a solução:
+> Ele não executa a carga pesada de produção, mas projeta toda a arquitetura:
 > 1. Modela as tabelas em camadas: `STG_*` -> `ODI_DIM_*` -> `DIM_*` -> `FATO_*`.
-> 2. Recomenda a esteira híbrida de ingestão: **ODI** (Banco), **Apache Hop** (Arquivos) e **Python** (APIs).
-> 3. Gera a especificação de disparo centralizada no ODI via `OdiOSCommand` (SSH).
-> 4. Produz os DDLs otimizados para Oracle (B-Tree, Bitmaps, SCD2, Particionamento e linha `-1`).
-> 5. Entrega o relatório de linhagem e estratégias (*"Como chegar em cada valor"*).
-> 6. Gera a ponte automática com o **Módulo de Camada Semântica**.
+> 2. Suporta **Dual Strategy** de carga:
+>    - **Estratégia A (Truncate & Load Massivo):** Cargas em lote noturnas, índices Bitmap nas FKs da Fato para Star Transformation, e procedure corporativa `PRC_POS_CARGA_FATO` (rebuild NOLOGGING + `DBMS_STATS`).
+>    - **Estratégia B (Incremental Idempotente via MERGE):** Cargas intra-dia/diárias de APIs/telemetria, índices B-Tree exclusivos para prevenir locks `ORA-00060`.
+> 3. Recomenda a esteira de ferramentas: **ODI** (Banco), **Apache Hop** (Arquivos) e **Python** (APIs).
+> 4. Gera a orquestração centralizada no ODI via `OdiOSCommand` (SSH).
+> 5. Produz os DDLs otimizados para Oracle (B-Tree em dimensões, SCD2, Particionamento e linha `-1`).
+> 6. Entrega pipelines do Apache Hop (`.hpl` / `.hwf`) e extratores Python resilientes.
+> 7. Entrega datasets do Apache Superset (`.yaml`) e diretrizes de modelagem Power BI.
+> 8. Integra automaticamente com o **Módulo de Camada Semântica** (Views `VW_EVENTO`, `VW_KPI_*` e 8 tabelas `META_*`).
 
 ---
 
@@ -21,40 +25,38 @@ O planejamento segue a esteira corporativa onde o **Oracle Data Integrator (ODI)
 flowchart TD
     subgraph INGEST["1. Ingestão Híbrida Externa"]
         F_DB["Bancos Relacionais (OLTP)"] -->|ODI Mapping Direto| STG["Tabelas STG_*<br/>(Oracle Staging)"]
-        F_FTP["Arquivos CSV/Excel (FTP/SFTP)"] -->|Apache Hop Pipeline| STG
-        F_API["APIs Web (REST/JSON)"] -->|Script Python| STG
+        F_FTP["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop (.hpl / .hwf)| STG
+        F_API["APIs Web / JSON REST"] -->|Python Extractor (.py)| STG
     end
 
     subgraph ORCH["2. Orquestração Centralizada (ODI)"]
         ODI_CMD["OdiOSCommand (SSH)<br/>Dispara Hop / Python no servidor remoto"]
-        ODI_CMD -.->|Trigger| F_FTP
-        ODI_CMD -.->|Trigger| F_API
+        ODI_CMD -.->|Disparo Remoto| F_FTP
+        ODI_CMD -.->|Disparo Remoto| F_API
     end
 
-    subgraph CORE_DW["3. Modelagem Dimensional In-Database (ODI)"]
+    subgraph CORE_DW["3. Modelagem Dimensional In-Database (Oracle)"]
         STG -->|Módulo Dimensões & Cubos| ODI_DIM["Tabelas Auxiliares<br/>ODI_DIM_*"]
-        ODI_DIM -->|SCD Tipo 2 (Merge / Expirar)| DIM["Dimensões Oficiais<br/>DIM_* (DIMENSION_KEY)"]
-        
-        STG -->|Lookup de SKs nas Dimensões| FATO["Fatos Oficiais<br/>FATO_* (DIM_*, QTD_*, DTC_CARGA)"]
+        ODI_DIM -->|IKM Slowly Changing Dimension| DIM["Dimensões Oficiais<br/>DIM_* (B-Tree + Linha -1)"]
+        STG -->|Lookup de SKs com NVL(-1)| FATO["Fatos Oficiais<br/>FATO_* (Estratégia A ou B)"]
+        FATO -.->|Truncate & Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + Stats)"]
     end
 
     subgraph AUDIT["4. Auditoria & Liberação"]
-        FATO --> CTRL["TB_CONTROLE_CARGA<br/>(ID_CARGA, NOME_PROJETO, DATA_CARGA)"]
+        FATO --> CTRL["TB_CONTROLE_CARGA<br/>(ID_CARGA, NOME_PROJETO, STATUS)"]
     end
 
-    subgraph SEMANTIC["5. Camada Semântica (Consumo)"]
-        DIM -->|dtc_expiracao IS NULL| V_DIM["VW_DIM_*_ATUAL"]
-        V_DIM --> V_EVT["VW_EVENTO"]
-        FATO --> V_EVT
-        V_EVT --> V_KPI["VW_KPI_*"]
-        V_KPI --> META["8 Tabelas META_* (IA & BI)"]
+    subgraph CONSUMO["5. Camada Analítica de Consumo"]
+        FATO --> BI_PBI["Power BI (Import Mode / Star Schema)"]
+        FATO --> BI_SUP["Apache Superset (YAML Datasets)"]
+        FATO --> SEM_MOD["Módulo Camada Semântica (8 Tabelas META_*)"]
     end
 
     style INGEST fill:#f0f7ff,stroke:#0066cc,stroke-width:2px
     style ORCH fill:#fff0f6,stroke:#eb2f96,stroke-width:2px
     style CORE_DW fill:#fffbe6,stroke:#faad14,stroke-width:2px
     style AUDIT fill:#e6fffb,stroke:#13c2c2,stroke-width:2px
-    style SEMANTIC fill:#f6ffed,stroke:#52c41a,stroke-width:2px
+    style CONSUMO fill:#f6ffed,stroke:#52c41a,stroke-width:2px
 ```
 
 ---
@@ -62,46 +64,56 @@ flowchart TD
 ## 2. Estrutura de Diretórios do Módulo
 
 ```text
-planejador_dw/
-├── README.md                      # Esta visão geral
-├── GUIA_ENGENHEIRO_DADOS.md       # Manual prático do engenheiro + biblioteca de prompts
+modulos/planejador_dw/
+├── README.md                      # Esta visão geral do módulo
 ├── AGENTS.md                      # Protocolo de raciocínio e regras estritas para a IA
-├── INTAKE_DW.md                   # Formulário de entrada (fontes, regras, o que o cliente quer)
-├── CONVENCOES_DW.md               # Padrões de nomes, DDLs, índices e auditoria
+├── INTAKE_DW.md                   # Formulário de entrada (fontes, regras, perguntas do cliente)
 │
-├── entrega/                       # Pasta onde o engenheiro coloca os insumos do projeto
-│   ├── ddl/                       # DDLs das fontes OLTP
-│   ├── amostras/                  # Amostras das tabelas (10-20 linhas)
+├── entrada/                       # Insumos fornecidos pelo engenheiro de dados
+│   ├── README.md                  # Guia de como fornecer os insumos
+│   ├── ddl/                       # DDLs das fontes relacionais (OLTP)
+│   ├── amostras/                  # Amostras reais de dados (10 a 50 linhas)
 │   ├── arquivos_ftp/              # Modelos de CSV, TXT e planilhas Excel
-│   └── api_specs/                 # Exemplos de retorno JSON ou Swagger
+│   └── api_specs/                 # Exemplos de payload JSON ou especificações OpenAPI
 │
-└── templates/                     # Modelos canônicos de DDLs e relatórios
-    ├── 01_tb_controle_carga.sql   # DDL padrão corporativo de controle de cargas
-    ├── 02_stg_template.sql        # Modelo de tabela STG_*
-    ├── 03_odi_dim_template.sql    # Modelo de tabela auxiliar ODI_DIM_*
-    ├── 04_dim_template.sql        # Modelo de dimensão oficial com SCD2 e índices
-    ├── 05_fato_template.sql       # Modelo de fato dimensional com FKs e particionamento
-    ├── 06_init_default_records.sql # Inserção automática do registro -1 (Desconhecido)
-    └── RELATORIO_ESTRATEGIAS_MODELO.md # Template do relatório de linhagem e SSH
+└── templates/                     # Biblioteca de templates canônicos
+    ├── 01_tb_controle_carga.sql   # Tabela corporativa de controle e auditoria
+    ├── 02_stg_template.sql        # Modelo de tabela STG_* com metadados de lote
+    ├── 03_odi_dim_template.sql    # Modelo de tabela auxiliar ODI_DIM_* para IKM
+    ├── 04_dim_scd2_template.sql   # Dimensão oficial com SCD2, Sequence e B-Tree
+    ├── 05_fato_truncate_load_template.sql # Fato Estratégia A (Truncate & Load + Bitmap)
+    ├── 05_fato_merge_template.sql # Fato Estratégia B (Incremental via MERGE + B-Tree)
+    ├── 06_init_default_records_menos_1.sql # Carga da linha -1 (Não Informado)
+    ├── 07_prc_pos_carga_fato.sql  # Procedure PL/SQL pós-carga (rebuild + stats)
+    ├── 08_apache_hop_pipeline_template.hpl # Pipeline XML do Apache Hop
+    ├── 09_apache_hop_workflow_template.hwf # Workflow XML do Apache Hop
+    ├── 10_python_api_extractor_template.py # Extrator Python com OAuth2, flatten e oracledb
+    ├── 11_superset_dataset_template.yaml   # Dataset declarativo YAML do Superset
+    └── RELATORIO_ESTRATEGIAS_MODELO.md     # Template do relatório executivo e de linhagem
 ```
 
 ---
 
-## 3. Entregáveis de Cada Projeto de DW Planejado
+## 3. Destino dos Artefatos Gerados
 
-Ao submeter os insumos de um novo projeto pelo `INTAKE_DW.md`, o agente produzirá:
+Todos os arquivos gerados pelo agente para um projeto são salvos na pasta central de saídas:
+`saida/planejador_dw/<NOME_PROJETO>/`
 
-1. **Scripts SQL DDL Otimizados:**
-   - Criação das tabelas de Staging (`STG_*`).
-   - Criação das tabelas auxiliares de Dimensão (`ODI_DIM_*`).
-   - Criação das Dimensões oficiais (`DIM_*`) com índices B-Tree, Bitmaps e SCD2.
-   - Criação das Fatos (`FATO_*`) com chaves compostas, medidas `QTD_*`, auditoria `DTC_CARGA` e particionamento quando volumosa.
-   - Script de carga inicial da linha `-1` em todas as dimensões.
-2. **Relatório de Estratégias & Linhagem (`RELATORIO_ESTRATEGIAS.md`):**
-   - Matriz De/Para detalhando **como chegar em cada valor**.
-   - Especificação do comando `OdiOSCommand` para disparo do Hop e Python via SSH.
-   - Regras de Lookup de Surrogate Keys no ODI.
-3. **Estimativa de Sizing e Storage:**
-   - Projeção de volumetria anual em GB para o time de DBA e infraestrutura.
-4. **Ponte Direta para a Camada Semântica:**
-   - Arquivo pronto para plugar no módulo de Camada Semântica existente.
+A estrutura gerada para cada projeto inclui:
+- `01_controle_carga/`: DDL da tabela de auditoria.
+- `02_staging/`: DDLs das tabelas `STG_*`.
+- `03_dimensoes/`: DDLs das tabelas `ODI_DIM_*`, `DIM_*`, Sequences e script DML da linha `-1`.
+- `04_fatos/`: DDL da `FATO_*` configurada para a Estratégia A ou B.
+- `05_procedimentos_manutencao/`: Script da procedure `PRC_POS_CARGA_FATO` (se Estratégia A).
+- `06_pipelines_hop/`: Arquivos `.hpl` e `.hwf` para ingestão de arquivos.
+- `07_extratores_python/`: Scripts `.py` para ingestão de APIs.
+- `08_datasets_bi/`: Datasets YAML do Superset e especificações DAX para Power BI.
+- `09_relatorio_estrategias/`: Relatório completo `RELATORIO_ESTRATEGIAS.md`.
+
+---
+
+## 4. Documentos de Referência
+
+- [Guia do Engenheiro de DW](../../documentacao/guias/GUIA_ENGENHEIRO_DW.md) — Manual prático do engenheiro e biblioteca de prompts.
+- [Convenções Corporativas de DW](../../core/convencoes/CONVENCOES_DW.md) — Padrões e regras de modelagem dimensional e banco de dados.
+- [Pasta Central de Saídas](../../saida/planejador_dw/README.md) — Repositório de entregáveis gerados.

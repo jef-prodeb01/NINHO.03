@@ -4,6 +4,8 @@ __pycache__/
 *.pyc
 credenciais.md
 
+# Pasta de rascunhos, referências e ideias de outros projetos
+ideias/
 
 # Arquivos CSV de insumos brutos na raiz
 META_ORIENTACAO_IA*.csv

@@ -17,20 +17,20 @@
 
 | Arquivo | Finalidade |
 |---------|------------|
-| `inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` | Views DIM (uma por dimensão) |
-| `inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql` | Views EVENTO (uma por fato) |
-| `inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` | Views KPI (uma por pergunta) |
-| `inserts/meta_projeto/01_create_meta_tables.sql` | CREATE TABLE das 8 META_ |
-| `inserts/meta_projeto/01_meta_glossario.sql` | INSERTs META_GLOSSARIO |
-| `inserts/meta_projeto/02_meta_metrica.sql` | INSERTs META_METRICA |
-| `inserts/meta_projeto/03_meta_objeto.sql` | INSERTs META_OBJETO |
-| `inserts/meta_projeto/04_meta_relacionamento.sql` | INSERTs META_RELACIONAMENTO |
-| `inserts/meta_projeto/05_meta_regra_negocio.sql` | INSERTs META_REGRA_NEGOCIO |
-| `inserts/meta_projeto/06_meta_consulta_negocio.sql` | INSERTs META_CONSULTA_NEGOCIO |
-| `inserts/meta_projeto/07_meta_orientacao_ia.sql` | INSERTs META_ORIENTACAO_IA |
-| `inserts/meta_projeto/08_meta_valor_dominio.sql` | INSERTs META_VALOR_DOMINIO |
-| `inserts/meta_projeto/02_rls.sql` | RLS opcional (só se houver acesso restrito) |
-| `inserts/meta_projeto/09_validacoes.sql` | Checagens de integridade entre META_ e teste de execução das views/consultas |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` | Views DIM (uma por dimensão) |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql` | Views EVENTO (uma por fato) |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` | Views KPI (uma por pergunta) |
+| `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` | CREATE TABLE das 8 META_ |
+| `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` | INSERTs META_GLOSSARIO |
+| `saida/camada_semantica/meta_projeto/02_meta_metrica.sql` | INSERTs META_METRICA |
+| `saida/camada_semantica/meta_projeto/03_meta_objeto.sql` | INSERTs META_OBJETO |
+| `saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql` | INSERTs META_RELACIONAMENTO |
+| `saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql` | INSERTs META_REGRA_NEGOCIO |
+| `saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql` | INSERTs META_CONSULTA_NEGOCIO |
+| `saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql` | INSERTs META_ORIENTACAO_IA |
+| `saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql` | INSERTs META_VALOR_DOMINIO |
+| `saida/camada_semantica/meta_projeto/02_rls.sql` | RLS opcional (só se houver acesso restrito) |
+| `saida/camada_semantica/meta_projeto/09_validacoes.sql` | Checagens de integridade entre META_ e teste de execução das views/consultas |
 
 ### 0.2 Arquitetura em 3 Camadas
 
@@ -76,28 +76,28 @@ MV (MV_<PROJETO>_KPI_*) — opcional
 
 ```sql
 -- 1. Criar views analíticas
-@inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
-@inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql
-@inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
 
 -- 2. Criar tabelas META_ (executar uma vez)
-@inserts/meta_projeto/01_create_meta_tables.sql
+@saida/camada_semantica/meta_projeto/01_create_meta_tables.sql
 
 -- 3. Inserir dados META_ (executar nesta ordem)
-@inserts/meta_projeto/01_meta_glossario.sql
-@inserts/meta_projeto/02_meta_metrica.sql
-@inserts/meta_projeto/03_meta_objeto.sql
-@inserts/meta_projeto/04_meta_relacionamento.sql
-@inserts/meta_projeto/05_meta_regra_negocio.sql
-@inserts/meta_projeto/06_meta_consulta_negocio.sql
-@inserts/meta_projeto/07_meta_orientacao_ia.sql
-@inserts/meta_projeto/08_meta_valor_dominio.sql
+@saida/camada_semantica/meta_projeto/01_meta_glossario.sql
+@saida/camada_semantica/meta_projeto/02_meta_metrica.sql
+@saida/camada_semantica/meta_projeto/03_meta_objeto.sql
+@saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql
+@saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql
+@saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql
+@saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql
+@saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql
 
 -- 4. RLS (opcional, somente se houver acesso restrito)
-@inserts/meta_projeto/02_rls.sql
+@saida/camada_semantica/meta_projeto/02_rls.sql
 
 -- 5. Validações (sempre, após tudo acima)
-@inserts/meta_projeto/09_validacoes.sql
+@saida/camada_semantica/meta_projeto/09_validacoes.sql
 ```
 
 ### 0.4 Regras de Manutenção
@@ -385,28 +385,28 @@ COMMENT ON COLUMN VW_<PROJETO>_EVENTO.ID_FATO IS '...';
 
 ```sql
 -- 1. Criar views analíticas
-@inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
-@inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql
-@inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
 
 -- 2. Criar tabelas META_ (executar uma vez)
-@inserts/meta_projeto/01_create_meta_tables.sql
+@saida/camada_semantica/meta_projeto/01_create_meta_tables.sql
 
 -- 3. Inserir dados META_ (executar nesta ordem)
-@inserts/meta_projeto/01_meta_glossario.sql
-@inserts/meta_projeto/02_meta_metrica.sql
-@inserts/meta_projeto/03_meta_objeto.sql
-@inserts/meta_projeto/04_meta_relacionamento.sql
-@inserts/meta_projeto/05_meta_regra_negocio.sql
-@inserts/meta_projeto/06_meta_consulta_negocio.sql
-@inserts/meta_projeto/07_meta_orientacao_ia.sql
-@inserts/meta_projeto/08_meta_valor_dominio.sql
+@saida/camada_semantica/meta_projeto/01_meta_glossario.sql
+@saida/camada_semantica/meta_projeto/02_meta_metrica.sql
+@saida/camada_semantica/meta_projeto/03_meta_objeto.sql
+@saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql
+@saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql
+@saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql
+@saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql
+@saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql
 
 -- 4. RLS (opcional, somente se houver acesso restrito)
-@inserts/meta_projeto/02_rls.sql
+@saida/camada_semantica/meta_projeto/02_rls.sql
 
 -- 5. Validações (sempre, após tudo acima)
-@inserts/meta_projeto/09_validacoes.sql
+@saida/camada_semantica/meta_projeto/09_validacoes.sql
 ```
 
 ### 10.2 Queries de Validação

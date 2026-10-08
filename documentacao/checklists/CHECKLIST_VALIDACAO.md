@@ -28,7 +28,7 @@
 
 ## 2. Validação de Views Analíticas
 
-- [ ] `inserts/vw_analiticas/` gerado (views DIM, EVENTO, KPI)
+- [ ] `saida/camada_semantica/vw_analiticas/` gerado (views DIM, EVENTO, KPI)
 - [ ] Todas as views têm COMMENT ON na tabela
 - [ ] Todas as views têm COMMENT ON nas colunas
 - [ ] Grão de cada view documentado
@@ -42,7 +42,7 @@
 
 > **Atenção:** Se as tabelas `META_*` já existem no schema, pule esta seção.
 
-- [ ] `inserts/meta_projeto/01_create_meta_tables.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` gerado
 - [ ] Todas as 8 META_ estão presentes com coluna `PROJETO DEFAULT 'GLOBAL' NOT NULL`
 - [ ] Constraints de PK presentes (`PK_META_OBJETO` composta por `PROJETO, NOME_OBJETO`)
 - [ ] Unique constraints presentes (`UK_META_ORIENTACAO_IA` por `PROJETO, SECAO, ORDEM`)
@@ -55,14 +55,14 @@
 
 ## 4. Validação de INSERTs
 
-- [ ] `inserts/meta_projeto/01_meta_glossario.sql` gerado
-- [ ] `inserts/meta_projeto/02_meta_metrica.sql` gerado
-- [ ] `inserts/meta_projeto/03_meta_objeto.sql` gerado
-- [ ] `inserts/meta_projeto/04_meta_relacionamento.sql` gerado
-- [ ] `inserts/meta_projeto/05_meta_regra_negocio.sql` gerado
-- [ ] `inserts/meta_projeto/06_meta_consulta_negocio.sql` gerado
-- [ ] `inserts/meta_projeto/07_meta_orientacao_ia.sql` gerado
-- [ ] `inserts/meta_projeto/08_meta_valor_dominio.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/02_meta_metrica.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/03_meta_objeto.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql` gerado
+- [ ] `saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql` gerado
 
 ### Validação Específica por Arquivo
 
@@ -161,28 +161,28 @@
 
 ```sql
 -- 1. Criar views analíticas
-@inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
-@inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql
-@inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql
+@saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql
 
 -- 2. Criar tabelas META_ (executar uma vez)
-@inserts/meta_projeto/01_create_meta_tables.sql
+@saida/camada_semantica/meta_projeto/01_create_meta_tables.sql
 
 -- 3. Inserir dados META_ (executar nesta ordem)
-@inserts/meta_projeto/01_meta_glossario.sql
-@inserts/meta_projeto/02_meta_metrica.sql
-@inserts/meta_projeto/03_meta_objeto.sql
-@inserts/meta_projeto/04_meta_relacionamento.sql
-@inserts/meta_projeto/05_meta_regra_negocio.sql
-@inserts/meta_projeto/06_meta_consulta_negocio.sql
-@inserts/meta_projeto/07_meta_orientacao_ia.sql
-@inserts/meta_projeto/08_meta_valor_dominio.sql
+@saida/camada_semantica/meta_projeto/01_meta_glossario.sql
+@saida/camada_semantica/meta_projeto/02_meta_metrica.sql
+@saida/camada_semantica/meta_projeto/03_meta_objeto.sql
+@saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql
+@saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql
+@saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql
+@saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql
+@saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql
 
 -- 4. RLS (opcional, somente se houver acesso restrito)
-@inserts/meta_projeto/02_rls.sql
+@saida/camada_semantica/meta_projeto/02_rls.sql
 
 -- 5. Validações (sempre, após tudo acima)
-@inserts/meta_projeto/09_validacoes.sql
+@saida/camada_semantica/meta_projeto/09_validacoes.sql
 ```
 
 - [ ] Views analíticas executadas com sucesso
@@ -196,7 +196,7 @@
 
 ## 9. Validação Pós-Execução
 
-- [ ] `inserts/meta_projeto/09_validacoes.sql` executado sem órfãos nem falhas de execução
+- [ ] `saida/camada_semantica/meta_projeto/09_validacoes.sql` executado sem órfãos nem falhas de execução
 - [ ] Contagem de registros por META_
 - [ ] Teste de view (SELECT COUNT(*))
 - [ ] Teste de consulta (SELECT * FROM META_CONSULTA_NEGOCIO)

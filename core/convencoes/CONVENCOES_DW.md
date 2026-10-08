@@ -1,18 +1,21 @@
-# CONVENCOES_DW.md — Padrões e Convenções de Modelagem
+# CONVENCOES_DW.md — Padrões e Convenções Corporativas de Data Warehouse
 
-Este documento estabelece o **DNA corporativo** para a criação de tabelas e estruturas dimensionais no Oracle DW. O Planejador de DW segue essas convenções estritamente na geração de todos os scripts DDL.
+Este documento estabelece o **DNA corporativo** para arquitetura, modelagem dimensional e esteiras de dados no ecossistema analítico. O **Planejador de DW** segue essas convenções estritamente na geração de todos os scripts DDL, rotinas de carga, procedimentos de tuning e artefatos de integração.
 
 ---
 
-## 1. Padrão de Nomenclatura das Tabelas
+## 1. Padrão de Nomenclatura das Tabelas e Objetos
 
-| Camada | Padrão de Nome | Exemplo Real | Papel no Pipeline |
+| Camada / Objeto | Padrão de Nome | Exemplo Real | Papel no Pipeline |
 | :--- | :--- | :--- | :--- |
-| **Auditoria** | `TB_CONTROLE_CARGA` | `SDM_OLAP.TB_CONTROLE_CARGA` | Registra a conclusão e o timestamp de cada execução do projeto. |
-| **Staging** | `STG_<DOMINIO>_<ENTIDADE>` | `STG_DEIC_ACAO`, `STG_SEI_PROCEDIMENTO` | Aterrissagem inicial das fontes (Hop, Python ou ODI). |
-| **Auxiliar ODI** | `ODI_DIM_<DOMINIO>_<ENTIDADE>` | `ODI_DIM_DEIC_ACAO`, `ODI_DIM_SEI_MUNIC_DOCUMENTO` | Tabela de trabalho espelho para o componente de *Dimensões e Cubos* do ODI. |
-| **Dimensão** | `DIM_<DOMINIO>_<ENTIDADE>` | `DIM_DEIC_ACAO`, `DIM_SEI_MUNIC_ORGAO` | Dimensão oficial com Surrogate Key e histórico SCD Tipo 2. |
-| **Fato** | `FATO_<DOMINIO>_<EVENTO>` | `FATO_DEIC_ACAO`, `FATO_SEI_MUNIC_DOCUMENTO` | Fato transacional / acumulada com FKs dimensionais e medidas `QTD_*`. |
+| **Auditoria** | `TB_CONTROLE_CARGA` | `SDM_OLAP.TB_CONTROLE_CARGA` | Registra início, fim, status (`SUCESSO`/`FALHA`) e volumetria de cada job. |
+| **Staging Area** | `STG_<SISTEMA>_<DOMINIO>_<NOME>` | `STG_SEI_BA_F_AND_PROC_3M`, `STG_COST_MANAGEMENT_API` | Aterrissagem inicial das fontes (Hop, Python ou ODI) sem transformações pesadas. |
+| **Auxiliar ODI** | `ODI_DIM_<SISTEMA>_<DOMINIO>_<NOME>` | `ODI_DIM_SEI_BA_UNIDADE`, `ODI_DIM_COST_MGMT_PROJETO` | Tabela transitória espelho com flag `DES_STATUS_REGISTRO` ('I'/'U'/'D') para o IKM do ODI. |
+| **Dimensão** | `DIM_<SISTEMA>_<DOMINIO>_<NOME>` | `DIM_SEI_BA_UNIDADE`, `DIM_COST_MGMT_PROJETO` | Dimensão oficial com Surrogate Key (`DIMENSION_KEY`), vigência SCD Tipo 2 e B-Tree. |
+| **Dimensão Tempo** | `DIM_TEMPO` | `DIM_TEMPO` | Dimensão conformada de calendário (chave integer `YYYYMMDD` ou surrogate key). |
+| **Fato** | `FATO_<SISTEMA>_<DOMINIO>_<NOME>` | `FATO_SEI_BA_ANDA_PROCES_3M`, `FATO_COST_MGMT_CUSTO` | Fato com grão físico explícito, FKs `NOT NULL` apontando para `-1` e medidas tipadas. |
+| **Procedure Tuning** | `PRC_<ACAO>_<ALVO>` | `PRC_POS_CARGA_FATO` | Rotina PL/SQL para rebuild de índices `NOLOGGING` e atualização do `DBMS_STATS`. |
+| **Sequences** | `SEQ_<TABELA>` | `SEQ_DIM_SEI_BA_ORGAO`, `SEQ_DIM_COST_MGMT_CLUSTER` | Gerador automático de Surrogate Keys para dimensões no Oracle. |
 
 > **Regra de Caixas:** TODOS os identificadores de tabelas, colunas, constraints e índices devem ser gerados em **MAIÚSCULAS**.
 
@@ -20,42 +23,49 @@ Este documento estabelece o **DNA corporativo** para a criação de tabelas e es
 
 ## 2. Padrão da Camada `STG_*` (Staging de Ingestão)
 
-- **Objetivo:** Receber os dados brutos da fonte sem transformação pesada.
-- **Chave Primária:** Chave de negócio natural da origem (`ID_<ENTIDADE>`).
-- **Colunas:** Podem mesclar atributos descritivos e medidas numéricas que depois serão separadas entre Fato e Dimensões.
-- **Tablespace:** Utilizar a tablespace designada do projeto (`<PROJETO>_DATA`).
+- **Objetivo:** Receber dados brutos da fonte com tipagem básica e mínima intervenção.
+- **Chave Primária:** Chave natural de negócio da origem (`ID_<ENTIDADE>` ou UUID).
+- **Metadados de Carga Obrigatórios:**
+  - `DTC_EXTRACAO DATE DEFAULT SYSDATE`: Momento exato em que a linha aterrissou na staging.
+  - `ID_LOTE NUMBER`: Identificador do lote para rastreabilidade de cargas em micro-lotes.
+- **Tablespace:** Utilizar a tablespace de dados do projeto (`<PROJETO>_DATA`).
 
 ---
 
-## 3. Padrão da Camada `DIM_*` (Dimensão Oficial)
+## 3. Padrão da Camada `DIM_*` (Dimensão Oficial com SCD Tipo 2)
 
-Toda dimensão corporativa possui a seguinte estrutura canônica:
+Toda dimensão corporativa com histórico de alterações deve conter a seguinte estrutura canônica:
 
 ### 3.1 Colunas Obrigatórias
 ```sql
-DIMENSION_KEY     NUMBER(38,0) NOT NULL, -- Surrogate Key (PK)
-ID_<ENTIDADE>     NUMBER(38,0) NOT NULL, -- Chave de Negócio / Natural Key
--- [Colunas de Atributos de Negócio]
-DTC_EFETIVACAO    DATE,                  -- Início da validade da versão
-DTC_EXPIRACAO     DATE,                  -- Fim da validade (NULL = versão vigente!)
-DES_ATUALIZAR     CHAR(1)                -- Flag de controle técnico do ODI ('S'/'N')
+CREATE TABLE "<SCHEMA>"."DIM_<NOME>" (
+    "DIMENSION_KEY"    NUMBER(38,0) NOT NULL,   -- Surrogate Key (PK via Sequence)
+    "ID_<ENTIDADE>"    NUMBER(38,0) NOT NULL,   -- Chave de Negócio / Natural Key
+    -- [Atributos descritivos de negócio...]
+    "SIN_ATIVO"        CHAR(1 CHAR) DEFAULT 'S' NOT NULL, -- 'S' / 'N'
+    "DTC_EFETIVACAO"   DATE NOT NULL,           -- Início da vigência do registro
+    "DTC_EXPIRACAO"    DATE,                    -- NULL ou 2999-12-31 = Versão Vigente
+    "DES_ATUALIZAR"    CHAR(1 CHAR) DEFAULT 'S' NOT NULL, -- Flag técnica para CDC ('S'/'N')
+    CONSTRAINT "PK_DIM_<NOME>" PRIMARY KEY ("DIMENSION_KEY")
+);
 ```
 
-### 3.2 Constraints e Índices Obrigatórios
-1. **Primary Key:** `CONSTRAINT <NOME_TABELA>_PK PRIMARY KEY (DIMENSION_KEY)`.
-2. **Índice e Unique Constraint de Histórico:**
-   ```sql
-   CREATE INDEX IDX_<ENTIDADE>_EFETIV ON <NOME_TABELA> (ID_<ENTIDADE>, DTC_EFETIVACAO);
-   ALTER TABLE <NOME_TABELA> ADD CONSTRAINT <NOME_TABELA>_UNIQUE UNIQUE (ID_<ENTIDADE>, DTC_EFETIVACAO);
-   ```
+### 3.2 Regra de Ouro: Índices B-TREE em Dimensões
+- **PROIBIDO usar índices Bitmap em tabelas Dimensão:** Como dimensões sofrem atualizações incrementais contínuas de expiração (`UPDATE DTC_EXPIRACAO = SYSDATE`) e inserção de novas versões, índices Bitmap causariam bloqueios de blocos inteiros no Oracle, gerando deadlocks severos (**`ORA-00060: deadlock detected`**).
+- **Foco dos Índices B-Tree:**
+  1. `PK_DIM_<NOME>` em `DIMENSION_KEY` (Unique B-Tree).
+  2. `IDX_<NOME>_LOOKUP` em `(ID_<ENTIDADE>, DTC_EFETIVACAO)` para acelerar lookups do SCD2 no ETL.
+  3. Campos descritivos de alta seletividade frequentemente filtrados no BI (`SIGLA`, `LOGIN`, `CODIGO`).
 
 ### 3.3 Registro Padrão Desconhecido (Linha `-1`)
-Toda dimensão deve ter obrigatoriamente um registro inicial de chave `-1` para garantir que fatos com chaves nulas ou ainda não cadastradas não quebrem a integridade:
+Toda dimensão deve possuir obrigatoriamente um registro inicial fixo carregado via DML:
 ```sql
-INSERT INTO DIM_<DOMINIO>_<ENTIDADE> (
-    DIMENSION_KEY, ID_<ENTIDADE>, DTC_EFETIVACAO, DTC_EXPIRACAO, DES_ATUALIZAR, [DESCRICAO]
+INSERT INTO "<SCHEMA>"."DIM_<NOME>" (
+    "DIMENSION_KEY", "ID_<ENTIDADE>", "SIN_ATIVO", 
+    "DTC_EFETIVACAO", "DTC_EXPIRACAO", "DES_ATUALIZAR", [ATRIBUTO_TEXTUAL]
 ) VALUES (
-    -1, -1, TO_DATE('1900-01-01', 'YYYY-MM-DD'), NULL, 'N', 'NÃO INFORMADO'
+    -1, -1, 'N', 
+    TO_DATE('1900-01-01', 'YYYY-MM-DD'), NULL, 'N', 'NAO INFORMADO'
 );
 ```
 
@@ -64,7 +74,11 @@ INSERT INTO DIM_<DOMINIO>_<ENTIDADE> (
 ## 4. Padrão da Camada `ODI_DIM_*` (Auxiliar de Dimensão do ODI)
 
 - **Clone Estrutural:** Possui exatamente as mesmas colunas da `DIM_*` correspondente.
-- **Sem Constraints:** Não deve conter PK, FK, Unique ou índices, pois é truncada e recarregada pelo IKM do ODI durante o processamento de *Dimensões e Cubos*.
+- **Coluna Adicional de CDC:** `DES_STATUS_REGISTRO CHAR(1 CHAR)`:
+  - `'I'` (Insert): Novo registro identificado na origem.
+  - `'U'` (Update): Atributo rastreado alterou; gera expiração da versão anterior e inserção da nova versão.
+  - `'D'` (Delete): Registro inativado na origem.
+- **Sem Constraints:** Não deve conter PK, FK ou índices restritivos, pois é truncada e recarregada pelo IKM do ODI durante o processamento.
 
 ---
 
@@ -72,44 +86,135 @@ INSERT INTO DIM_<DOMINIO>_<ENTIDADE> (
 
 ### 5.1 Colunas Obrigatórias
 ```sql
-DIM_<DOMINIO>_<ENTIDADE_1> NUMBER(38,0), -- FK para DIMENSION_KEY da Dimensão 1
-DIM_<DOMINIO>_<ENTIDADE_2> NUMBER(38,0), -- FK para DIMENSION_KEY da Dimensão 2
-DIM_TEMPO                  NUMBER(38,0), -- FK para DIM_TEMPO (DIMENSION_KEY)
-QTD_<NOME_MEDIDA>          NUMBER(38,0), -- Medidas quantitativas (prefixo QTD_ ou VL_)
-DTC_CARGA                  DATE          -- Timestamp de gravação da linha no DW
+DIM_<DOMINIO>_<ENTIDADE_1> NUMBER(38,0) NOT NULL, -- FK para DIMENSION_KEY da Dimensão 1
+DIM_<DOMINIO>_<ENTIDADE_2> NUMBER(38,0) NOT NULL, -- FK para DIMENSION_KEY da Dimensão 2
+DIM_TEMPO                  NUMBER(38,0) NOT NULL, -- FK para DIM_TEMPO (YYYYMMDD ou SK)
+-- [Medidas quantitativas com prefixos padronizados...]
+DTC_CARGA                  DATE DEFAULT SYSDATE NOT NULL -- Timestamp de gravação da linha no DW
 ```
 
-### 5.2 Primary Key Composta
-- A PK da tabela Fato é sempre a combinação de **todas as chaves estrangeiras dimensionais**:
-  ```sql
-  CONSTRAINT FATO_<NOME>_PK PRIMARY KEY (DIM_ENTIDADE_1, DIM_ENTIDADE_2, DIM_TEMPO)
-  ```
+> ⚠️ **Nenhuma Foreign Key na Fato pode ser nula (`NOT NULL ENABLE`):** Quando a origem trouxer valor nulo ou desconhecido, o mapeamento ETL deve converter obrigatoriamente para `-1` via expressão `NVL(LOOKUP.DIMENSION_KEY, -1)`.
 
-### 5.3 Foreign Keys
-- Devem referenciar explicitamente a coluna `DIMENSION_KEY` de cada dimensão:
-  ```sql
-  ALTER TABLE FATO_<NOME> ADD CONSTRAINT FATO_<NOME>_DIM_<ENTIDADE>_FK
-      FOREIGN KEY (DIM_<ENTIDADE>) REFERENCES DIM_<ENTIDADE> (DIMENSION_KEY);
-  ```
+### 5.2 Taxonomia e Prefixos de Métricas
+* `TOT_` ou `QTD_`: Contagens absolutas e volumetrias aditivas (ex: `QTD_PROCESSOS_GERADOS`, `QTD_CPU_USO_CORE_HOURS`, `QTD_PVC`).
+* `VAL_` ou `SOM_`: Valores monetários em R$ e somas financeiras (ex: `VAL_CUSTO_TOTAL`, `VAL_CUSTO_PLATAFORMA_DIST`).
+* `MED_`: Médias estatísticas pré-agregadas (ex: `MED_DIAS_TRAMITACAO`, `MED_CONSUMO_RAM_GIB`).
+* `IND_` ou `PCT_`: Indicadores percentuais e taxas (ex: `IND_PERM_ATIVA`, `PCT_EFICIENCIA_CPU`).
+* `DUR_` ou `DIAS_`: Durações temporais e SLAs (ex: `DIAS_PERMANENCIA_ATIVIDADE`).
 
 ---
 
-## 6. Otimização Física de Performance (Oracle Tuning)
+## 6. Seleção da Estratégia de Carga da Fato (Dual Strategy)
 
-O Planejador não gera DDLs engessados. Ele aplica as seguintes regras de tuning:
+O Planejador de DW suporta duas estratégias distintas com base na volumetria e perfil da fonte:
 
-### 6.1 Índices Bitmap vs. B-Tree
-- **B-Tree:** Utilizado em PKs, chaves de negócio (`ID_*`) e colunas com alta cardinalidade.
-- **Bitmap:** Utilizado em colunas com **baixa cardinalidade** para acelerar filtros em estrela:
-  - Indicadores booleanos/flags (`SIN_ATIVO_*`, `HOUVE_*`, `DES_ATUALIZAR`).
-  - Categorias discretas (`TIPO_USUARIO`, `FASE_ACAO`, `STATUS_*`).
-  - Nas FKs de tabelas FATO com mais de 1 milhão de linhas (habilita *Star Transformation*).
+### Estratégia A: Truncate & Load Massivo (Padrão SEI Bahia)
+* **Cenário:** Grandes janelas históricas (ex: últimos 3 meses ou ano fechado) recarregadas periodicamente em lote a partir de bancos OLTP sem DML concorrente.
+* **Indexação Física:**
+  * **BITMAP INDEX** em todas as colunas de FK (`DIM_...`) e flags de baixa cardinalidade.
+  * Habilita o plano **Star Transformation** do otimizador CBO no Oracle.
+  * PK da fato utiliza B-Tree.
+* **Manutenção Obrigatória:** Uso da procedure `PRC_POS_CARGA_FATO` para executar rebuild `NOLOGGING` e atualizar `DBMS_STATS(CASCADE => TRUE)`.
 
-### 6.2 Particionamento (Para Fatos Volumosas)
-- Quando o volume projetado ultrapassar **5 milhões de linhas**:
-  - Aplicar **Interval Partitioning por Mês/Ano** baseado na data do evento (`DIM_TEMPO` ou `DTC_CARGA`).
-  - Permite ganho massivo de performance (*Partition Pruning*) e viabiliza *Partition Exchange* no ODI.
+### Estratégia B: Carga Incremental Idempotente via `MERGE INTO` (Padrão FinOps / COAPS)
+* **Cenário:** Cargas contínuas intra-dia ou diárias de APIs e telemetria (ex: últimos 10 dias) onde novos dados e atualizações convivem sem truncar o histórico.
+* **Lógica SQL:**
+  ```sql
+  MERGE INTO "<SCHEMA>"."FATO_<NOME>" f
+  USING (SELECT ...) src
+  ON (f.DIM_ENTIDADE_1 = src.DIM_ENTIDADE_1 AND f.DIM_TEMPO = src.DIM_TEMPO)
+  WHEN MATCHED THEN UPDATE SET f.VAL_TOTAL = src.VAL_TOTAL, f.DTC_ATUALIZACAO = SYSDATE
+  WHEN NOT MATCHED THEN INSERT (...) VALUES (...);
+  ```
+* **Indexação Física:**
+  * **B-TREE INDEX** normal e índices compostos nas chaves de busca do `ON (...)`.
+  * Índices Bitmap são estritamente evitados aqui para prevenir contenção de locks durante o `MERGE`.
 
-### 6.3 Documentação Obrigatória (Comments)
-- Toda tabela gerada deve conter `COMMENT ON TABLE`.
-- Toda coluna gerada deve conter `COMMENT ON COLUMN`, descrevendo se é chave substituta, chave de negócio, medida aditiva ou coluna de controle.
+---
+
+## 7. Procedimento Automatizado Pós-Carga (`PRC_POS_CARGA_FATO`)
+
+Toda fato carregada via *Truncate & Load* deve possuir chamada automatizada para a procedure corporativa:
+```sql
+CREATE OR REPLACE PROCEDURE "<SCHEMA>"."PRC_POS_CARGA_FATO" (
+    p_tabela_fato IN VARCHAR2
+) IS
+    v_sql VARCHAR2(1000);
+BEGIN
+    -- 1. Rebuild NOLOGGING de índices UNUSABLE ou BITMAP da fato
+    FOR r IN (
+        SELECT index_name, status, index_type
+        FROM all_indexes
+        WHERE owner = '<SCHEMA>'
+          AND table_name = UPPER(p_tabela_fato)
+          AND (status = 'UNUSABLE' OR index_type LIKE '%BITMAP%')
+    ) LOOP
+        BEGIN
+            v_sql := 'ALTER INDEX "<SCHEMA>"."' || r.index_name || '" REBUILD NOLOGGING';
+            EXECUTE IMMEDIATE v_sql;
+            v_sql := 'ALTER INDEX "<SCHEMA>"."' || r.index_name || '" LOGGING';
+            EXECUTE IMMEDIATE v_sql;
+        EXCEPTION
+            WHEN OTHERS THEN
+                DBMS_OUTPUT.PUT_LINE('Erro ao reconstruir indice ' || r.index_name || ': ' || SQLERRM);
+        END;
+    END LOOP;
+
+    -- 2. Coleta de Estatísticas completas com CASCADE
+    DBMS_STATS.GATHER_TABLE_STATS(
+        ownname          => '<SCHEMA>',
+        tabname          => UPPER(p_tabela_fato),
+        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+        method_opt       => 'FOR ALL COLUMNS SIZE AUTO',
+        degree           => DBMS_STATS.DEFAULT_DEGREE,
+        cascade          => TRUE
+    );
+END;
+/
+```
+
+---
+
+## 8. Esteira de Ingestão Híbrida & Orquestração
+
+### 8.1 Ingestão por Tipo de Fonte
+1. **Bancos Relacionais (OLTP):** Mapeamentos diretos via **ODI 12c** (LKM SQL to Oracle / LKM Oracle to Oracle).
+2. **Arquivos / Planilhas (CSV, Excel, SFTP):** Pipelines declarativos no **Apache Hop** (`.hpl` / `.hwf`) gravando na Staging via `Insert / update`.
+3. **APIs REST e Serviços Externos:** Scripts modulares em **Python** com:
+   * Autenticação OAuth2 (Bearer Token com auto-refresh).
+   * Paginação resiliente com backoff exponencial para erros 429/503.
+   * `flatten.py` para transformar JSON hierárquico em visão tabular plana.
+   * Enriquecimento por regex para derivar órgãos/unidades (`REGEXP_SUBSTR`).
+
+### 8.2 Orquestração Centralizada no ODI
+O ODI é o maestro corporativo. Quando uma carga depende de scripts Python ou Apache Hop, o pacote do ODI dispara a execução remota através do componente **`OdiOSCommand`** (via SSH com chave assimétrica):
+```bash
+ssh -i /home/oracle/.ssh/id_rsa user_hop@servidor-hop "/opt/apache-hop/hop-run.sh -r local -j <PROJETO> -f /opt/hop/pipelines/<CARGA>.hpl"
+```
+
+---
+
+## 9. Camada Semântica & Consumo Analítico (Power BI & Superset)
+
+### 9.1 Padrão Power BI
+- **Modo de Conexão:** **Import Mode (Importação)** para a memória VertiPaq.
+- **Topologia:** **Modelo Estrela (Star Schema)** puro.
+- **Relacionamentos:**
+  - Cardinalidade: **1 para Muitos (1:*)** das Dimensões para a Fato.
+  - Direção do Filtro Cruzado: **Única (Single)**.
+- **Dimensão Calendário (`DIM_TEMPO`):** Marcada como *Tabela de Data* oficial (`DTC_DATA`).
+- **Medidas DAX:** Tabela dedicada `_Medidas`, organizadas por pastas de exibição com cálculo explícito e tratamento de divisão por zero (`DIVIDE`).
+
+### 9.2 Padrão Modern Data Stack / Superset
+- Datasets definidos declarativamente em código **YAML** contendo métricas calculadas e expressões SQL exportáveis para versionamento em Git.
+- Scripts de bootstrap para criação automática de conexões e dashboards via API REST.
+
+---
+
+## 10. Arquitetura Lakehouse com MongoDB (Transição Cloud / AWS)
+
+Para cenários onde os dados processados transitam para um Lakehouse documental antes da publicação na AWS (AWS Glue e AWS DataZone):
+- **Estratégia de Multi-Tenancy Governamental:**
+  - Segregação por Banco de Dados: `lakehouse_<orgao>` (ex: `lakehouse_sec`, `lakehouse_saeb`, `lakehouse_prodeb`).
+  - Coleções Particionadas por Domínio: `<dominio>_<evento>` (ex: `sei_andamentos`, `finops_custos_diarios`).
+- **Padrão de Documento:** Cada documento armazena o evento em JSON flat com metadados de governança obrigatórios (`orgao`, `unidade_origem`, `extraido_em`, `batch_id`, `schema_version`) facilitando o catálogo automático pelo AWS Glue Crawler.

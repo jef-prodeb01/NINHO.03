@@ -1,7 +1,7 @@
 # amostras/ — Perfil e amostras dos dados
 
 Coloque aqui os resultados das queries da Seção 2 do
-[GUIA_ENGENHEIRO_DADOS.md](../../GUIA_ENGENHEIRO_DADOS.md):
+[GUIA_ENGENHEIRO_SEMANTICA.md](../../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md):
 
 ```
 inventario_tabelas.txt    <- 2.1 (select único: lista de tabelas + comentários + PK/FK)

@@ -1,38 +1,38 @@
 # Inserts da Camada Semântica — REFERÊNCIA
 
-> **Atenção:** Este diretório contém REFERÊNCIAS dos INSERTs das tabelas META_.
-> Os scripts executáveis estão em `inserts/meta_projeto/`.
-> Os INSERTs são gerados pela IA a partir dos insumos do INTAKE.
+> **Atenção:** Este diretório contém MODELOS/REFERÊNCIAS dos INSERTs das tabelas META_.
+> Os scripts executáveis gerados para o projeto ficam em `saida/camada_semantica/meta_projeto/`.
+> Os INSERTs são gerados pela IA a partir dos insumos do INTAKE_SEMANTICA.
 
 ## Estrutura
 
 | Arquivo | Conteúdo |
 |---------|----------|
-| `01_meta_glossario.sql` | INSERTs para META_GLOSSARIO |
-| `02_meta_metrica.sql` | INSERTs para META_METRICA |
-| `03_meta_objeto.sql` | INSERTs para META_OBJETO |
-| `04_meta_relacionamento.sql` | INSERTs para META_RELACIONAMENTO |
-| `05_meta_regra_negocio.sql` | INSERTs para META_REGRA_NEGOCIO |
-| `06_meta_consulta_negocio.sql` | INSERTs para META_CONSULTA_NEGOCIO |
-| `07_meta_orientacao_ia.sql` | INSERTs para META_ORIENTACAO_IA |
-| `08_meta_valor_dominio.sql` | INSERTs para META_VALOR_DOMINIO |
+| `01_meta_glossario.sql` | Modelo de INSERTs para META_GLOSSARIO |
+| `02_meta_metrica.sql` | Modelo de INSERTs para META_METRICA |
+| `03_meta_objeto.sql` | Modelo de INSERTs para META_OBJETO |
+| `04_meta_relacionamento.sql` | Modelo de INSERTs para META_RELACIONAMENTO |
+| `05_meta_regra_negocio.sql` | Modelo de INSERTs para META_REGRA_NEGOCIO |
+| `06_meta_consulta_negocio.sql` | Modelo de INSERTs para META_CONSULTA_NEGOCIO |
+| `07_meta_orientacao_ia.sql` | Modelo de INSERTs para META_ORIENTACAO_IA |
+| `08_meta_valor_dominio.sql` | Modelo de INSERTs para META_VALOR_DOMINIO |
 
 ## Fluxo de Validação
 
 ```
-1. IA gera INSERTs em inserts/meta_projeto/
+1. IA gera INSERTs em saida/camada_semantica/meta_projeto/
 2. Engenheiro revisa cada INSERT
 3. Engenheiro valida SQL das perguntas (06_meta_consulta_negocio.sql)
 4. Engenheiro confirma execução
-5. IA atualiza PROJETO_RESUMO.md
+5. IA atualiza documentacao/catalogo_projetos/PROJETO_RESUMO.md
 ```
 
-## Ordem de Execução (scripts em inserts/meta_projeto/)
+## Ordem de Execução (scripts em saida/camada_semantica/meta_projeto/)
 
-### Executando de dentro da pasta inserts/meta_projeto/
+### Executando de dentro da pasta saida/camada_semantica/meta_projeto/
 
 ```sql
--- 1. Criar tabelas (executar uma vez)
+-- 1. Criar tabelas (executar uma vez se ainda não existirem)
 @01_create_meta_tables.sql
 
 -- 2. Inserir dados (executar nesta ordem)
@@ -50,11 +50,11 @@
 
 ```sql
 -- 1. Criar tabelas
-@C:\caminho\para\inserts\meta_projeto\01_create_meta_tables.sql
+@C:\caminho\para\saida\camada_semantica\meta_projeto\01_create_meta_tables.sql
 
 -- 2. Inserir dados
-@C:\caminho\para\inserts\meta_projeto\01_meta_glossario.sql
-@C:\caminho\para\inserts\meta_projeto\02_meta_metrica.sql
+@C:\caminho\para\saida\camada_semantica\meta_projeto\01_meta_glossario.sql
+@C:\caminho\para\saida\camada_semantica\meta_projeto\02_meta_metrica.sql
 -- ... etc
 ```
 
@@ -62,11 +62,11 @@
 
 ```sql
 -- 1. Criar tabelas
-@inserts/meta_projeto/01_create_meta_tables.sql
+@saida/camada_semantica/meta_projeto/01_create_meta_tables.sql
 
 -- 2. Inserir dados
-@inserts/meta_projeto/01_meta_glossario.sql
-@inserts/meta_projeto/02_meta_metrica.sql
+@saida/camada_semantica/meta_projeto/01_meta_glossario.sql
+@saida/camada_semantica/meta_projeto/02_meta_metrica.sql
 -- ... etc
 ```
 
@@ -75,4 +75,4 @@
 - ❌ Nunca execute INSERTs sem validar primeiro
 - ❌ Nunca altere INSERTs diretamente no Oracle
 - ✅ Sempre valide SQL das perguntas antes de executar 06_meta_consulta_negocio.sql
-- ✅ Sempre atualize PROJETO_RESUMO.md após execução
+- ✅ Sempre atualize documentacao/catalogo_projetos/PROJETO_RESUMO.md após execução

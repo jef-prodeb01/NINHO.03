@@ -8,6 +8,10 @@ semântica (views analíticas + tabelas `META_`) sobre um DW Oracle existente.
 > **Objetivo**: entregar um pacote de insumos completo, sem idas e vindas.
 > **Resultado**: a camada semântica é gerada a partir do que você entregar aqui.
 
+> 💡 **VEIO DO PLANEJADOR DE DW (`modulos/planejador_dw/`)?**  
+> Se o DW foi projetado dentro do NINHO, **você não precisa rodar queries de extração manual**!  
+> Basta acionar o comando `/concluir-dw` (ou rodar `python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto <PROJETO>`). Todos os DDLs consolidados, amostras, relatórios de ETL e o formulário `INTAKE_SEMANTICA.md` já são gerados e entregues automaticamente em `entrega/camada_semantica/`. Você pode pular a extração manual e ir direto para o comando `/iniciar-semantica`.
+
 ---
 
 ## Sumário
@@ -145,7 +149,7 @@ ORDER BY table_name, ordem;
 ### Onde entregar
 
 ```
-entrega/ddl/ddl_completo.sql
+entrega/camada_semantica/ddl/ddl_completo.sql
 ```
 
 ### Checklist de qualidade
@@ -162,7 +166,7 @@ entrega/ddl/ddl_completo.sql
 
 Não precisa exportar massa de dados — precisamos entender **o que os dados
 contêm**. Rode as queries abaixo e salve os resultados em
-`entrega/amostras/`.
+`entrega/camada_semantica/amostras/`.
 
 ### 2.1 Inventário de tabelas (select único)
 
@@ -191,7 +195,7 @@ LEFT JOIN user_tab_comments tc ON tc.table_name = t.table_name AND tc.table_type
 ORDER BY t.table_name;
 ```
 
-> Cole o resultado (texto) em `entrega/amostras/inventario_tabelas.txt`.
+> Cole o resultado (texto) em `entrega/camada_semantica/amostras/inventario_tabelas.txt`.
 > `num_rows`/`last_analyzed` vêm das estatísticas do otimizador — se
 > estiverem vazias ou desatualizadas, rode antes:
 > `EXEC DBMS_STATS.GATHER_SCHEMA_STATS(ownname => USER, cascade => TRUE);`
@@ -259,9 +263,9 @@ SELECT * FROM <tabela> FETCH FIRST 20 ROWS ONLY;
 ### Onde entregar
 
 ```
-entrega/amostras/inventario_tabelas.txt   <- 2.1
-entrega/amostras/colunas_categoricas.txt  <- 2.2
-entrega/amostras/amostras_dados.txt       <- 2.3, 2.4, 2.5 + respostas abaixo
+entrega/camada_semantica/amostras/inventario_tabelas.txt   <- 2.1
+entrega/camada_semantica/amostras/colunas_categoricas.txt  <- 2.2
+entrega/camada_semantica/amostras/amostras_dados.txt       <- 2.3, 2.4, 2.5 + respostas abaixo
 ```
 
 ### Perguntas que você deve responder olhando as amostras
@@ -1010,17 +1014,17 @@ Projeto: <NOME_DO_PROJETO>
 Versão atual: <versão>
 
 Contexto para o novo engenheiro:
-1. Leia o PROJETO_RESUMO.md para entender o estado atual
-2. Leia o PROJETO_VERSION.md para entender o histórico
-3. Os scripts SQL estão em inserts/ (vw_analiticas/, meta_projeto/)
+1. Leia o documentacao/catalogo_projetos/PROJETO_RESUMO.md para entender o estado atual
+2. Leia o documentacao/catalogo_projetos/PROJETO_VERSION.md para entender o histórico
+3. Os scripts SQL estão em saida/camada_semantica/ (vw_analiticas/, meta_projeto/)
 4. Ordens de execução:
-   - inserts/vw_analiticas/vw_<projeto>_dim_<nome>.sql → cria views DIM
-   - inserts/vw_analiticas/vw_<projeto>_evento.sql → cria views EVENTO
-   - inserts/vw_analiticas/vw_<projeto>_kpi_<nome>.sql → cria views KPI
-   - inserts/meta_projeto/01_create_meta_tables.sql → cria tabelas META_
-   - inserts/meta_projeto/01_meta_glossario.sql … 08_meta_valor_dominio.sql → insere dados semânticos (nesta ordem)
-   - inserts/meta_projeto/02_rls.sql → RLS (só se houver acesso restrito)
-   - inserts/meta_projeto/09_validacoes.sql → checagens de integridade e execução
+   - saida/camada_semantica/vw_analiticas/vw_<projeto>_dim_<nome>.sql → cria views DIM
+   - saida/camada_semantica/vw_analiticas/vw_<projeto>_evento.sql → cria views EVENTO
+   - saida/camada_semantica/vw_analiticas/vw_<projeto>_kpi_<nome>.sql → cria views KPI
+   - saida/camada_semantica/meta_projeto/01_create_meta_tables.sql → cria tabelas META_
+   - saida/camada_semantica/meta_projeto/01_meta_glossario.sql … 08_meta_valor_dominio.sql → insere dados semânticos (nesta ordem)
+   - saida/camada_semantica/meta_projeto/02_rls.sql → RLS (só se houver acesso restrito)
+   - saida/camada_semantica/meta_projeto/09_validacoes.sql → checagens de integridade e execução
 
 Gere um resumo executivo para o novo engenheiro.
 ```
@@ -1035,14 +1039,14 @@ Projeto: <NOME_DO_PROJETO>
 Versão atual: <versão>
 
 Contexto para a nova IA:
-1. Leia o PROJETO_RESUMO.md para entender o estado atual
-2. Leia o PROJETO_VERSION.md para entender o histórico
-3. Os scripts SQL estão em inserts/ (vw_analiticas/, meta_projeto/)
+1. Leia o documentacao/catalogo_projetos/PROJETO_RESUMO.md para entender o estado atual
+2. Leia o documentacao/catalogo_projetos/PROJETO_VERSION.md para entender o histórico
+3. Os scripts SQL estão em saida/camada_semantica/ (vw_analiticas/, meta_projeto/)
 4. Regras críticas:
-   - Sempre atualizar PROJETO_RESUMO.md após mudanças
+   - Sempre atualizar documentacao/catalogo_projetos/PROJETO_RESUMO.md após mudanças
    - Nunca alterar META_ diretamente no Oracle
    - Validar scripts antes de executar
-   - Gerar documentação em exemplo_tabelas/ antes de copiar para raiz
+   - Gerar documentação baseando-se em modulos/camada_semantica/templates/ antes de copiar para documentacao/catalogo_projetos/
 
 Gere um resumo técnico para a nova IA.
 ```

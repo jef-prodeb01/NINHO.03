@@ -75,13 +75,13 @@
 - Perguntas: `<quantidade>` perguntas
 
 **Scripts gerados:**
-- `inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql`
-- `inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql`
-- `inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql`
-- `inserts/meta_projeto/01_create_meta_tables.sql`
-- `inserts/meta_projeto/01-08.sql`
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql`
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql`
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql`
+- `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`
+- `saida/camada_semantica/meta_projeto/01-08.sql`
 
-**Arquivo PROJETO_RESUMO.md:** Versão inicial preenchida
+**Arquivo PROJETO_RESUMO.md:** Versão inicial preenchida em documentacao/catalogo_projetos/PROJETO_RESUMO.md
 
 ---
 
@@ -102,11 +102,11 @@
 - Perguntas adicionadas: 1
 
 **Scripts gerados:**
-- `inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` (UPDATE)
-- `inserts/meta_projeto/05_meta_regra_negocio.sql` (UPDATE)
-- `inserts/meta_projeto/06_meta_consulta_negocio.sql` (INSERT)
+- `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` (UPDATE)
+- `saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql` (UPDATE)
+- `saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql` (INSERT)
 
-**Arquivo PROJETO_RESUMO.md:** Atualizado com DDLs e amostras
+**Arquivo PROJETO_RESUMO.md:** Atualizado com DDLs e amostras em documentacao/catalogo_projetos/PROJETO_RESUMO.md
 
 ---
 
