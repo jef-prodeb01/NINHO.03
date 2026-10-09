@@ -25,8 +25,8 @@
 
 ## Instruções de Inicialização
 
-1. Leia [README.md](README.md) para entender o processo
-2. Encaminhe [GUIA_ENGENHEIRO_DADOS.md](GUIA_ENGENHEIRO_DADOS.md) ao engenheiro
+1. Leia [README.md](../../README.md) para entender o processo
+2. Encaminhe [GUIA_ENGENHEIRO_DW.md](../guias/GUIA_ENGENHEIRO_DW.md) ou [GUIA_ENGENHEIRO_SEMANTICA.md](../guias/GUIA_ENGENHEIRO_SEMANTICA.md) ao engenheiro
 3. Aguarde os insumos em `entrega/`
 4. Confirme ao agente para gerar o documento de entendimento
 

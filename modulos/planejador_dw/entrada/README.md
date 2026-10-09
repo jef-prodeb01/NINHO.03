@@ -1,7 +1,7 @@
 # Diretório de Insumos de Entrada (Entrada do Planejador de DW)
 
 Este diretório é o ponto de contato do **Engenheiro de Dados** para fornecer os insumos brutos do projeto que será planejado e modelado pelo **Planejador de DW**.  
-*(Nota: Você pode depositar seus arquivos aqui ou na pasta central da plataforma em [`entrega/planejador_dw/`](../../entrega/planejador_dw/)).*
+*(Nota: Você pode depositar seus arquivos aqui ou na pasta central da plataforma em [`entrega/planejador_dw/`](../../../entrega/planejador_dw/)).*
 
 ---
 
@@ -20,6 +20,6 @@ Este diretório é o ponto de contato do **Engenheiro de Dados** para fornecer o
 
 1. Preencha o arquivo [`INTAKE_DW.md`](../INTAKE_DW.md) na raiz do módulo `modulos/planejador_dw/`.
 2. Deposite os arquivos técnicos nas subpastas apropriadas acima.
-3. Invoque o agente de planejamento de DW ou use a biblioteca de prompts disponível em [`documentacao/guias/GUIA_ENGENHEIRO_DW.md`](../../documentacao/guias/GUIA_ENGENHEIRO_DW.md).
+3. Invoque o agente de planejamento de DW ou use a biblioteca de prompts disponível em [`documentacao/guias/GUIA_ENGENHEIRO_DW.md`](../../../documentacao/guias/GUIA_ENGENHEIRO_DW.md).
 4. O agente analisará os insumos, formulará o Documento de Entendimento Dimensional e, após sua aprovação, gerará os entregáveis em `saida/planejador_dw/<NOME_PROJETO>/`.
 

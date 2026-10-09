@@ -6,7 +6,7 @@ Este diretório centraliza as propostas de arquitetura, padrões corporativos e 
 
 ## 📂 Documentos Disponíveis
 
-### 1. [GOVERNANCA_DADOS_GOVERNO_MONGO_AWS.md](GOVERNANCA_DADOS_GOVERNO_MONGO_AWS.md) ⭐ *(Novo / Atual)*
+### 1. [ARQUITETURA_MONGO_AWS.md](ARQUITETURA_MONGO_AWS.md) ⭐ *(Novo / Atual)*
 > **Arquitetura de Governança para Setor Público: MongoDB Lakehouse + AWS Glue + Amazon DataZone**
 - Estratégia sem Amazon S3 e com desvinculação do DW Oracle.
 - Organização em MongoDB para múltiplos Órgãos (Databases), Diretorias e Unidades (`_org`).

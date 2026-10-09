@@ -22,7 +22,7 @@ possível começar; os demais refinam o resultado.
 ## 1. DDL das fatos e dimensões ☐ (obrigatório)
 
 Não cole o DDL aqui — gere com o **select único** da Seção 1 do
-[GUIA_ENGENHEIRO_DADOS.md](GUIA_ENGENHEIRO_DADOS.md) (DDL + comentários
+[GUIA_ENGENHEIRO_SEMANTICA.md](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) (DDL + comentários
 de todas as tabelas em uma consulta) e informe o caminho do arquivo:
 
 ```
@@ -32,7 +32,7 @@ de todas as tabelas em uma consulta) e informe o caminho do arquivo:
 ## 2. Amostras dos dados ☐ (obrigatório)
 
 Não cole os dados aqui — gere com as queries da Seção 2 do
-[GUIA_ENGENHEIRO_DADOS.md](GUIA_ENGENHEIRO_DADOS.md) (inventário de
+[GUIA_ENGENHEIRO_SEMANTICA.md](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) (inventário de
 tabelas, candidatos a colunas categóricas, volume/período, distinct e
 amostra de linhas) e informe o caminho da pasta:
 

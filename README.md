@@ -18,7 +18,7 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 | :--- | :--- | :--- | :--- | :--- |
 | 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md) | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(inclui Guia de BI para Handoff)* |
 | 🧠 **Engenheiro de Dados**<br/>*(Criar Camada Semântica & Metadados)* | 📘 [**Guia de Camada Semântica**](documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md)<br/>📋 [Formulário INTAKE_SEMANTICA](modulos/camada_semantica/INTAKE_SEMANTICA.md) | 📥 [`entrega/camada_semantica/`](entrega/camada_semantica/) | ⚙️ [`modulos/camada_semantica/`](modulos/camada_semantica/README.md) | 📤 [`saida/camada_semantica/`](saida/camada_semantica/) |
-| 🛡️ **Engenheiro de Governança**<br/>*(Lakehouse Mongo, LAI e LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>🏛️ [Arquitetura Framework](modulos/governanca_dados/ARQUITETURA_FRAMEWORK.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) | ⚙️ [`modulos/governanca_dados/`](modulos/governanca_dados/README.md) | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) |
+| 🛡️ **Engenheiro de Governança**<br/>*(Lakehouse Mongo, LAI e LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>🏛️ [Arquitetura Framework](modulos/governanca_dados/ARQUITETURA_FRAMEWORK_GOVERNANCA.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) | ⚙️ [`modulos/governanca_dados/`](modulos/governanca_dados/README.md) | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) |
 | ✅ **Líder Técnico / QA**<br/>*(Validação, Qualidade e Catálogo)* | 📋 [**Checklist de Validação**](documentacao/checklists/CHECKLIST_VALIDACAO.md)<br/>📜 [Convenções DW](core/convencoes/CONVENCOES_DW.md) | 📚 [Catálogo de Projetos](documentacao/catalogo_projetos/PROJETO_RESUMO.md) | 🧠 [`core/`](core/README.md) | 📚 [`documentacao/`](documentacao/README.md) |
 
 ---
@@ -61,7 +61,7 @@ NINHO /
 │   │   └── README.md                           # 📖 Manual completo da Camada Semântica
 │   │
 │   ├── governanca_dados/                       # 🛡️ MÓDULO 3: Lakehouse MongoDB & AWS Glue/DataZone
-│   │   ├── ARQUITETURA_FRAMEWORK.md            # 🏛️ Envelope canônico, LAI, LGPD e Glue
+│   │   ├── ARQUITETURA_FRAMEWORK_GOVERNANCA.md # 🏛️ Envelope canônico, LAI, LGPD e Glue
 │   │   └── README.md                           # 📖 Manual do módulo de Governança
 │   └── README.md                               # 📖 Visão integrada dos módulos
 │
