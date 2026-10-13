@@ -19,6 +19,38 @@ Este documento estabelece o **DNA corporativo** para arquitetura, modelagem dime
 
 > **Regra de Caixas:** TODOS os identificadores de tabelas, colunas, constraints e índices devem ser gerados em **MAIÚSCULAS**.
 
+### 1.1 Regra Inegociável de Fidelidade 100% aos Nomes de Coluna da Origem (Zero Alucinação)
+- **Proibição de Renomeação Arbitrária:** A IA e o engenheiro **NUNCA** devem renomear, abreviar ou inventar colunas que já existem na fonte de dados (`ddl_origem.sql` ou `ddl_completo.csv`).
+  - *Exemplo de Erro:* Mudar `ID_CHAMADO` para `NUM_CHAMADO`, ou trocar `INDICADOR` para `IND_STATUS`, ou inventar `DS_SUMARIO` quando a coluna original é `RESUMO`.
+  - *Comportamento Correto:* O nome original deve ser mantido ipsis litteris em maiúsculas (ex: `ID_CHAMADO`, `INDICADOR`, `DT_FECHAMENTO`).
+- **Colunas Técnicas Exclusivas do DW:** As únicas colunas com nomes padronizados pelo framework que não existem na origem são as colunas de controle dimensional Kimball:
+  - Dimensões: `DIMENSION_KEY`, `SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`.
+  - Fatos: `DIM_<ENTIDADE>`, `DIM_TEMPO`, `DTC_CARGA`, e métricas com prefixos padronizados (`QTD_*`, `VAL_*`, `TOT_*`).
+  - Staging: `DTC_EXTRACAO`, `ID_LOTE`.
+- **Matriz De/Para Obrigatória:** Antes de gerar qualquer DDL, o agente deve apresentar no comando `/gerar-blueprint` a tabela completa De/Para mapeando 100% das colunas de origem para as tabelas de destino para validação do engenheiro.
+
+### 1.2 Disciplina Estrita de Pastas de Saída (Sem Pastas com Nome do Projeto)
+- **Estrutura Canônica Direta:** Todos os scripts e artefatos DEVEM ser gerados diretamente dentro das 11 pastas numeradas em `saida/planejador_dw/`:
+  - `01_controle_carga/`
+  - `02_staging/`
+  - `03_dimensoes/`
+  - `04_fatos/`
+  - `05_procedimentos_manutencao/`
+  - `06_pipelines_hop/` (se aplicável)
+  - `07_extratores_python/` (se aplicável)
+  - `08_datasets_bi/`
+  - `09_relatorio_estrategias/`
+  - `10_testes_integridade/`
+  - `11_dicionario_dados/`
+- **PROIBIDO Criar Subpastas de Projeto:** É expressamente proibido criar pastas como `saida/planejador_dw/<NOME_PROJETO>/`. Isso gera duplicação e quebra os scripts automáticos do pipeline de transição e validação.
+
+### 1.3 Geração Condicional Estrita de Tecnologias (Apenas o Solicitado)
+- **Gatilho de Geração:** O agente SOMENTE pode gerar código e scripts para as tecnologias marcadas com `[x]` na Seção 1 do [`INTAKE_DW.md`](../../modulos/planejador_dw/INTAKE_DW.md).
+  - Se **Apache Hop** NÃO estiver marcado: a pasta `06_pipelines_hop/` permanece limpa (apenas com `.gitkeep`).
+  - Se **Python (API)** NÃO estiver marcado: a pasta `07_extratores_python/` permanece limpa (apenas com `.gitkeep`).
+  - Se o projeto for **100% Banco (ODI / PL/SQL)**: gerar estritamente DDLs, Procedures e Datasets de BI, sem inventar scripts Hop ou Python.
+
+
 ---
 
 ## 2. Padrão da Camada `STG_*` (Staging de Ingestão)
@@ -129,6 +161,37 @@ O Planejador de DW suporta duas estratégias distintas com base na volumetria e 
 * **Indexação Física:**
   * **B-TREE INDEX** normal e índices compostos nas chaves de busca do `ON (...)`.
   * Índices Bitmap são estritamente evitados aqui para prevenir contenção de locks durante o `MERGE`.
+
+### 6.1 Gestão de Tablespaces (Data vs Index) e Prevenção de Estouro de Storage
+- **Segregação Física Ideal:** Sempre que o DBA disponibilizar tablespaces separadas:
+  - Tabelas (`STG_*`, `DIM_*`, `FATO_*`) na tablespace de dados: `TABLESPACE "<SCHEMA>_DATA"`.
+  - Índices (`PK_*`, `IDX_*`, `BMI_*`) na tablespace de índices: `TABLESPACE "<SCHEMA>_INDEX"`.
+  - Benefício: Evita que o crescimento de índices afete a inserção de novos dados em caso de esgotamento.
+- **Cenário de Tablespace Única Compartilhada:** Se o ambiente possuir apenas uma tablespace (ex: `SEIMUNICIPIO_DATA`), dados e índices competem pela mesma cota.
+  - O engenheiro deve evitar a criação indiscriminada de índices secundários.
+  - Limitar índices de dimensões apenas à PK (`DIMENSION_KEY`) e ao índice de lookup (`ID_<ENTIDADE>, DTC_EFETIVACAO`).
+- **Sizing de Índices Bitmap vs B-Tree:**
+  - Em fatos com milhões de linhas, um **BITMAP INDEX** em coluna de baixa cardinalidade (ex: 2 a 50 valores distintos) ocupa até **90% menos espaço** que um B-Tree equivalente e acelera drasticamente queries analíticas via Star Transformation.
+  - **Alerta de Perigo:** NUNCA crie índice Bitmap em colunas de alta cardinalidade (ex: chaves primárias, UUIDs, carimbos de data/hora milissegundos). Isso causará explosão catastrófica do tamanho do índice e estouro da tablespace.
+- **Operações com Cláusula `NOLOGGING`:**
+  - Na criação e no rebuild de índices, utilize sempre `NOLOGGING` para evitar a geração massiva de redo log e não sobrecarregar as tablespaces de Undo/Redo do Oracle:
+    ```sql
+    ALTER INDEX "<SCHEMA>"."<NOME_INDICE>" REBUILD NOLOGGING;
+    ALTER INDEX "<SCHEMA>"."<NOME_INDICE>" LOGGING; -- Restaurar logging após rebuild
+    ```
+- **Query Útil para Diagnóstico de Uso de Tablespace por Tipo de Objeto:**
+  ```sql
+  SELECT 
+      tablespace_name,
+      segment_type,
+      COUNT(*) AS qtd_objetos,
+      ROUND(SUM(bytes) / 1024 / 1024, 2) AS ocupado_mb,
+      ROUND(SUM(bytes) / 1024 / 1024 / 1024, 2) AS ocupado_gb
+  FROM user_segments
+  GROUP BY tablespace_name, segment_type
+  ORDER BY ocupado_mb DESC;
+  ```
+
 
 ---
 

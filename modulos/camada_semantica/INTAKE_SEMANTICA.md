@@ -1,135 +1,105 @@
-# INTAKE — Formulário de coleta para construção da camada semântica
+# INTAKE_SEMANTICA.md — Formulário de Entrada da Camada Semântica
 
-Preencha (ou anexe) o máximo que tiver. Com os itens obrigatórios já é
-possível começar; os demais refinam o resultado.
+Preencha este formulário com as informações do projeto para a construção da **Camada Semântica Corporativa** sobre um Data Warehouse Oracle existente.
 
----
-
-## 0. Identificação do Projeto ☐ (obrigatório)
-
-| Campo | Valor |
-|---|---|
-| **Nome do Projeto** (sigla curta em maiúsculas, ex: SEI, SIPAR) | `<informe o nome/sigla>` |
-| **Engenheiro de Dados Responsável** | `<informe seu nome>` |
-| **Schema Alvo no Oracle** | `<informe o schema de destino>` |
-| **Primeira execução neste schema?** | `[ ] Sim  [ ] Não` |
-| **Tabelas META_* já existem no schema?** | `[ ] Sim  [ ] Não` |
-| **Se já existem, projetos já cadastrados:** | `<listar ou informar nenhum>` |
-| **Data de Início** | `<AAAA-MM-DD>` |
+> ⚠️ **AVISO AO ENGENHEIRO DE DADOS:**  
+> A IA iniciará a sessão conferindo este formulário. Se campos obrigatórios estiverem em branco, a IA solicitará que você acesse este link e complete os dados antes de iniciar a modelagem semântica e geração das views analíticas.
 
 ---
 
-## 1. DDL das fatos e dimensões ☐ (obrigatório)
+## Seção 0 — Identificação do Projeto & Ambiente
 
-Não cole o DDL aqui — gere com o **select único** da Seção 1 do
-[GUIA_ENGENHEIRO_SEMANTICA.md](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) (DDL + comentários
-de todas as tabelas em uma consulta) e informe o caminho do arquivo:
+- **Nome do Projeto (Sigla em maiúsculas):** `[Ex: SEI, SIPAR, RH_BAHIA]`
+- **Engenheiro de Dados Responsável:** `[Nome completo do engenheiro]`
+- **Schema Alvo no Oracle:** `[Ex: SEIMUNICIPIO_OLAP, RH_BAHIA_OLAP]`
+- **Data de Início:** `[AAAA-MM-DD]`
 
-```
-<cole aqui>
-```
+### 0.1 Estado do Schema Alvo
+- [ ] **Primeira execução neste schema** (schema novo, sem objetos semânticos prévios).
+- [ ] **Schema já contém execuções de outros projetos** (compartilhamento de schema multi-projeto).
 
-## 2. Amostras dos dados ☐ (obrigatório)
-
-Não cole os dados aqui — gere com as queries da Seção 2 do
-[GUIA_ENGENHEIRO_SEMANTICA.md](../../documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md) (inventário de
-tabelas, candidatos a colunas categóricas, volume/período, distinct e
-amostra de linhas) e informe o caminho da pasta:
-
-```
-<cole aqui>
-```
-
-Perguntas que as amostras ajudam a responder:
-- Existem **linhas de total/subtotal** misturadas ao detalhe? (ex.: "Total Geral")
-- Há **hierarquia** em códigos? (ex.: código `2110.01` filho de `2110`)
-- Quais os **valores exatos** das colunas categóricas?
-
-## 3. Relatório / documentação do ETL ☐ (recomendado)
-
-```
-<cole ou anexe>
-```
-
-O que procuro nele:
-- Regras de carga (full reload? incremental?)
-- De-paras e tratamentos (valores sintéticos criados no processo?)
-- Problemas conhecidos (encoding, divergências entre fontes)
-- Frequência de atualização e cobertura temporal
-
-## 4. Regras de negócio do cliente ☐ (obrigatório)
-
-```
-<cole aqui>
-```
-
-Exemplos do formato ideal:
-- "Medida X só pode ser somada dentro do mesmo nível da hierarquia Y"
-- "O valor oficial do total é a linha Z, não a soma do detalhe"
-- "Usuários da área A não podem ver dados da área B"
-- "Valores estão em milhões / nominais / moeda de referência"
-
-## 4.1 Regras de RLS (Row Level Security) ☐ (se aplicável)
-
-**CRÍTICO:** Se múltiplos projetos/segmentos compartilham o mesmo DW, defina
-quem pode ver o quê. Isso vira filtro automático nas views.
-
-### 4.1.1 Visão geral
-
-- [ ] **Acesso total:** Usuários veem TODOS os dados
-- [ ] **Acesso restrito:** Usuários veem APENAS parte dos dados
-
-### 4.1.2 Filtros por grupo de usuários
-
-| Grupo de Usuários | O que pode ver | Coluna da tabela | Exemplo |
-|---|---|---|---|
-| `<grupo_1>` | Só `<segmento_1>` | `<coluna>` | `WHERE cidade = 'SAO_PAULO'` |
-| `<grupo_2>` | Só `<segmento_2>` | `<coluna>` | `WHERE cidade IN ('BH', 'RJ')` |
-| `<grupo_3>` | Acesso total | — | (sem filtro) |
-
-### 4.1.3 Tabela por tabela
-
-Para **cada tabela fato/dimensão** que precisa de filtro:
-
-| Tabela | Coluna de filtro | Restrição |
-|---|---|---|
-| `<tabela>` | `<coluna>` | ☐ Por cidade ☐ Por secretaria ☐ Por órgão ☐ Outro |
-
-### 4.1.4 Regras de sobreposição
-
-- [ ] Um usuário pode ver **múltiplos segmentos**?
-- [ ] Segmentos são **exclusivos**? (usuário vê APENAS um)
-- [ ] Há **hierarquia de acesso**? (gestor vê tudo, analista vê só uma área)
-
-### 4.1.5 Implementação
-
-Como o RLS será feito?
-- [ ] Função PL/SQL (VPD)
-- [ ] Contexto de sessão (DBMS_SESSION)
-- [ ] View com filtro
-- [ ] Outro: <descreva>
+### 0.2 Estado das 8 Tabelas `META_*`
+- [ ] **Tabelas `META_*` NÃO existem** (a IA gerará o DDL de criação `01_create_meta_tables.sql` + inserts completos).
+- [ ] **Tabelas `META_*` JÁ existem** (a IA NÃO recriará as tabelas; utilizará `MERGE INTO` para acrescentar apenas os novos metadados do projeto).
 
 ---
 
-## 5. Perguntas que os usuários querem responder ☐ (recomendado)
+## Seção 1 — Seleção de Tecnologias e Ferramentas de Consumo (MANDATÓRIO)
 
-Liste as perguntas de negócio reais (linguagem do usuário, sem técnica):
+> 🛑 **REGRA DE ESCOPO:** Marque com `[x]` as ferramentas que consumirão as views e metadados.
 
-```
-1. <pergunta>
-2. <pergunta>
-...
-```
-
-Elas viram o conteúdo da `META_CONSULTA_NEGOCIO` (com SQL pronto + variantes).
+- [ ] **Power BI:** Views analíticas otimizadas para Import Mode / DirectQuery, com nomes amigáveis e chaves dimensionais explícitas.
+- [ ] **Apache Superset:** Datasets relacionais com métricas SQL compiladas e filtros nativos.
+- [ ] **Modelos de IA / Agentes Text-to-SQL (LLMs):** Metadados ricos nas 8 tabelas `META_*` com regras de negócio, glossário e orientações de IA (`META_ORIENTACAO_IA`).
+- [ ] **Ferramentas SQL Ad-Hoc:** DBeaver, Metabase, Oracle SQL Developer.
 
 ---
 
-## O que eu devolvo após receber os insumos
+## Seção 2 — Arquitetura de Views Analíticas Desejada
 
-1. **Documento de entendimento** — grão, aditividade, hierarquias,
-   relacionamentos e armadilhas identificadas (para sua validação)
-2. **inserts/vw_analiticas/** — views `VW_*` prontas para o seu modelo
-   (arquitetura em 3 camadas: DIM → EVENTO → KPI → MV)
-3. **inserts/meta_projeto/01_create_meta_tables.sql** — CREATE TABLE das 8 META_
-4. **inserts/meta_projeto/01_meta_glossario.sql** a **08_meta_valor_dominio.sql** — INSERTs das META_ (arquivos separados)
+Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw_analiticas/`:
+- [ ] **Arquitetura Canônica em 3 Camadas (Padrão Corporativo):**
+  - **Camada 1 (DIM):** Views `VW_<PROJETO>_DIM_*` filtrando apenas registros vigentes (`DTC_EXPIRACAO IS NULL`).
+  - **Camada 2 (EVENTO):** Views `VW_<PROJETO>_<EVENTO>` desnormalizando fatos atômicas com suas dimensões correspondentes.
+  - **Camada 3 (KPI):** Views `VW_<PROJETO>_KPI_*` agregando métricas por período (mês, ciclo, unidade).
+- [ ] **Materialized Views com Refresh Programado:**
+  - Criação de MVs com `BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND` para queries analíticas pesadas.
+- [ ] **Tratamento de Nulos com Coalesce / Fallback:**
+  - `COALESCE` em campos textuais para 'NÃO INFORMADO' e valores numéricos para `0`.
+
+---
+
+## Seção 3 — DDL e Amostras de Dados das Fatos e Dimensões
+
+*Deposite os DDLs do DW em `entrega/camada_semantica/ddl/` e amostras em `entrega/camada_semantica/amostras/`.*
+
+- **Caminho do DDL Consolidado:** `entrega/camada_semantica/ddl/`
+- **Caminho das Amostras de Dados:** `entrega/camada_semantica/amostras/`
+
+### 3.1 Características dos Dados Identificadas nas Amostras
+- [ ] Existem linhas de total/subtotal misturadas ao detalhe (ex: "Total Geral").
+- [ ] Existem códigos hierárquicos (ex: código `2110.01` filho de `2110`).
+- [ ] Existem colunas de vigência temporal (`DTC_EFETIVACAO` e `DTC_EXPIRACAO`).
+- [ ] Existem flags de exclusão lógica (`SIN_ATIVO = 'S'/'N'`).
+
+---
+
+## Seção 4 — Regras de Negócio e Segurança de Acesso (RLS)
+
+### 4.1 Regras de Negócio do Negócio
+1. `[Ex: Medida VAL_GLOSA só pode ser apurada após fechamento formal do ciclo mensal]`
+2. `[Ex: Chamados cancelados não devem ser contabilizados no tempo médio de atendimento]`
+3. `...`
+
+### 4.2 Segurança por Linha (Row-Level Security - RLS)
+- [ ] **Sem RLS (Acesso Total):** Todos os usuários autorizados no banco enxergam a base integral.
+- [ ] **RLS Baseado em Views com Filtro:** Views analíticas segregadas por segmento ou órgão.
+- [ ] **RLS Baseado em VPD (Virtual Private Database / SYS_CONTEXT):** Filtro dinâmico via contexto de sessão Oracle.
+
+---
+
+## Seção 5 — Perguntas de Negócio para o Catálogo (`META_CONSULTA_NEGOCIO`)
+
+> *Liste as perguntas típicas que os analistas de negócio ou gestores farão:*
+
+1. `[Ex: Qual o percentual de cumprimento de SLA por módulo no último ciclo?]`
+2. `[Ex: Quais são os 10 chamados mais ofensores do tempo de atendimento?]`
+3. `...`
+
+---
+
+## Seção 6 — Entregáveis da Camada Semântica
+
+Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
+- [x] **Documento de Entendimento Semântico (`DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`)**
+- [x] **DDLs das Views Analíticas (`saida/camada_semantica/vw_analiticas/`)**
+- [ ] **DDL de Criação das Tabelas `META_*` (`01_create_meta_tables.sql`)** *(apenas se não existirem)*
+- [x] **Carga do Glossário de Termos (`01_meta_glossario.sql`)**
+- [x] **Carga do Catálogo de Métricas (`02_meta_metrica.sql`)**
+- [x] **Carga do Dicionário de Objetos e Colunas (`03_meta_objeto.sql`)**
+- [x] **Carga da Matriz de Relacionamentos (`04_meta_relacionamento.sql`)**
+- [x] **Carga das Regras de Negócio (`05_meta_regra_negocio.sql`)**
+- [x] **Carga das Consultas Prontas de Negócio (`06_meta_consulta_negocio.sql`)**
+- [x] **Carga das Orientações e Guardrails de IA (`07_meta_orientacao_ia.sql`)**
+- [x] **Carga dos Valores de Domínio (`08_meta_valor_dominio.sql`)**
+- [x] **Suíte de Testes e Validações SQL (`09_validacoes.sql`)**

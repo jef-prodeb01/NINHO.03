@@ -95,6 +95,39 @@ def validar_intake_dw(base_dir: Path) -> dict:
         print_warn("Schema alvo nao especificado na Secao 0.")
         results["avisos"] += 1
 
+    # Checar Secao 1 - Tecnologias da Esteira (MANDATORIO)
+    sec1_match = re.search(r"## Seção 1 — Seleção de Tecnologias da Esteira.*?(?=## Seção 2)", content, re.DOTALL | re.IGNORECASE)
+    if sec1_match:
+        sec1_text = sec1_match.group(0)
+        techs_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec1_text, re.IGNORECASE)
+        if not techs_marcadas:
+            print_err("NENHUMA tecnologia de engenharia marcada com [x] na Secao 1 do INTAKE_DW.md!")
+            print_err("     O Engenheiro DEVE abrir 'modulos/planejador_dw/INTAKE_DW.md' e marcar as ferramentas utilizadas (ODI, Hop, Python, PL/SQL ou Legado).")
+            print_warn("     Sem essa definicao, a IA bloqueara a geracao para evitar criar scripts indesejados.")
+            results["erros"] += 1
+        else:
+            print_ok(f"Pilha Tecnologica selecionada ({len(techs_marcadas)} opcao(oes)):")
+            for t in techs_marcadas:
+                print(f"     -> {t}")
+            results["sucessos"] += 1
+
+    # Checar Tablespace de Dados e Indices
+    ts_data_match = re.search(r"\*\*Tablespace de Dados:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    if ts_data_match and ts_data_match.group(1).strip() and not ts_data_match.group(1).strip().startswith("[Ex:"):
+        print_ok(f"Tablespace de Dados configurada: {ts_data_match.group(1).strip()}")
+        results["sucessos"] += 1
+    else:
+        print_warn("Tablespace de Dados pendente na Secao 0 (Padrao: tablespace do usuario sera assumida).")
+        results["avisos"] += 1
+
+    ts_idx_match = re.search(r"\*\*Tablespace de Índices:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    if ts_idx_match and ts_idx_match.group(1).strip() and not ts_idx_match.group(1).strip().startswith("[Ex:"):
+        print_ok(f"Tablespace de Indices configurada: {ts_idx_match.group(1).strip()}")
+        results["sucessos"] += 1
+    else:
+        print_warn("Tablespace de Indices nao especificada na Secao 0 (mesma de dados sera utilizada).")
+        results["avisos"] += 1
+
     return results
 
 
@@ -197,6 +230,31 @@ def validar_intake_semantica(base_dir: Path) -> dict:
         print_warn("Schema alvo pendente na Secao 0.")
         results["avisos"] += 1
 
+    # Checar Secao 1 - Tecnologias e Ferramentas de Consumo
+    sec1_sem_match = re.search(r"## Seção 1 — Seleção de Tecnologias e Ferramentas.*?(?=## Seção 2)", content, re.DOTALL | re.IGNORECASE)
+    if sec1_sem_match:
+        sec1_sem_text = sec1_sem_match.group(0)
+        ferramentas_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec1_sem_text, re.IGNORECASE)
+        if not ferramentas_marcadas:
+            print_warn("Nenhuma ferramenta de consumo (Power BI, Superset, etc.) marcada com [x] na Secao 1 do INTAKE_SEMANTICA.md.")
+            results["avisos"] += 1
+        else:
+            print_ok(f"Ferramentas de consumo selecionadas ({len(ferramentas_marcadas)} opcao(oes)):")
+            for fm in ferramentas_marcadas:
+                print(f"     -> {fm}")
+            results["sucessos"] += 1
+
+    # Checar Secao 0.2 - Estado das tabelas META_*
+    sec02_match = re.search(r"### 0\.2 Estado das 8 Tabelas `META_\*`.*?(?=---)", content, re.DOTALL | re.IGNORECASE)
+    if sec02_match:
+        meta_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec02_match.group(0), re.IGNORECASE)
+        if meta_marcadas:
+            print_ok(f"Estado de tabelas META_* definido: {meta_marcadas[0]}")
+            results["sucessos"] += 1
+        else:
+            print_warn("Estado das tabelas META_* nao marcado na Secao 0.2 (novo schema vs schema existente).")
+            results["avisos"] += 1
+
     return results
 
 
@@ -250,6 +308,100 @@ def validar_arquivos_semantica(base_dir: Path) -> dict:
     return results
 
 
+def validar_intake_governanca(base_dir: Path) -> dict:
+    intake_path = base_dir / "modulos" / "governanca_dados" / "INTAKE_GOVERNANCA.md"
+    results = {"erros": 0, "avisos": 0, "sucessos": 0}
+
+    print(f"\n{NEGRITO}1. Verificando Formulario INTAKE_GOVERNANCA.md:{RESET}")
+    if not intake_path.exists():
+        print_err(f"Arquivo nao encontrado: {intake_path}")
+        results["erros"] += 1
+        return results
+
+    content = intake_path.read_text(encoding="utf-8", errors="ignore")
+
+    # Checar se campos de exemplo ainda contêm [Ex: ...]
+    placeholders = re.findall(r"(\[Ex:.*?\])", content)
+    if placeholders:
+        print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
+        for p in placeholders[:3]:
+            print(f"     Pendente: {p}")
+        results["avisos"] += 1
+    else:
+        print_ok("Nenhum placeholder '[Ex: ...]' encontrado no INTAKE_GOVERNANCA.md.")
+        results["sucessos"] += 1
+
+    # Checar órgão / cliente
+    org_match = re.search(r"\*\*Nome do Órgão / Cliente:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    if org_match and org_match.group(1).strip() and not org_match.group(1).strip().startswith("[Ex:"):
+        print_ok(f"Orgao/Cliente identificado: {org_match.group(1).strip()}")
+        results["sucessos"] += 1
+    else:
+        print_warn("Nome do Orgao/Cliente pendente na Secao 0.")
+        results["avisos"] += 1
+
+    # Checar projeto / domínio
+    proj_match = re.search(r"\*\*Nome do Projeto / Domínio:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    if proj_match and proj_match.group(1).strip() and not proj_match.group(1).strip().startswith("[Ex:"):
+        print_ok(f"Projeto/Dominio identificado: {proj_match.group(1).strip()}")
+        results["sucessos"] += 1
+    else:
+        print_warn("Nome do Projeto/Dominio pendente na Secao 0.")
+        results["avisos"] += 1
+
+    # Checar Seção 1 - Tecnologias de Governança (MANDATÓRIO)
+    sec1_match = re.search(r"## Seção 1 — Seleção de Tecnologias de Governança.*?(?=## Seção 2)", content, re.DOTALL | re.IGNORECASE)
+    if sec1_match:
+        sec1_text = sec1_match.group(0)
+        techs = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec1_text, re.IGNORECASE)
+        if not techs:
+            print_err("NENHUMA tecnologia de governanca marcada com [x] na Secao 1 do INTAKE_GOVERNANCA.md!")
+            print_err("     Abra 'modulos/governanca_dados/INTAKE_GOVERNANCA.md' e marque MongoDB, DataZone/Glue, Hop ou Python.")
+            results["erros"] += 1
+        else:
+            print_ok(f"Tecnologias de governanca selecionadas ({len(techs)} opcao(oes)):")
+            for t in techs:
+                print(f"     -> {t}")
+            results["sucessos"] += 1
+
+    # Checar Seção 2 - LGPD / LAI
+    sec2_match = re.search(r"## Seção 2 — Diretrizes de Conformidade Legal.*?(?=## Seção 3)", content, re.DOTALL | re.IGNORECASE)
+    if sec2_match:
+        regras_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec2_match.group(0), re.IGNORECASE)
+        if regras_marcadas:
+            print_ok(f"Diretrizes LGPD/LAI marcadas ({len(regras_marcadas)} item(ns)).")
+            results["sucessos"] += 1
+        else:
+            print_warn("Nenhuma diretriz de LGPD/LAI marcada na Secao 2.")
+            results["avisos"] += 1
+
+    return results
+
+
+def validar_arquivos_governanca(base_dir: Path) -> dict:
+    results = {"erros": 0, "avisos": 0, "sucessos": 0}
+    print(f"\n{NEGRITO}2. Inspecionando Insumos em 'entrega/governanca_dados/':{RESET}")
+
+    pasta_entrega = base_dir / "entrega" / "governanca_dados"
+    if not pasta_entrega.exists():
+        print_err(f"Pasta nao encontrada: {pasta_entrega}")
+        results["erros"] += 1
+        return results
+
+    arquivos = [f for f in pasta_entrega.glob("*") if f.is_file() and f.name.lower() != "readme.md"]
+    if arquivos:
+        print_ok(f"Encontrado(s) {len(arquivos)} arquivo(s) de insumo em 'entrega/governanca_dados/':")
+        for f in arquivos:
+            print(f"     - {f.name} ({f.stat().st_size} bytes)")
+        results["sucessos"] += 1
+    else:
+        print_warn("Nenhum arquivo de insumo adicional (DDL, CSV, JSON, mapeamentos LGPD/LAI) em 'entrega/governanca_dados/'.")
+        print_warn("     (Opcional: catalogacao pode ser iniciada a partir do DW ou DDL corporativo).")
+        results["avisos"] += 1
+
+    return results
+
+
 def main():
     base_dir = get_base_dir()
     modulo = sys.argv[1].lower() if len(sys.argv) > 1 else "dw"
@@ -273,6 +425,13 @@ def main():
         total_erros += r3["erros"] + r4["erros"]
         total_avisos += r3["avisos"] + r4["avisos"]
         total_sucessos += r3["sucessos"] + r4["sucessos"]
+
+    if modulo in ["governanca", "all"]:
+        r5 = validar_intake_governanca(base_dir)
+        r6 = validar_arquivos_governanca(base_dir)
+        total_erros += r5["erros"] + r6["erros"]
+        total_avisos += r5["avisos"] + r6["avisos"]
+        total_sucessos += r5["sucessos"] + r6["sucessos"]
 
     print(f"\n{AZUL}{'=' * 70}{RESET}")
     print(f"{NEGRITO}Resultado da Auditoria Pre-Voo:{RESET}")

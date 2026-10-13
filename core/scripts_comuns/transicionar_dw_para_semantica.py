@@ -126,6 +126,23 @@ def extrair_metadados_intake_dw(base_dir: Path) -> dict:
     return dados
 
 
+PASTAS_CANONICAS_DW = {
+    "01_CONTROLE_CARGA",
+    "02_STAGING",
+    "03_DIMENSOES",
+    "04_FATOS",
+    "05_PROCEDIMENTOS_MANUTENCAO",
+    "06_PIPELINES_HOP",
+    "07_EXTRATORES_PYTHON",
+    "08_DATASETS_BI",
+    "09_RELATORIO_ESTRATEGIAS",
+    "10_TESTES_INTEGRIDADE",
+    "11_DICIONARIO_DADOS",
+    "TEMPLATES",
+    "README.MD",
+}
+
+
 def detectar_projeto(base_dir: Path, proj_arg: str = "") -> str:
     """Detecta o nome do projeto se não for passado explicitamente."""
     if proj_arg:
@@ -136,10 +153,13 @@ def detectar_projeto(base_dir: Path, proj_arg: str = "") -> str:
     if meta.get("projeto"):
         return meta["projeto"].upper().strip()
 
-    # 2. Tentar detectar na pasta ddl de saída
+    # 2. Tentar detectar na pasta ddl de saída (ignorando pastas canônicas estruturais)
     saida_dw = base_dir / "saida" / "planejador_dw"
     if saida_dw.exists():
-        subdirs = [d.name for d in saida_dw.iterdir() if d.is_dir() and d.name.upper() not in ["README.MD", "TEMPLATES"]]
+        subdirs = [
+            d.name for d in saida_dw.iterdir()
+            if d.is_dir() and d.name.upper() not in PASTAS_CANONICAS_DW
+        ]
         if len(subdirs) == 1:
             return subdirs[0].upper().strip()
         elif len(subdirs) > 1:
@@ -148,6 +168,7 @@ def detectar_projeto(base_dir: Path, proj_arg: str = "") -> str:
 
     # Fallback
     return "PROJETO_DW"
+
 
 
 def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
@@ -469,7 +490,7 @@ def atualizar_documentacao_central(base_dir: Path, projeto: str, schema: str, en
         dimensoes = [f"DIM_TEMPO", f"DIM_{projeto}"]
 
     # 1. Atualiza PROJETO_RESUMO.md
-    linhas_fatos = "\n".join([f"| `{f}` | {meta_dw.get('grao_fato', 'Uma linha por evento')} | {meta_dw.get('estrategia_carga', 'Padrão DW')} | `saida/planejador_dw/{projeto}/04_fatos/` |" for f in fatos])
+    linhas_fatos = "\n".join([f"| `{f}` | {meta_dw.get('grao_fato', 'Uma linha por evento')} | {meta_dw.get('estrategia_carga', 'Padrão DW')} | `saida/planejador_dw/04_fatos/` |" for f in fatos])
     linhas_dims = "\n".join([f"| `{d}` | SCD Tipo 2 (`DTC_EFETIVACAO` / `DTC_EXPIRACAO`) | B-Tree | `ODI_{d}` associada |" for d in dimensoes])
 
     conteudo_resumo = f"""# PROJETO_RESUMO.md — Documentação Central do Projeto
@@ -491,9 +512,9 @@ def atualizar_documentacao_central(base_dir: Path, projeto: str, schema: str, en
 
 O Data Warehouse do projeto **{projeto}** foi planejado e estruturado seguindo as melhores práticas da modelagem dimensional de Ralph Kimball e tuning avançado no Oracle Database.
 
-- **Dicionário de Dados Interativo:** [`saida/planejador_dw/{projeto}/11_dicionario_dados/dicionario_dados.html`](file:///saida/planejador_dw/{projeto}/11_dicionario_dados/dicionario_dados.html)
-- **Relatório de Estratégias & Sizing:** [`saida/planejador_dw/{projeto}/09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`](file:///saida/planejador_dw/{projeto}/09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md)
-- **Guia do Analista de BI:** [`saida/planejador_dw/{projeto}/08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md`](file:///saida/planejador_dw/{projeto}/08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md)
+- **Dicionário de Dados Interativo:** [`saida/planejador_dw/11_dicionario_dados/dicionario_dados.html`](file:///saida/planejador_dw/11_dicionario_dados/dicionario_dados.html)
+- **Relatório de Estratégias & Sizing:** [`saida/planejador_dw/09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`](file:///saida/planejador_dw/09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md)
+- **Guia do Analista de BI:** [`saida/planejador_dw/08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md`](file:///saida/planejador_dw/08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md)
 
 ---
 
@@ -557,13 +578,14 @@ Os insumos deste DW já foram entregues em `entrega/camada_semantica/`:
 - **Fatos Projetadas:** {', '.join(fatos)}
 - **Dimensões Projetadas:** {', '.join(dimensoes)}
 - **Artefatos Entregues:**
-  - DDLs otimizados em `saida/planejador_dw/{projeto}/`
+  - DDLs otimizados em `saida/planejador_dw/`
   - DDL consolidado em `entrega/camada_semantica/ddl/DDL_COMPLETO_DW_{projeto}.sql`
-  - Dicionário interativo de dados para negócio em `11_dicionario_dados/dicionario_dados.html`
-  - Guia de Modelagem Star Schema e DAX em `08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md`
-  - Relatório de Estratégias, Linhagem De/Para e Sizing em `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`
+  - Dicionário interativo de dados para negócio em `saida/planejador_dw/11_dicionario_dados/dicionario_dados.html`
+  - Guia de Modelagem Star Schema e DAX em `saida/planejador_dw/08_datasets_bi/GUIA_ANALISTA_BI_{projeto}.md`
+  - Relatório de Estratégias, Linhagem De/Para e Sizing em `saida/planejador_dw/09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`
 - **Handoff:** Formulário `INTAKE_SEMANTICA.md` pré-preenchido e validado com sucesso.
 """
+
 
     version_path.write_text(conteudo_version, encoding="utf-8")
 
@@ -591,19 +613,29 @@ def main():
     print(f"  {NEGRITO}Schema Oracle:{RESET}         {schema}")
     print(f"  {NEGRITO}Engenheiro:{RESET}            {engenheiro}")
 
-    pasta_saida_dw = base_dir / "saida" / "planejador_dw" / projeto
-    if not pasta_saida_dw.exists():
-        # Se não existe a pasta com o nome exato, verifica se existe apenas uma subpasta em saida/planejador_dw
-        saida_root = base_dir / "saida" / "planejador_dw"
-        candidatos = [d for d in saida_root.iterdir() if d.is_dir() and d.name.upper() not in ["README.MD", "TEMPLATES"]]
+    saida_dw_direta = base_dir / "saida" / "planejador_dw"
+    pasta_saida_dw_projeto = saida_dw_direta / projeto
+
+    if (saida_dw_direta / "03_dimensoes").exists() or (saida_dw_direta / "04_fatos").exists():
+        pasta_saida_dw = saida_dw_direta
+        print_ok("Utilizando estrutura canônica direta em 'saida/planejador_dw/'.")
+    elif pasta_saida_dw_projeto.exists():
+        pasta_saida_dw = pasta_saida_dw_projeto
+        print_warn(f"Utilizando pasta legada do projeto: '{pasta_saida_dw.name}'")
+    else:
+        # Se nenhuma das opções tem arquivos, verifica se há apenas uma pasta customizada
+        candidatos = [
+            d for d in saida_dw_direta.iterdir()
+            if d.is_dir() and d.name.upper() not in PASTAS_CANONICAS_DW
+        ]
         if len(candidatos) == 1:
             pasta_saida_dw = candidatos[0]
             projeto = pasta_saida_dw.name.upper()
-            print_warn(f"Utilizando pasta existente: '{pasta_saida_dw.name}'")
+            print_warn(f"Utilizando pasta legada existente: '{pasta_saida_dw.name}'")
         else:
-            print_err(f"Pasta de saída do DW não encontrada: {pasta_saida_dw}")
-            print_warn(f"Certifique-se de que o Planejador de DW gerou os artefatos em 'saida/planejador_dw/{projeto}/'.")
-            pasta_saida_dw.mkdir(parents=True, exist_ok=True)
+            pasta_saida_dw = saida_dw_direta
+            print_ok("Utilizando diretório canônico padrão: 'saida/planejador_dw/'.")
+
 
     # 2. Copiar DDLs
     print(f"\n{NEGRITO}1. Copiando DDLs para 'entrega/camada_semantica/ddl/':{RESET}")

@@ -1,113 +1,173 @@
 # INTAKE_DW.md — Formulário de Entrada do Planejador de DW
 
-Preencha este formulário com as informações do novo projeto. O **Planejador de DW** utilizará esses dados para projetar as camadas (`STG_*`, `ODI_DIM_*`, `DIM_*`, `FATO_*`), definir a estratégia de carga (Truncate & Load vs. MERGE), configurar as ferramentas de ingestão (ODI, Hop, Python) e gerar os DDLs otimizados na pasta `saida/planejador_dw/<NOME_PROJETO>/`.
+Preencha este formulário com as informações do projeto. O **Planejador de DW** utilizará esses dados para projetar as camadas (`STG_*`, `ODI_DIM_*`, `DIM_*`, `FATO_*`), definir a estratégia de carga (Truncate & Load vs. MERGE), configurar as ferramentas de ingestão autorizadas e gerar os artefatos diretamente na pasta `saida/planejador_dw/`.
+
+> ⚠️ **AVISO AO ENGENHEIRO DE DADOS:**  
+> A IA iniciará o processo conferindo este formulário. Se campos obrigatórios ou as caixas de seleção de tecnologias estiverem vazios, a IA pausará o atendimento e solicitará o preenchimento deste link antes de prosseguir.
 
 ---
 
 ## Seção 0 — Identificação do Projeto & Ambiente
 
-- **Nome do Projeto:** `[Ex: SEI_BAHIA, COAPS_FINOPS, DGO_DEIC, FINANCEIRO_CENTRAL]`
-- **Engenheiro Responsável:** `[Nome completo]`
-- **Schema Alvo no Oracle:** `[Ex: SEIMUNICIPIO_OLAP, GESTAODIS_OLAP]`
-- **Tablespace de Dados:** `[Ex: SEIMUNICIPIO_DATA, GESTAODIS_DATA]`
-- **Tablespace de Índices:** `[Ex: SEIMUNICIPIO_IDX, GESTAODIS_IDX (ou a mesma de dados)]`
-- **Tabela `TB_CONTROLE_CARGA` já existe no schema?**
-  - [ ] Sim (reutilizar)
-  - [ ] Não (gerar no script `01_tb_controle_carga.sql`)
+- **Nome do Projeto:** `[Ex: SEI_BAHIA, COAPS_FINOPS, DGO_DEIC, RH_BAHIA]`
+- **Engenheiro de Dados Responsável:** `[Nome completo do engenheiro]`
+- **Schema Alvo no Oracle:** `[Ex: SEIMUNICIPIO_OLAP, RH_BAHIA_OLAP]`
+- **Tablespace de Dados:** `[Ex: SEIMUNICIPIO_DATA, RH_BAHIA_DATA]`
+- **Tablespace de Índices:** `[Ex: SEIMUNICIPIO_IDX, RH_BAHIA_IDX (ou a mesma de dados)]`
+
+### 0.1 Natureza da Execução
+- [ ] **Projeto Novo do Zero:** Criação de novo DW completo no schema alvo.
+- [ ] **Evolução / Adaptação:** Adição de novas fatos/dimensões a um schema já existente.
+
+### 0.2 Tabela de Auditoria `TB_CONTROLE_CARGA`
+- [ ] **Já existe no schema alvo** (reutilizar existente, não gerar script de criação).
+- [ ] **Não existe** (gerar script `01_tb_controle_carga.sql` com estrutura corporativa).
 
 ---
 
-## Seção 1 — O que o Cliente Quer (Perguntas & Casos de Uso)
+## Seção 1 — Seleção de Tecnologias da Esteira (MANDATÓRIO)
+
+> 🛑 **REGRA DE CONDICIONALIDADE DE CÓDIGO:**  
+> A IA **SOMENTE** gerará código para as tecnologias marcadas com `[x]` abaixo.  
+> Qualquer tecnologia desmarcada (`[ ]`) terá a sua geração de scripts **SUMARIAMENTE BLOQUEADA**, evitando criação de arquivos indesejados.
+
+- [ ] **Oracle Data Integrator (ODI):**
+  - Mapeamentos de carga direta banco-a-banco via DBLink / JDBC.
+  - Orquestração de pacotes, cenários e tabelas auxiliares `ODI_DIM_*`.
+  - *(Se marcado: gera `03_create_odi_dim_tables.sql` e instruções de pacotes no relatório).*
+
+- [ ] **Apache Hop (.hpl / .hwf):**
+  - Pipelines de ingestão para arquivos recebidos via SFTP, FTP, compartilhamento de rede ou CSV/Excel.
+  - *(Se marcado: gera arquivos na pasta `06_pipelines_hop/`).*
+  - *(Se NÃO marcado: NENHUM arquivo Hop será gerado).*
+
+- [ ] **Extratores Python (.py):**
+  - Scripts modulares para consumo de APIs Web REST, autenticação OAuth2 / Bearer Token, paginação e parse de JSON aninhado.
+  - *(Se marcado: gera scripts na pasta `07_extratores_python/`).*
+  - *(Se NÃO marcado: NENHUM script Python de API será gerado).*
+
+- [ ] **Procedures PL/SQL Puras / Triggers:**
+  - Carga, transformações e manutenção 100% internas no banco Oracle sem ferramentas externas.
+  - *(Se marcado: inclui procedures dedicadas na pasta `05_procedimentos_manutencao/`).*
+
+- [ ] **Ingestão Externa Já Existente / Legada:**
+  - Os dados já chegam nas tabelas `STG_*` ou tabelas de origem por outra esteira legada já em produção.
+  - *(Se marcado: a IA foca apenas na modelagem dimensional `DIM_*` e `FATO_*`, pulando pipelines de ingestão).*
+
+---
+
+## Seção 2 — O que o Cliente Quer (Perguntas & Casos de Uso)
 
 > *Liste de 5 a 15 perguntas de negócio que o DW deve responder com precisão.*
 
-1. `[Ex: Quantos documentos foram gerados por órgão e unidade no último mês?]`
-2. `[Ex: Qual o custo diário de infraestrutura e memória por cluster e projeto?]`
-3. `[Ex: Qual a quantidade de ações policiais com apreensão de armas por município?]`
+1. `[Ex: Qual o percentual de cumprimento de SLA por indicador em cada ciclo mensal?]`
+2. `[Ex: Quais chamados violaram o SLA de atendimento com horas excedidas?]`
+3. `[Ex: Qual o valor total de glosa contratual apurado por ciclo de faturamento?]`
 4. `...`
 
-- **Público-alvo principal:**
-  - [ ] Diretoria / Gestão Executiva (Dashboards analíticos consolidados)
-  - [ ] Analistas Operacionais (Consultas ad-hoc analíticas no detalhe)
-  - [ ] Modelos de IA / Data Science (Alimentação de algoritmos e LLMs corporativos)
-- **Ferramenta de BI / Consumo Final Prevista:**
-  - [ ] Power BI (Import Mode, Star Schema puro, medidas DAX explícitas)
-  - [ ] Apache Superset (Datasets declarativos em YAML com métricas SQL)
-  - [ ] Módulo de Camada Semântica Corporativa (Views `EVENTO` e 8 tabelas `META_*`)
+### 2.1 Público-Alvo Principal
+- [ ] Diretoria / Gestão Executiva (Dashboards analíticos consolidados e KPIs estratégicos)
+- [ ] Analistas Operacionais (Consultas ad-hoc analíticas no detalhe transacional)
+- [ ] Modelos de IA / Data Science / LLMs Corporativos (Alimentação de agentes Text-to-SQL e analítica avançada)
+
+### 2.2 Ferramenta de BI / Consumo Prevista
+- [ ] **Power BI:** Import Mode, modelo Star Schema puro, medidas DAX explícitas (gera guia em `08_datasets_bi/`).
+- [ ] **Apache Superset:** Datasets declarativos em YAML com métricas SQL compiladas (gera yaml em `08_datasets_bi/`).
+- [ ] **Camada Semântica Corporativa:** Views `EVENTO` e metadados nas 8 tabelas `META_*` para IA e Text-to-SQL.
+- [ ] **Outras Ferramentas SQL:** Metabase, Tableau, DBeaver.
 
 ---
 
-## Seção 2 — Regras de Negócio e Estratégia de Carga
+## Seção 3 — Regras de Negócio e Estratégia de Carga (Dual Strategy)
 
-### 2.1 Grão e Métricas da Fato
+### 3.1 Grão e Métricas da Fato
 - **Grão esperado da Fato principal:**  
-  *Ex: "Uma linha para cada documento gerado", "Uma linha para cada combinação de dia, cluster e projeto".*
+  *Ex: "Uma linha para cada chamado atendido x ciclo de medição", "Uma linha por item faturado".*
 - **Medidas e Fórmulas de Cálculo:**
-  - Medida 1: `[Ex: TOT_DOCUMENTO - Contagem simples de ocorrências (valor 1)]`
-  - Medida 2: `[Ex: VAL_CUSTO_TOTAL - Soma monetária de custos diretos e distribuídos]`
-  - Medida 3: `[Ex: QTD_CPU_CORES - Consumo médio de núcleos de processador]`
+  - Medida 1: `[Ex: QTD_CHAMADO - Contagem unitária (valor 1)]`
+  - Medida 2: `[Ex: VAL_GLOSA_TOTAL - Soma monetária das penalidades aplicadas]`
+  - Medida 3: `[Ex: TEMPO_ATENDIMENTO_HORAS - Horas líquidas despendidas]`
   - Medida 4: `...`
 
-### 2.2 Seleção da Estratégia de Carga da Fato
-- **Qual estratégia atende melhor o caso de uso?**
-  - [ ] **Estratégia A: Truncate & Load Massivo (Padrão SEI Bahia / OLTP)**
-    - Carga em lote noturno (D-1 ou janela móvel de N meses).
-    - Tabelas indexadas com **BITMAP INDEX** nas FKs (`DIM_*`) para Star Transformation no Oracle CBO.
-    - Execução obrigatória da procedure `PRC_POS_CARGA_FATO` pós-carga (rebuild NOLOGGING e stats).
-  - [ ] **Estratégia B: Incremental Idempotente via `MERGE INTO` (Padrão FinOps / Telemetria)**
-    - Carga contínua intra-dia ou diária a partir de APIs e microsserviços.
-    - Tabelas indexadas exclusivamente com **B-TREE INDEX** em chaves compostas (sem Bitmaps para evitar deadlocks `ORA-00060`).
-    - Lógica `WHEN MATCHED THEN UPDATE / WHEN NOT MATCHED THEN INSERT`.
+### 3.2 Seleção da Estratégia de Carga da Fato
+- [ ] **Estratégia A: Truncate & Load Massivo (Padrão SEI Bahia / OLTP)**
+  - Carga em lote noturno (janela móvel ou ciclo completo).
+  - Fatos indexadas com **BITMAP INDEX** nas FKs dimensionais (`DIM_*`) para habilitar o Star Transformation do Oracle.
+  - Execução obrigatória de `PRC_POS_CARGA_FATO` pós-carga (rebuild NOLOGGING e `DBMS_STATS`).
+- [ ] **Estratégia B: Incremental Idempotente via `MERGE INTO` (Padrão FinOps / Telemetria / APIs)**
+  - Cargas intra-dia, diárias ou por lote contínuo.
+  - Fatos indexadas exclusivamente com **B-TREE INDEX** em chaves compostas (sem Bitmaps para evitar deadlocks `ORA-00060`).
+  - Lógica `WHEN MATCHED THEN UPDATE / WHEN NOT MATCHED THEN INSERT`.
 
-### 2.3 Histórico e Vigência das Dimensões (SCD - Slowly Changing Dimensions)
-- Se um atributo descritivo mudar (ex: órgão do usuário, nome da unidade), o cliente deseja:
-  - [ ] Manter histórico completo de versões (SCD Tipo 2 com `DTC_EFETIVACAO`, `DTC_EXPIRACAO` e `ODI_DIM_*`) — *(Padrão Corporativo Obrigatório)*
-  - [ ] Apenas sobrescrever o valor corrigido (SCD Tipo 1)
+### 3.3 Tipo de Processamento de Carga
+- [ ] **Carga Inicial (First Load):** Carga histórica de arranque com desabilitação temporária de constraints e índices.
+- [ ] **Carga Incremental Delta:** Filtro por coluna de watermark (`DT_ATUALIZACAO`, `LAST_MOD` ou ID sequencial).
+- [ ] **Carga Completa Periódica (Full Reload):** Truncate total e recarga de toda a massa de dados.
 
-### 2.4 Retenção e Particionamento
-- Quantos anos de histórico devem ser mantidos no DW? `[Ex: 5 anos, perpétuo]`
-- Particionamento desejado?
-  - [ ] Sim (Range ou Interval por `DIM_TEMPO` para fatos > 10M linhas)
-  - [ ] Não (tabela monolítica padrão)
+### 3.4 Histórico e Vigência das Dimensões (SCD)
+- [ ] **SCD Tipo 1:** Sobrescrita direta de atributos cadastrais sem histórico de versões.
+- [ ] **SCD Tipo 2 Corporativo:** Versionamento histórico obrigatório com `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR` e tabela auxiliar `ODI_DIM_*`.
+- [ ] **Dimensões Degeneradas:** Chaves transacionais mantidas diretamente na Fato (ex: `NUM_PROTOCOLO`, `NUM_CHAMADO`).
+- [ ] **Dimensões Conformes:** Reutilização de dimensões globais corporativas (ex: `DIM_TEMPO`, `DIM_ORGAO`, `DIM_LOCALIDADE`).
 
 ---
 
-## Seção 3 — Inventário Técnico de Fontes de Dados
+## Seção 4 — Otimizações Físicas e Tuning Oracle
 
-### 3.1 Fontes Banco de Dados (Direcionadas ao ODI)
-*Coloque os DDLs correspondentes em `modulos/planejador_dw/entrada/ddl/` e amostras em `entrada/amostras/`.*
+- [ ] **Surrogate Keys Numéricas Sintéticas:** PKs de dimensões alimentadas por Sequences Oracle (`MINVALUE 1 CACHE 50 NOORDER`).
+- [ ] **Registro Padrão Linha `-1` Obrigatório:** Surrogate Key `-1` ('NÃO INFORMADO' / 'NÃO SE APLICA') inicializada em todas as dimensões.
+- [ ] **Índices B-Tree Exclusivos em Dimensões:** Terminantemente proibido criar índices Bitmap em dimensões (evita deadlocks em DMLs concorrentes).
+- [ ] **Particionamento de Fato por Intervalo Mensal/Anual:** Recomendado para fatos com volume superior a 10 milhões de linhas.
+- [ ] **Compressão de Dados Oracle:** Uso de `COMPRESS FOR QUERY HIGH` ou `ROW STORE COMPRESS BASIC` em tabelas fato históricas.
+
+---
+
+## Seção 5 — Inventário Técnico de Fontes de Dados
+
+### 5.1 Fontes Banco de Dados (Direcionadas ao ODI)
+*Deposite os DDLs correspondentes em `entrega/planejador_dw/ddl/` e amostras em `entrega/planejador_dw/amostras/`.*
 - **Origem:** `[Ex: Oracle OLTP Sistema X, Postgres ERP Y]`
 - **Tabelas de Origem:** `[Ex: TAB_PROCESSO, TAB_UNIDADE]`
-- **Mecanismo de Leitura:** `[Ex: DBLink Oracle, Conexão JDBC direta no ODI]`
-- **Campos de Controle de Carga:** `[Ex: Possui coluna DT_ATUALIZACAO? Sim / Não]`
+- **Mecanismo de Conexão:** `[DBLink Oracle / Conexão JDBC direta no ODI]`
+- **Coluna de Filtro Incremental (Watermark):** `[Ex: DT_ULTIMA_ALTERACAO, ID_SEQUENCIAL ou N/A]`
 
-### 3.2 Fontes Arquivos e Planilhas em FTP/SFTP (Direcionadas ao Apache Hop)
-*Coloque amostras de arquivos em `modulos/planejador_dw/entrada/arquivos_ftp/`.*
-- **Protocolo:** `[SFTP / FTP / Compartilhamento de Rede / S3]`
-- **Formato:** `[CSV, Excel (.xlsx/.xls), TXT]`
-- **Frequência de Chegada:** `[Ex: Diário às 06h, Semanal]`
+### 5.2 Fontes Arquivos e Planilhas em FTP/SFTP (Direcionadas ao Apache Hop)
+*Deposite arquivos de exemplo em `entrega/planejador_dw/arquivos_ftp/`.*
+- **Protocolo:** `[SFTP / FTP / Compartilhamento de Rede NFS / Local]`
+- **Formato do Arquivo:** `[CSV, Excel (.xlsx/.xls), TXT com layout posicional]`
+- **Frequência de Chegada:** `[Ex: Diário às 06h, Mensal no fechamento do ciclo]`
 - **Delimitador & Encoding:** `[Ex: Ponto e vírgula (;), UTF-8 / ISO-8859-1]`
 
-### 3.3 Fontes APIs Web & Tratamentos Complexos (Direcionadas ao Python)
-*Coloque exemplos reais de payload JSON de resposta em `modulos/planejador_dw/entrada/api_specs/`.*
-- **Tipo de Serviço:** `[REST / JSON / Webhook]`
+### 5.3 Fontes APIs Web & Tratamentos Complexos (Direcionadas ao Python)
+*Deposite amostras de resposta JSON/XML em `entrega/planejador_dw/api_specs/`.*
+- **Tipo de Serviço:** `[REST / JSON / SOAP / Webhook]`
 - **Método de Autenticação:** `[Bearer Token, OAuth2 Client Credentials, API Key]`
 - **Paginação:** `[Por offset (?offset=100), por página (?page=1), por cursor]`
-- **Complexidade:** `[Estruturas JSON aninhadas, necessidade de regex avançado]`
+- **Complexidade Estrutural:** `[JSON aninhado, necessidade de flattening, cálculo de horas úteis]`
 
 ---
 
-## Seção 4 — Volumetria e Dimensionamento (Para Sizing dos DBAs)
+## Seção 6 — Volumetria e Dimensionamento (Para Sizing dos DBAs)
 
 - **Volume Total Atual na Origem (estimativa de linhas):** `[Ex: 5.000.000 de linhas]`
-- **Volume Novo Esperado por Dia/Mês:** `[Ex: 100.000 linhas/mês]`
-- **Tamanho Médio de Linha na Origem (ou anexe amostras):** `[Ex: ~250 bytes]`
+- **Volume Novo Esperado por Mês:** `[Ex: 100.000 linhas/mês]`
+- **Tamanho Médio de Linha na Origem:** `[Ex: ~250 bytes]`
+- **Tempo de Retenção Desejado no DW:** `[Ex: 5 anos, perpétuo]`
 
 ---
 
-## Seção 5 — Parâmetros de Disparo Remoto (`OdiOSCommand`)
+## Seção 7 — Entregáveis Desejados
 
-*Informações para geração automática do comando de disparo SSH no ODI:*
-- **Host / Servidor de Execução:** `[Ex: srv-etl-hop01.empresa.gov.br]`
-- **Usuário SSH:** `[Ex: usr_odi_exec]`
-- **Caminho dos Scripts no Servidor:** `[Ex: /opt/etl/hop/pipelines/ ou /opt/etl/python/]`
+Marque os artefatos que você deseja que a IA gere:
+- [x] **DDLs de Staging (`02_staging/02_create_stg_tables.sql`)**
+- [x] **DDLs de Dimensões e Sequences (`03_dimensoes/04_create_dim_tables.sql`)**
+- [x] **Carga Inicial da Linha `-1` (`03_dimensoes/06_init_default_records.sql`)**
+- [x] **DDLs de Fatos com Índices e Tuning (`04_fatos/05_create_fato_tables.sql`)**
+- [ ] **Tabelas Auxiliares do ODI (`03_dimensoes/03_create_odi_dim_tables.sql`)** *(apenas se ODI selecionado)*
+- [ ] **Procedure Pós-Carga `PRC_POS_CARGA_FATO` (`05_procedimentos_manutencao/`)** *(apenas se Estratégia A)*
+- [ ] **Pipelines e Workflows do Apache Hop (`06_pipelines_hop/`)** *(apenas se Apache Hop selecionado)*
+- [ ] **Extratores Python de API (`07_extratores_python/`)** *(apenas se Python API selecionado)*
+- [x] **Guia de Consumo Power BI e Datasets Superset (`08_datasets_bi/`)**
+- [x] **Relatório Técnico de Estratégias e Linhagem (`09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`)**
+- [x] **Suíte de Testes SQL de Integridade Analítica (`10_testes_integridade/13_testes_integridade.sql`)**
+- [x] **Dicionário Interativo de Dados HTML (`11_dicionario_dados/dicionario_dados.html`)**

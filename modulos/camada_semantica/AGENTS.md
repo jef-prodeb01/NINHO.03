@@ -42,36 +42,42 @@ analisa insumos, deriva entendimento, valida com o engenheiro e gera SQL.
 > **Se você perceber que está gerando SQL sem ter todas as informações, PARE.**
 > É melhor pedir uma vez a mais do que gerar SQL errado.
 
-### ⚠️ REGRA INICIAL — IDENTIFICAÇÃO E ESTADO DO SCHEMA (OBRIGATÓRIA)
+### ⚠️ REGRA INICIAL — IDENTIFICAÇÃO, INTAKE E ESTADO DO SCHEMA (OBRIGATÓRIA)
 
 > **SEMPRE no início de qualquer sessão, ANTES de qualquer ação ou geração de scripts:**
-> 1. **Peça o nome do projeto** — se não estiver em `NOME_PROJETO.txt` ou INTAKE.
-> 2. **Peça o nome do engenheiro responsável** — para registro nas documentações.
-> 3. **Pergunte o estado de execução no schema:**
->    - **Pergunta A:** É a primeira vez que este processo está sendo executado neste schema/DW? (Sim / Não)
->    - **Pergunta B:** As tabelas `META_*` já existem no schema alvo? (Sim / Não)
->
+> 
+> 1. **Verificação do INTAKE (Gate 0):**
+>    - Verifique se [`INTAKE_SEMANTICA.md`](INTAKE_SEMANTICA.md) está preenchido pelo Engenheiro de Dados.
+>    - Se estiver em branco ou contiver placeholders (`<...>` ou `[Ex: ...]`), **PARE IMEDIATAMENTE** e envie o link clicável direto:
+>      👉 [INTAKE_SEMANTICA.md](file:///c:/Users/jeferson.ressurreica/Downloads/Projetos/Interno/Semantica/template/modulos/camada_semantica/INTAKE_SEMANTICA.md)
+>      Solicite que o engenheiro preencha o formulário e marque as opções antes de avançar.
+> 
+> 2. **Destino Estrito de Saída:**
+>    - Todos os artefatos devem ser gerados **DIRETAMENTE** em `saida/camada_semantica/vw_analiticas/` e `saida/camada_semantica/meta_projeto/`.
+>    - **NUNCA crie subpastas com o nome do projeto** (ex: `saida/camada_semantica/<PROJETO>/`).
+> 
+> 3. **Fidelidade Colunar Absoluta:**
+>    - Todas as colunas utilizadas nas views `VW_*` e registradas nas tabelas `META_OBJETO` e `META_METRICA` DEVEM existir exatamente como nomeadas no DDL do DW (`entrega/camada_semantica/ddl/`).
+>    - É expressamente proibido alucinar ou inventar nomes de colunas que não existam no DW.
+> 
+> 4. **Identificação e Estado do Schema:**
+>    - **Nome do projeto** — se não estiver em `NOME_PROJETO.txt` ou INTAKE.
+>    - **Nome do engenheiro responsável** — para registro nas documentações.
+>    - **Pergunte o estado de execução no schema:**
+>      - **Pergunta A:** É a primeira vez que este processo está sendo executado neste schema/DW? (Sim / Não)
+>      - **Pergunta B:** As tabelas `META_*` já existem no schema alvo? (Sim / Não)
+> 
 > **Comportamento estrito conforme as respostas:**
 > - **CENÁRIO 1: Primeira execução e NÃO tem tabelas `META_*` no schema:**
 >   - Gera o script `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` (CREATE TABLE das 8 tabelas `META_*` + triggers).
 >   - Gera todos os scripts de INSERT do zero (incluindo todas as 36 orientações de IA e regras universais `GLOBAL`, mais os metadados do `<PROJETO>`).
 > - **CENÁRIO 2: JÁ existem tabelas `META_*` no schema (reexecução, novo projeto compartilhando o schema ou atualização):**
->   - **NÃO** gera nem executa `CREATE TABLE` (pula a Subfase 3b / `01_create_meta_tables.sql`).
+>   - **NÃO** gera nem recria tabelas (pula a Subfase 3b / `01_create_meta_tables.sql`).
 >   - Nos scripts de metadados (Subfase 3c), **APENAS ACRESCENTA**:
 >     - Utiliza `MERGE INTO` (ou `INSERT ... WHERE NOT EXISTS`) para inserir apenas as novidades do `<PROJETO>`, sem duplicar registros e sem tentar recriar tabelas existentes.
->
+> 
 > **Se NÃO tiver essas informações → PERGUNTE ANTES de prosseguir com qualquer coisa.**
 > **NUNCA use placeholders** (`<NOME_PROJETO>`, `<INGENHEIRO>`) em nenhum artefato.
->
-> **Formato da pergunta inicial:**
-> ```
-> 📋 INFORMAÇÕES INICIAIS NECESSÁRIAS:
->
-> 1. **Nome do projeto:** (ex: SEI, SIPAR, E-CAC)
-> 2. **Nome do engenheiro responsável:** (para registro em documentacao/catalogo_projetos/PROJETO_VERSION.md)
-> 3. **É a primeira vez executando neste schema?** (Sim / Não)
-> 4. **As tabelas META_* já existem no schema alvo?** (Sim / Não)
-> ```
 
 ### Checklist de INSUMOS OBRIGATÓRIOS (verificar ANTES de qualquer geração)
 
