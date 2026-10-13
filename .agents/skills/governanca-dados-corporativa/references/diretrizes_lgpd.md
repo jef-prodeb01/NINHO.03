@@ -18,3 +18,4 @@ Para colunas classificadas como `PESSOAL` ou `SENSÍVEL`, aplique máscaras ou r
 - **CPF:** `SUBSTR(CPF, 1, 3) || '.***.***-' || SUBSTR(CPF, 10, 2)`
 - **E-mail:** `SUBSTR(EMAIL, 1, 2) || '****@' || SUBSTR(EMAIL, INSTR(EMAIL, '@') + 1)`
 - **Nomes de Partes em Processos Sigilosos:** Mascarar com a expressão `'RESERVADO - LEI 13.709/2018'`.
+

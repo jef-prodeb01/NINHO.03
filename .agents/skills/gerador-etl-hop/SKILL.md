@@ -44,3 +44,4 @@ Ao ser acionada, os arquivos gerados devem ser salvos diretamente em:
 ## 3. Template XML Base de Pipeline (.hpl)
 
 Consulte o modelo estrutural XML em [template_pipeline.hpl](./templates/template_pipeline.hpl) para manter compatibilidade com as versões 2.x do Apache Hop.
+

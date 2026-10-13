@@ -65,3 +65,4 @@ Gere os arquivos diretamente nas pastas canônicas:
 - Scripts de Metadados: `saida/camada_semantica/meta_projeto/`
 - Script de Validação e Testes: `saida/camada_semantica/meta_projeto/09_validacoes.sql`
 - Catálogo Corporativo: `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `PROJETO_VERSION.md`
+

@@ -33,3 +33,4 @@ Ao ser acionada, os scripts gerados devem ser salvos diretamente em:
 ## 2. Template do Extrator Python
 
 Consulte o modelo em [template_extrator_api.py](./templates/template_extrator_api.py).
+

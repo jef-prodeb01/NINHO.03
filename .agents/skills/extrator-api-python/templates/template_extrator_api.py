@@ -118,3 +118,4 @@ def extrair_e_carregar():
 
 if __name__ == "__main__":
     extrair_e_carregar()
+

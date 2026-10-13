@@ -72,3 +72,4 @@ Este catálogo define as 36 diretrizes universais (`GLOBAL`) inseridas na tabela
 | 3 | `JUSTIFICATIVA_FORMULA` | Mostre a query SQL gerada para que o analista de negócio possa auditar os resultados. |
 | 4 | `LIMITES_DE_EXIBICAO` | Se a consulta retornar mais de 50 linhas, resuma os principais registros e ofereça agregação. |
 | 5 | `SUGESTAO_DESDOBRAMENTO`| Sugira 1 ou 2 perguntas de negócio correlacionadas para aprofundar a análise (*drill-down*). |
+

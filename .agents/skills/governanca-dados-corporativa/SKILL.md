@@ -27,3 +27,4 @@ Gere os artefatos diretamente nas pastas:
 - `saida/governanca_dados/schemas_mongo/`
 - `saida/governanca_dados/aws_datazone/`
 - `saida/governanca_dados/relatorio_governanca_<PROJETO>.md`
+

@@ -75,3 +75,4 @@ Gere os arquivos nas subpastas apropriadas de `saida/planejador_dw/`:
 11. `11_dicionario_dados/dicionario_dados.html`
 
 > 🛑 **REGRA CANÔNICA:** Nunca crie subpastas com o nome do projeto (ex: `saida/planejador_dw/<PROJETO>/`). Salve diretamente nas pastas numeradas.
+

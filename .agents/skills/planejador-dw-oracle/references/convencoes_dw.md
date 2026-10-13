@@ -36,3 +36,4 @@
 | Datas | `DATE` | Inclui ano, mês, dia, hora, minuto e segundo |
 | Timestamps com Fração | `TIMESTAMP(6)` | Usar se frações de segundo forem cruciais |
 | Flags / Indicadores | `VARCHAR2(1 CHAR)` | 'S' / 'N' ou 'A' / 'I' |
+

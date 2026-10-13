@@ -65,3 +65,4 @@ ORDER BY ocupado_mb DESC;
        degree           => DBMS_STATS.DEFAULT_DEGREE
    );
    ```
+

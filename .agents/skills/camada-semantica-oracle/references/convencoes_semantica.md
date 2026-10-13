@@ -33,3 +33,4 @@ Todas as views devem ser criadas com nomes em **MAIÚSCULAS** seguindo os prefix
    - Toda coluna calculada deve conter comentário explicativo da fórmula.
 3. **Escrita de SQL nas Tabelas META_:**
    - Ao gravar consultas SQL na tabela `META_CONSULTA_NEGOCIO`, utilize a notação de quote do Oracle `q'[SELECT ... FROM ...]'` para preservar a indentação e evitar escape de aspas simples.
+

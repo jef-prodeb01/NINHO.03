@@ -49,3 +49,4 @@ python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto <NOME_PRO
 3. Preenche automaticamente o `INTAKE_SEMANTICA.md` com as informações do DW.
 4. Inicializa o catálogo do projeto em `documentacao/catalogo_projetos/`.
 5. Valida a prontidão com `python core/scripts_comuns/validar_entrega.py semantica`.
+

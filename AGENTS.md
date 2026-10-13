@@ -37,3 +37,4 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 - `/aprovar-blueprint`: Autoriza o início da geração física dos scripts DDL e de esteira.
 - `/validar-entrega`: Executa o checklist pré-voo automatizado (`python core/scripts_comuns/validar_entrega.py all`).
 - `/concluir-dw`: Realiza o handoff e a transição contínua para a Camada Semântica.
+
