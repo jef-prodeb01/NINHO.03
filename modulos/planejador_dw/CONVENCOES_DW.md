@@ -58,3 +58,4 @@ Este documento resume as regras inegociáveis do **Planejador de DW** para o Eng
 - **Tablespace Única:** Em schemas com tablespace única (ex: `SEIMUNICIPIO_DATA`), limitar índices aos estritamente necessários para não esgotar a cota.
 - **Estratégia A (Truncate & Load):** Índices BITMAP apenas nas FKs e colunas de baixa cardinalidade da Fato. Executar `PRC_POS_CARGA_FATO` com rebuild `NOLOGGING` e `DBMS_STATS(CASCADE => TRUE)`.
 - **Estratégia B (MERGE Incremental):** Índices B-Tree compostos nas chaves do `ON (...)`. Índices Bitmap proibidos.
+

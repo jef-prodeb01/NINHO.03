@@ -66,13 +66,27 @@ def validar_intake_dw(base_dir: Path) -> dict:
 
     content = intake_path.read_text(encoding="utf-8", errors="ignore")
 
+    # Checar se perguntas/regras vêm por arquivos na pasta entrega
+    pasta_entrega_dw = base_dir / "entrega" / "planejador_dw"
+    tem_docs_entrega = False
+    if pasta_entrega_dw.exists():
+        docs = [f for f in pasta_entrega_dw.iterdir() if f.is_file() and f.suffix.lower() in [".md", ".txt", ".docx", ".pdf"] and f.name.lower() != "readme.md"]
+        if docs:
+            tem_docs_entrega = True
+
+    opcao2_marcada = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Detalhadas em arquivos", content, re.IGNORECASE))
+
     # Checar se campos chave ainda contêm [Ex: ...]
     placeholders = re.findall(r"(\[Ex:.*?\])", content)
     if placeholders:
-        print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
-        for p in placeholders[:3]:
-            print(f"     Pendente: {p}")
-        results["avisos"] += 1
+        if tem_docs_entrega or opcao2_marcada:
+            print_ok("Perguntas e regras de negócio fornecidas via arquivos na pasta 'entrega/planejador_dw/'.")
+            results["sucessos"] += 1
+        else:
+            print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
+            for p in placeholders[:3]:
+                print(f"     Pendente: {p}")
+            results["avisos"] += 1
     else:
         print_ok("Nenhum placeholder '[Ex: ...]' encontrado. Formulario parece preenchido!")
         results["sucessos"] += 1
@@ -147,6 +161,14 @@ def validar_arquivos_dw(base_dir: Path) -> dict:
     for pasta in pastas_insumo:
         if not pasta.exists():
             continue
+        # Documentos soltos de regras/perguntas na raiz da pasta
+        docs_raiz = [f for f in pasta.iterdir() if f.is_file() and f.suffix.lower() in [".md", ".txt", ".docx", ".pdf"] and f.name.lower() != "readme.md"]
+        if docs_raiz:
+            total_arquivos += len(docs_raiz)
+            print_ok(f"Encontrado(s) {len(docs_raiz)} documento(s) de negócio/regras em '{pasta.name}':")
+            for d in docs_raiz:
+                print(f"     - {d.name} ({d.stat().st_size} bytes)")
+
         for sub in ["ddl", "amostras", "arquivos_ftp", "api_specs"]:
             sub_path = pasta / sub
             if sub_path.exists():
@@ -201,13 +223,28 @@ def validar_intake_semantica(base_dir: Path) -> dict:
 
     content = intake_path.read_text(encoding="utf-8", errors="ignore")
 
+    # Checar se perguntas/regras vêm por arquivos na pasta entrega
+    pasta_entrega_sem = base_dir / "entrega" / "camada_semantica"
+    tem_docs_sem = False
+    if pasta_entrega_sem.exists():
+        docs_sem = [f for f in pasta_entrega_sem.glob("*") if f.is_file() and f.suffix.lower() in [".md", ".txt", ".docx", ".pdf"] and f.name.lower() != "readme.md"]
+        rel_etl = [f for f in (pasta_entrega_sem / "relatorios_etl").glob("*") if f.is_file() and f.name.lower() != "readme.md"] if (pasta_entrega_sem / "relatorios_etl").exists() else []
+        if docs_sem or rel_etl:
+            tem_docs_sem = True
+
+    opcao2_sem = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Documentadas em arquivos", content, re.IGNORECASE))
+
     # Checar placeholders não preenchidos
     placeholders = re.findall(r"(<informe.*?>|<cole.*?>|<descreva.*?>)", content, re.IGNORECASE)
     if placeholders:
-        print_warn(f"Existem {len(placeholders)} marcadores ainda nao preenchidos no formulario.")
-        for p in placeholders[:3]:
-            print(f"     Pendente: {p}")
-        results["avisos"] += 1
+        if tem_docs_sem or opcao2_sem:
+            print_ok("Regras/perguntas de negócio fornecidas via arquivos na pasta 'entrega/camada_semantica/'.")
+            results["sucessos"] += 1
+        else:
+            print_warn(f"Existem {len(placeholders)} marcadores ainda nao preenchidos no formulario.")
+            for p in placeholders[:3]:
+                print(f"     Pendente: {p}")
+            results["avisos"] += 1
     else:
         print_ok("Formulario INTAKE_SEMANTICA.md preenchido sem marcadores pendentes.")
         results["sucessos"] += 1
@@ -320,13 +357,27 @@ def validar_intake_governanca(base_dir: Path) -> dict:
 
     content = intake_path.read_text(encoding="utf-8", errors="ignore")
 
+    # Checar se diretrizes vêm por arquivos na pasta entrega
+    pasta_entrega_gov = base_dir / "entrega" / "governanca_dados"
+    tem_docs_gov = False
+    if pasta_entrega_gov.exists():
+        docs_gov = [f for f in pasta_entrega_gov.glob("*") if f.is_file() and f.suffix.lower() in [".md", ".txt", ".docx", ".pdf"] and f.name.lower() != "readme.md"]
+        if docs_gov:
+            tem_docs_gov = True
+
+    opcao2_gov = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Diretrizes documentadas", content, re.IGNORECASE))
+
     # Checar se campos de exemplo ainda contêm [Ex: ...]
     placeholders = re.findall(r"(\[Ex:.*?\])", content)
     if placeholders:
-        print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
-        for p in placeholders[:3]:
-            print(f"     Pendente: {p}")
-        results["avisos"] += 1
+        if tem_docs_gov or opcao2_gov:
+            print_ok("Diretrizes de governança fornecidas via arquivos na pasta 'entrega/governanca_dados/'.")
+            results["sucessos"] += 1
+        else:
+            print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
+            for p in placeholders[:3]:
+                print(f"     Pendente: {p}")
+            results["avisos"] += 1
     else:
         print_ok("Nenhum placeholder '[Ex: ...]' encontrado no INTAKE_GOVERNANCA.md.")
         results["sucessos"] += 1

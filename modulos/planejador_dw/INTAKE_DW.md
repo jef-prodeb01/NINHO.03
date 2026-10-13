@@ -58,19 +58,28 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 
 ## Seção 2 — O que o Cliente Quer (Perguntas & Casos de Uso)
 
-> *Liste de 5 a 15 perguntas de negócio que o DW deve responder com precisão.*
+> 💡 **LOCALIZAÇÃO DAS PERGUNTAS DE NEGÓCIO:**  
+> As perguntas e casos de uso podem ser preenchidos diretamente aqui OU sinalizados em arquivos na pasta `entrega/planejador_dw/`.
 
+### 2.0 Origem das Perguntas e Regras de Negócio
+- [ ] **Opção 1: Perguntas listadas diretamente neste formulário** (preencha a lista 2.1 abaixo).
+- [ ] **Opção 2: Perguntas e regras detalhadas em arquivos na pasta `entrega/planejador_dw/`**
+  - Marque esta opção caso tenha depositado documentos como editais, regras ou perguntas avulsas.
+  - **Arquivo(s) de referência na pasta entrega:** `[Ex: 05_perguntas_negocio.md, 04_regras_negocio.md, edital.md, documentacao.md]`
+  - *(A IA inspecionará esses arquivos automaticamente para extrair as necessidades e regras de negócio).*
+
+### 2.1 Perguntas de Negócio (Se Opção 1 selecionada)
 1. `[Ex: Qual o percentual de cumprimento de SLA por indicador em cada ciclo mensal?]`
 2. `[Ex: Quais chamados violaram o SLA de atendimento com horas excedidas?]`
 3. `[Ex: Qual o valor total de glosa contratual apurado por ciclo de faturamento?]`
 4. `...`
 
-### 2.1 Público-Alvo Principal
+### 2.2 Público-Alvo Principal
 - [ ] Diretoria / Gestão Executiva (Dashboards analíticos consolidados e KPIs estratégicos)
 - [ ] Analistas Operacionais (Consultas ad-hoc analíticas no detalhe transacional)
 - [ ] Modelos de IA / Data Science / LLMs Corporativos (Alimentação de agentes Text-to-SQL e analítica avançada)
 
-### 2.2 Ferramenta de BI / Consumo Prevista
+### 2.3 Ferramenta de BI / Consumo Prevista
 - [ ] **Power BI:** Import Mode, modelo Star Schema puro, medidas DAX explícitas (gera guia em `08_datasets_bi/`).
 - [ ] **Apache Superset:** Datasets declarativos em YAML com métricas SQL compiladas (gera yaml em `08_datasets_bi/`).
 - [ ] **Camada Semântica Corporativa:** Views `EVENTO` e metadados nas 8 tabelas `META_*` para IA e Text-to-SQL.
@@ -81,13 +90,15 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 ## Seção 3 — Regras de Negócio e Estratégia de Carga (Dual Strategy)
 
 ### 3.1 Grão e Métricas da Fato
-- **Grão esperado da Fato principal:**  
-  *Ex: "Uma linha para cada chamado atendido x ciclo de medição", "Uma linha por item faturado".*
-- **Medidas e Fórmulas de Cálculo:**
-  - Medida 1: `[Ex: QTD_CHAMADO - Contagem unitária (valor 1)]`
-  - Medida 2: `[Ex: VAL_GLOSA_TOTAL - Soma monetária das penalidades aplicadas]`
-  - Medida 3: `[Ex: TEMPO_ATENDIMENTO_HORAS - Horas líquidas despendidas]`
-  - Medida 4: `...`
+- [ ] **Extrair grão e fórmulas dos arquivos de entrega:** `[Ex: 04_regras_negocio.md, edital.md]`
+- **Ou especificar manualmente abaixo:**
+  - **Grão esperado da Fato principal:**  
+    *Ex: "Uma linha para cada chamado atendido x ciclo de medição", "Uma linha por item faturado".*
+  - **Medidas e Fórmulas de Cálculo:**
+    - Medida 1: `[Ex: QTD_CHAMADO - Contagem unitária (valor 1)]`
+    - Medida 2: `[Ex: VAL_GLOSA_TOTAL - Soma monetária das penalidades aplicadas]`
+    - Medida 3: `[Ex: TEMPO_ATENDIMENTO_HORAS - Horas líquidas despendidas]`
+    - Medida 4: `...`
 
 ### 3.2 Seleção da Estratégia de Carga da Fato
 - [ ] **Estratégia A: Truncate & Load Massivo (Padrão SEI Bahia / OLTP)**

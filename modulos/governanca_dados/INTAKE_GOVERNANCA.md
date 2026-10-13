@@ -38,6 +38,13 @@ Preencha este formulário com as definições de arquitetura de governança, cat
 
 ## Seção 2 — Diretrizes de Conformidade Legal (LGPD & LAI)
 
+### 2.0 Origem das Diretrizes
+- [ ] **Opção 1: Selecionados nos checkboxes abaixo**
+- [ ] **Opção 2: Documentados em arquivos na pasta `entrega/governanca_dados/`**
+  - **Arquivo(s) de referência:** `[Ex: entrega/governanca_dados/politica_lgpd.md, classificacao_lai.xlsx]`
+  - *(A IA lerá diretamente esses documentos para mapear termos, sensibilidade e retenção).*
+
+### 2.1 Requisitos Regulatórios Aplicáveis
 Marque os requisitos regulatórios aplicáveis às fontes de dados:
 - [ ] **Classificação de Dados Pessoais (LGPD - Art. 5º):** Identificação de CPF, Nome, E-mail, Matrícula, Endereço.
 - [ ] **Classificação de Dados Sensíveis (LGPD - Art. 11º):** Origem racial/étnica, convicção religiosa, saúde, biometria.
@@ -56,3 +63,4 @@ Marque os artefatos que devem ser gerados em `saida/governanca_dados/`:
 - [x] **Schemas Canônicos de Validação MongoDB (`schemas_mongo/`)**
 - [x] **Formulários de Metadados e Mapeamentos AWS DataZone (`aws_datazone/`)**
 - [x] **Relatório de Conformidade e Classificação LGPD/LAI**
+

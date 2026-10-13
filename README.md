@@ -28,6 +28,14 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 ```text
 NINHO /
 │
+├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
+│   ├── planejador-dw-oracle/                   # Skill de modelagem dimensional, SCD2 e Dual Strategy
+│   ├── gerador-etl-hop/                        # Skill condicional de Apache Hop 2.x
+│   ├── extrator-api-python/                    # Skill condicional de extratores Python oracledb
+│   ├── camada-semantica-oracle/                # Skill de views analíticas e 8 tabelas META_
+│   ├── governanca-dados-corporativa/           # Skill de catálogos Mongo, LAI e LGPD
+│   └── validador-qualidade-entrega/            # Skill de validação pré-voo e gates de qualidade
+│
 ├── 🧠 core/                                    # NÚCLEO COMPARTILHADO & PADRÕES CORPORATIVOS
 │   ├── convencoes/
 │   │   ├── CONVENCOES_DW.md                    # 📜 DNA do DW (SCD2, B-Tree, Dual Strategy, Linha -1)
@@ -50,20 +58,22 @@ NINHO /
 ├── ⚙️ modulos/                                 # MOTORES DE INTELIGÊNCIA & EXECUÇÃO
 │   ├── planejador_dw/                          # 🏛️ MÓDULO 1: Planejamento e Modelagem de DW
 │   │   ├── INTAKE_DW.md                        # 📋 Formulário de requisitos do novo DW
-│   │   ├── AGENTS.md                           # 🤖 Protocolo estrito de execução da IA
+│   │   ├── AGENTS.md                           # 🤖 Orquestrador do módulo (chama skills sob demanda)
 │   │   ├── templates/                          # 📄 15 templates (SQL, Hop, Py, YAML, BI, Testes, HTML)
 │   │   └── README.md                           # 📖 Manual completo do módulo Planejador de DW
 │   │
 │   ├── camada_semantica/                       # 🧠 MÓDULO 2: Camada Semântica & Metadados Ativos
 │   │   ├── INTAKE_SEMANTICA.md                 # 📋 Formulário de requisitos de semântica
-│   │   ├── AGENTS.md                           # 🤖 Protocolo da IA para a Camada Semântica
+│   │   ├── AGENTS.md                           # 🤖 Orquestrador da Camada Semântica (chama skills)
 │   │   ├── templates/                          # 📄 Templates de views analíticas e tabelas META_
 │   │   └── README.md                           # 📖 Manual completo da Camada Semântica
 │   │
 │   ├── governanca_dados/                       # 🛡️ MÓDULO 3: Lakehouse MongoDB & AWS Glue/DataZone
 │   │   ├── ARQUITETURA_FRAMEWORK_GOVERNANCA.md # 🏛️ Envelope canônico, LAI, LGPD e Glue
 │   │   └── README.md                           # 📖 Manual do módulo de Governança
-│   └── README.md                               # 📖 Visão integrada dos módulos
+│   │
+│   ├── README.md                               # 📖 Visão integrada dos módulos
+│   └── AGENTS.md                               # 🤖 Orquestrador mestre raiz
 │
 ├── 📚 documentacao/                            # GOVERNANÇA, MANUAIS & CATALOGAÇÃO CONSOLIDADA
 │   ├── guias/                                  # 📘 MANUAIS OPERACIONAIS PASSO A PASSO
@@ -80,17 +90,18 @@ NINHO /
 │   └── README.md                               # 📖 Índice central da documentação
 │
 └── 📤 saida/                                   # ARTEFATOS FINAIS GERADOS PARA IMPLANTAÇÃO
-    ├── planejador_dw/                          # 📦 Entregáveis do DW (DDLs, Hop, Py, YAML, Relatórios)
-    │   └── <NOME_PROJETO>/                     # Pasta isolada do projeto gerado (9 subpastas)
-    │       ├── 01_controle_carga/              # Script TB_CONTROLE_CARGA
-    │       ├── 02_staging/                     # DDLs das tabelas STG_*
-    │       ├── 03_dimensoes/                   # DDLs DIM_*, ODI_DIM_*, Sequences e linha -1
-    │       ├── 04_fatos/                       # DDLs FATO_* (Estratégia A ou B)
-    │       ├── 05_procedimentos_manutencao/    # Procedure PRC_POS_CARGA_FATO
-    │       ├── 06_pipelines_hop/               # Pipelines Hop (.hpl / .hwf)
-    │       ├── 07_extratores_python/           # Extratores Python modulares
-    │       ├── 08_datasets_bi/                 # Dataset Superset e Guia Power BI
-    │       └── 09_relatorio_estrategias/       # Relatório executivo de arquitetura
+    ├── planejador_dw/                          # 📦 Entregáveis do DW (direto nas 11 subpastas canônicas)
+    │   ├── 01_controle_carga/                  # Script TB_CONTROLE_CARGA
+    │   ├── 02_staging/                         # DDLs das tabelas STG_*
+    │   ├── 03_dimensoes/                       # DDLs DIM_*, ODI_DIM_*, Sequences e linha -1
+    │   ├── 04_fatos/                           # DDLs FATO_* (Estratégia A ou B)
+    │   ├── 05_procedimentos_manutencao/        # Procedure PRC_POS_CARGA_FATO
+    │   ├── 06_pipelines_hop/                   # Pipelines Hop (.hpl / .hwf) (se solicitado)
+    │   ├── 07_extratores_python/               # Extratores Python modulares (se solicitado)
+    │   ├── 08_datasets_bi/                     # Dataset Superset e Guia Power BI
+    │   ├── 09_relatorio_estrategias/           # Relatório executivo de arquitetura
+    │   ├── 10_testes_integridade/              # Scripts de testes pós-carga
+    │   └── 11_dicionario_dados/                # Dicionário de dados HTML
     ├── camada_semantica/                       # 📦 Views analíticas geradas e cargas nas 8 tabelas META_
     ├── governanca_dados/                       # 📦 Schemas Mongo e especificações do DataZone
     └── README.md                               # 📖 Catálogo de saídas da plataforma
@@ -134,4 +145,4 @@ Copie e cole os comandos abaixo diretamente no chat para interagir com o agente:
 > *(ou: "Os insumos do DW estão prontos em `entrega/camada_semantica/`. Por favor, estruture as views analíticas (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`) e gere os scripts de carga para as 8 tabelas `META_*`.")*
 
 ### 4. Para Gerar o Guia de Handoff para o Analista de BI:
-> *"Gere o guia de entrega para o analista de BI (`GUIA_ANALISTA_BI_<PROJETO>.md`) em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`, detalhando o Star Schema, configuração da DIM_TEMPO, catálogo de tabelas e as fórmulas DAX dos KPIs."*
+> *"Gere o guia de entrega para o analista de BI (`GUIA_ANALISTA_BI_<PROJETO>.md`) em `saida/planejador_dw/08_datasets_bi/`, detalhando o Star Schema, configuração da DIM_TEMPO, catálogo de tabelas e as fórmulas DAX dos KPIs."*

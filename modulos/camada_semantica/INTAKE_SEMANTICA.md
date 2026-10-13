@@ -66,6 +66,12 @@ Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw
 
 ## Seção 4 — Regras de Negócio e Segurança de Acesso (RLS)
 
+### 4.0 Origem das Regras de Negócio
+- [ ] **Opção 1: Digitadas diretamente na lista 4.1 abaixo**
+- [ ] **Opção 2: Documentadas em arquivos na pasta `entrega/camada_semantica/` ou derivados do DW**
+  - **Arquivo(s) de referência:** `[Ex: entrega/camada_semantica/relatorios_etl/RELATORIO_ESTRATEGIAS.md, regras_negocio.md]`
+  - *(A IA extrairá as regras diretamente desses arquivos).*
+
 ### 4.1 Regras de Negócio do Negócio
 1. `[Ex: Medida VAL_GLOSA só pode ser apurada após fechamento formal do ciclo mensal]`
 2. `[Ex: Chamados cancelados não devem ser contabilizados no tempo médio de atendimento]`
@@ -80,8 +86,12 @@ Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw
 
 ## Seção 5 — Perguntas de Negócio para o Catálogo (`META_CONSULTA_NEGOCIO`)
 
-> *Liste as perguntas típicas que os analistas de negócio ou gestores farão:*
+### 5.0 Origem das Perguntas de Negócio
+- [ ] **Opção 1: Listadas diretamente na lista 5.1 abaixo**
+- [ ] **Opção 2: Extraídas de documentos na pasta de entrega ou guias do DW**
+  - **Arquivo(s) de referência:** `[Ex: entrega/camada_semantica/relatorios_etl/GUIA_ANALISTA_BI.md, perguntas.md]`
 
+### 5.1 Lista de Perguntas
 1. `[Ex: Qual o percentual de cumprimento de SLA por módulo no último ciclo?]`
 2. `[Ex: Quais são os 10 chamados mais ofensores do tempo de atendimento?]`
 3. `...`

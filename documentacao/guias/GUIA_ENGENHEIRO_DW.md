@@ -105,17 +105,19 @@ Coloque em `modulos/planejador_dw/entrada/api_specs/`:
 - No `INTAKE_DW.md`, especifique: URL base, método de autenticação e tipo de paginação.
 
 <a id="24-formulario-intake"></a>
-### 2.4 Formulário `INTAKE_DW.md` e Gate 0 de Validação
+### 2.4 Formulário `INTAKE_DW.md`, Flexibilidade de Entrega e Gate 0 de Validação
 Preencha o arquivo [`modulos/planejador_dw/INTAKE_DW.md`](../../modulos/planejador_dw/INTAKE_DW.md):
-- **Seção 1 (Pilha Tecnológica):** Marque obrigatoriamente com `[x]` as ferramentas que serão utilizadas (ODI, Hop, Python, PL/SQL).
+- **Seção 1 (Pilha Tecnológica):** Marque obrigatoriamente com `[x]` as ferramentas que serão utilizadas (ODI, Hop, Python, PL/SQL). A IA utiliza skills modulares específicas (`gerador-etl-hop`, `extrator-api-python`) e **nunca** gerará scripts de ferramentas desmarcadas!
 - **Identificação do Projeto:** Nome do projeto, schema alvo e tablespaces (`TABLESPACE_DATA` e `TABLESPACE_INDEX`).
-- **O que o Cliente Quer:** 5 a 15 perguntas de negócio que o DW deve responder.
-- **Regras de Negócio:** Grão da Fato e como calcular as medidas.
+- **O que o Cliente Quer & Regras de Negócio (2 Formas de Entrega):**
+  - **Opção 1:** Digitar as perguntas e regras diretamente nas Seções 2 e 3 do `INTAKE_DW.md`.
+  - **Opção 2 (Recomendada para Documentações Longas):** Depositar arquivos já existentes na pasta `entrega/planejador_dw/` (ex: `04_regras_negocio.md`, `05_perguntas_negocio.md`, `edital.md`, `documentacao.md`) e marcar a **Opção 2** na Seção 2.0 do Intake. A IA lerá diretamente esses documentos!
 - **Estratégia de Carga:** Seleção entre Estratégia A (Truncate & Load) ou Estratégia B (MERGE Incremental).
 - **Volumetria:** Estimativa de linhas para cálculo de sizing e particionamento.
 
 > 🛑 **Gate 0 de Validação Obrigatória:**
-> Quando você iniciar uma sessão solicitando o planejamento do DW, o agente inspecionará imediatamente o formulário [`INTAKE_DW.md`](../../modulos/planejador_dw/INTAKE_DW.md). Se o formulário estiver em branco ou se nenhuma tecnologia estiver marcada na Seção 1, a IA irá **interromper a execução** e devolver o link direto clicável para você preencher antes de continuar. Isso previne que artefatos indesejados (como scripts Hop ou extratores Python) sejam gerados sem necessidade!
+> Quando você iniciar uma sessão solicitando o planejamento do DW, o agente inspecionará imediatamente o formulário [`INTAKE_DW.md`](../../modulos/planejador_dw/INTAKE_DW.md). Se o formulário estiver em branco ou se nenhuma tecnologia estiver marcada na Seção 1, a IA irá **interromper a execução** e devolver o link direto clicável para você preencher antes de continuar.  
+> *Nota:* Se as perguntas/regras estiverem na pasta `entrega/planejador_dw/`, o Gate 0 não bloqueará por falta de perguntas digitadas no formulário.
 
 
 ---
@@ -402,4 +404,13 @@ Este tópico reúne os principais erros que ocorrem durante o planejamento e exe
   python core/scripts_comuns/validar_entrega.py dw
   ```
   O script validará o preenchimento do formulário, a presença dos DDLs e a conformidade sintática em menos de 3 segundos!
+
+### 🛡️ Anti-Erro 8: Redigitar Perguntas e Regras de Negócio que Já Existem em Arquivos
+- **Problema:** O engenheiro perde tempo copiando e colando dezenas de perguntas de editais ou documentações internas para dentro do `INTAKE_DW.md`.
+- **Causa Raiz:** Acreditar que a IA só é capaz de ler o formulário de intake.
+- **Como Evitar:**
+  - Se você já possui arquivos de negócio (ex: `04_regras_negocio.md`, `05_perguntas_negocio.md`, `edital.md`, `documentacao.md`), basta depositá-los na pasta `entrega/planejador_dw/`.
+  - No `INTAKE_DW.md` (Seção 2.0 e 3.1), marque **Opção 2**.
+  - A IA e o script `validar_entrega.py` reconhecerão os arquivos automaticamente, extraindo 100% das regras e perguntas diretamente da pasta de entrega sem travar o Gate 0!
+
 
