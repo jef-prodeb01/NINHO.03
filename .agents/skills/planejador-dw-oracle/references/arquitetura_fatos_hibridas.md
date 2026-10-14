@@ -73,3 +73,4 @@ O padrão arquitetural divide o domínio em **três tabelas fato complementares*
 | **Período Histórico** | 1 a 3 anos. | **Mais de 5 a 10 anos de histórico acumulado.** |
 | **Perfil de Acesso** | Consultas sempre no mesmo grão. | **Executivos querem visão macro anual; Operação quer a situação atual e SLA.** |
 | **Complexidade de Eventos** | Evento pontual simples. | **Entidades de vida longa com dezenas de movimentações e andamentos.** |
+

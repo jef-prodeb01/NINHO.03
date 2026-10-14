@@ -23,7 +23,11 @@ Camada 3: Views KPI de Alto Nível (VW_<PROJETO>_KPI_<MEDIDA>_POR_<DIM>)
       (Agregações diretas para dashboards e perguntas de negócio)
 ```
 
-Consulte as convenções de código e nomes em [convencoes_semantica.md](./references/convencoes_semantica.md).
+- **Documentação Mandatória de Grão:** Toda view deve ter comentário iniciando por `"Uma linha representa..."` para orientar LLMs e analistas.
+- **Abstração de Legados:** Decodifique códigos com `CASE WHEN ... ELSE 'NÃO IDENTIFICADO'` e renomeie colunas legadas com erro ortográfico para nomes limpos e padronizados.
+- **Validação em 5 Dimensões:** Toda consulta para IA deve atender aos gates de *Sintaxe*, *Semântica*, *Resultado*, *Segurança* e *Explicação*.
+
+Consulte as convenções completas em [convencoes_semantica.md](./references/convencoes_semantica.md).
 
 ---
 

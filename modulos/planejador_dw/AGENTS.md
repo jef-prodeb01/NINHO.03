@@ -71,6 +71,10 @@ Para executar cada fase deste módulo com máxima precisão, você conta com as 
 > 2. Se for necessária padronização de prefixos (`DTC_`, `VAL_`), apresente a **Matriz De/Para Campo a Campo** no Blueprint.
 > 3. **Bloqueio no Gate 1:** A IA **NÃO PODE GERAR NENHUM SCRIPT DDL** sem que o Engenheiro de Dados tenha validado e aprovado explicitamente a Matriz De/Para via comando `/aprovar-blueprint`.
 
+### 4. Alinhamento Técnico Mandatório (Copiloto Consultivo — Não Gere no Escuro)
+> 🤝 **Como os projetos de dados são altamente diversos e possuem particularidades de negócio que nenhuma ferramenta estática quantifica sozinha, o agente NUNCA deve tomar decisões arquiteturais críticas ou gerar artefatos finais de forma isolada.**  
+> Se faltar informação crítica, se houver ambiguidade de domínio ou se existirem múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga), o agente DEVE pausar a geração física, apresentar o diagnóstico e abrir um espaço de discussão técnica com o Engenheiro de Dados para construir o modelo final a quatro mãos antes de codificar.
+
 ---
 
 ## 🛠️ Comandos de Interação (Quality Gates)

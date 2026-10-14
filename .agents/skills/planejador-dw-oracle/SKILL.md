@@ -27,7 +27,9 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
      - `DTC_EXPIRACAO DATE NULL` (Data fim; `NULL` indica registro vigente)
      - `DES_ATUALIZAR VARCHAR2(1) DEFAULT 'N' NOT NULL` ('S' para atualizar, 'N' para inalterado)
     - Se o ETL utilizar **Oracle Data Integrator (ODI)**, gere também a tabela auxiliar `ODI_DIM_<NOME>` com a coluna de controle `DES_STATUS_REGISTRO VARCHAR2(1)`.
-5. **Arquitetura de Fatos Híbridas (Para Fontes com Dezenas de Milhões ou Bilhões de Linhas):**
+5. **Arquitetura Multi-Tenant e Prevenção de ORA-00001:**
+   - Se o DW compartilhar schemas entre múltiplos órgãos/municípios, nunca crie constraint `UNIQUE` unicolunar na chave natural. Utilize chave composta `(ID_NATURAL, COD_TENANT)`. No ETL/ELT, componha `to_number(to_char(V_TENANT) || '000' || to_char(ORIGEM.ID_NATURAL))` para evitar colisões.
+6. **Arquitetura de Fatos Híbridas (Para Fontes com Dezenas de Milhões ou Bilhões de Linhas):**
    - Quando a tabela transacional da fonte tiver altíssima volumetria (ex: > 50M de linhas) e longo histórico (5 a 10 anos), **NÃO crie uma única fato "tudo-em-um"**.
    - Divida o domínio em **3 Fatos Especializadas**:
      1. `FATO_*_AGR_MENSAL` (Fato Histórica Agregada por Mês para tendências e painéis executivos);
@@ -44,11 +46,9 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 ### Estratégia A: Truncate & Load Massivo (Carga Noturna / Batch)
 - **Quando usar:** Volumetria moderada a grande, carga diária noturna em lote fechado.
 - **Indexação:** **BITMAP INDEX** nas Foreign Keys das Dimensões para habilitar **Star Transformation** no otimizador Oracle.
-- **Rotina de Manutenção Obrigatória:** Procedure `PRC_POS_CARGA_FATO` (`07_prc_pos_carga_fato.sql`):
-  1. Marca índices da fato como `UNUSABLE` antes da carga.
-  2. Executa a carga massiva (`INSERT /*+ APPEND */`).
-  3. Reconstrói os índices com `ALTER INDEX ... REBUILD NOLOGGING;`.
-  4. Coleta estatísticas com `DBMS_STATS.GATHER_TABLE_STATS`.
+- **Rotinas de Manutenção Obrigatórias:**
+  1. `PRC_PRE_CARGA_FATOS`: Coloca índices não únicos da fato como `UNUSABLE` antes da carga massiva (`INSERT /*+ APPEND PARALLEL(4) */`), preservando a PK.
+  2. `PRC_POS_CARGA_FATOS`: Reconstrói os índices com `ALTER INDEX ... REBUILD PARALLEL 4 NOLOGGING;`, redefine para `NOPARALLEL LOGGING` e dispara coleta de estatísticas `DBMS_STATS.GATHER_TABLE_STATS(cascade => TRUE)`.
 
 ### Estratégia B: Incremental Idempotente via MERGE (Micro-lotes / Near Real-Time)
 - **Quando usar:** Cargas intra-dia, frequentes ou quando não é permitido truncar o histórico.
@@ -61,11 +61,21 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 
 Consulte os guias detalhados em:
 - [tablespaces_oracle.md](./references/tablespaces_oracle.md) (Organização de Tablespaces e Storage)
-- [tuning_indices_performance.md](./references/tuning_indices_performance.md) (Estratégias de Índices Bitmap vs B-Tree, Paralelismo e Compressão)
+- [tuning_indices_performance.md](./references/tuning_indices_performance.md) (Estratégias de Índices Bitmap vs B-Tree, Paralelismo, Ciclo Pré/Pós-Carga e Compressão)
 - [arquitetura_fatos_hibridas.md](./references/arquitetura_fatos_hibridas.md) (Arquitetura de Fatos Híbridas para Alta Volumetria)
+- [convencoes_dw.md](./references/convencoes_dw.md) (Nomenclaturas, Tipos Oracle e Diretrizes Multi-Tenant)
 - **Separação Física:** Se informado no Intake, aponte tabelas para `TABLESPACE <TS_DATA>` e índices para `TABLESPACE <TS_INDEX>`.
 - **Dimensões:** Aceitam **apenas índices B-Tree**. NUNCA use Bitmaps em dimensões.
 - **Compressão:** Em fatos históricas de alta volumetria, recomende `COMPRESS FOR OLTP` ou `COMPRESS FOR QUERY HIGH`. Em índices compostos, utilize `COMPRESS 1`.
+
+---
+
+## 🤝 Quality Gate 1: Blueprint & Alinhamento Mandatório com o Engenheiro (Anti-Caixa-Preta)
+
+Nenhum DDL físico deve ser gerado no escuro. Diante de tabelas volumosas, regras não documentadas ou fontes heterogêneas:
+1. **Compilação do Blueprint (`/gerar-blueprint`):** O agente estrutura a proposta de Star Schema, o grão da Fato, as dimensões conformadas e as estratégias de carga.
+2. **Pausa para Discussão Técnica:** O agente expõe dúvidas, trade-offs e escolhas arquiteturais para a avaliação do Engenheiro de Dados.
+3. **Aprovação Explícita (`/aprovar-blueprint`):** A geração física nas 11 pastas canônicas só é liberada após o aval conjunto com o Engenheiro.
 
 ---
 
@@ -78,7 +88,7 @@ Gere os arquivos nas subpastas apropriadas de `saida/planejador_dw/`:
 4. `03_dimensoes/04_create_dim_tables.sql`
 5. `03_dimensoes/06_init_default_records.sql`
 6. `04_fatos/05_create_fato_tables.sql`
-7. `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql` (SE Estratégia A)
+7. `05_procedimentos_manutencao/07_prc_pre_carga_fato.sql` e `08_prc_pos_carga_fato.sql` (SE Estratégia A)
 8. `08_datasets_bi/superset_dataset_<fato>.yaml` e `GUIA_ANALISTA_BI_<PROJETO>.md`
 9. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`
 10. `10_testes_integridade/13_testes_integridade.sql`

@@ -10,7 +10,7 @@ Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que aut
 
 > ⚡ **Precisa de comandos rápidos ou queries operacionais?** Consulte o [**Guia Central de Comandos Rápidos & Cheat Sheet**](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md) com sumário interativo ancorado cobrindo Python, Hop, Shell, Oracle SQL, DAX e Prompts da IA.
 
-> 🛡️ **Público-Alvo Exclusivo:** O **NINHO** é uma plataforma corporativa 100% focada em **Engenheiros de Dados**. O Analista de BI **não possui acesso ao NINHO** e **não executa módulos**. Em vez disso, ao concluir o planejamento do DW, a plataforma gera automaticamente o artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`). O Engenheiro de Dados exporta este guia e entrega à equipe externa de BI para orientar e acelerar a construção do painel no Power BI com máxima conformidade.
+> 🛡️ **Público-Alvo Exclusivo:** O **NINHO** é uma plataforma corporativa 100% focada em **Engenheiros de Dados**. O Analista de BI **não possui acesso ao NINHO** e **não executa módulos**. Em vez disso, ao concluir o planejamento do DW, a plataforma gera automaticamente o artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (em `saida/planejador_dw/08_datasets_bi/`). O Engenheiro de Dados exporta este guia e entrega à equipe externa de BI para orientar e acelerar a construção do painel no Power BI com máxima conformidade.
 
 Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse diretamente os manuais, formulários e pastas correspondentes:
 
@@ -28,10 +28,11 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 ```text
 NINHO /
 │
+├── AGENTS.md                                  # 🤖 Orquestrador Principal do NINHO (4 Regras de Ouro)
 ├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
 │   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning e Índices
 │   ├── gerador-etl-hop/                        # Pipelines (.hpl) e workflows (.hwf) do Apache Hop 2.x
-│   ├── gerador-consultas-odi/                  # Consultas analíticas para interfaces/mappings do ODI 12c
+│   ├── gerador-consultas-odi/                  # Consultas analíticas, esteiras e motor preditivo de tuning ODI 12c
 │   ├── extrator-api-python/                    # Extratores Python modulares (REST, OAuth2, bulk insert)
 │   ├── extrator-ftps-lote-hop/                 # Ingestão em lote via FTPS/SFTP + Shell curl + Apache Hop
 │   ├── camada-semantica-oracle/                # Views em 3 camadas e carga das 8 tabelas META_*
@@ -46,6 +47,8 @@ NINHO /
 │   │   └── CONVENCOES_SEMANTICA.md             # 📜 DNA da Semântica (Views, 8 Tabelas META_, AI Rules)
 │   ├── scripts_comuns/                         # 🛠️ Utilitários Python/SQL reutilizáveis
 │   │   ├── validar_entrega.py                  # 🔍 Validador pré-voo de formulários e insumos
+│   │   ├── auditar_mapa_odi.py                 # 🦅 Motor preditivo de auditoria e tuning ODI 12c
+│   │   ├── transicionar_dw_para_semantica.py   # 🔄 Handoff automatizado DW -> Camada Semântica
 │   │   └── gerar_mock_dados.py                 # 🎲 Gerador de dados sintéticos para testes no Power BI
 │   └── README.md                               # 📖 Visão geral do Core
 │
@@ -76,8 +79,7 @@ NINHO /
 │   │   ├── ARQUITETURA_FRAMEWORK_GOVERNANCA.md # 🏛️ Envelope canônico, LAI, LGPD e Glue
 │   │   └── README.md                           # 📖 Manual do módulo de Governança
 │   │
-│   ├── README.md                               # 📖 Visão integrada dos módulos
-│   └── AGENTS.md                               # 🤖 Orquestrador mestre raiz
+│   └── README.md                               # 📖 Visão integrada dos módulos
 │
 ├── 📚 documentacao/                            # GOVERNANÇA, MANUAIS & CATALOGAÇÃO CONSOLIDADA
 │   ├── guias/                                  # 📘 MANUAIS OPERACIONAIS PASSO A PASSO

@@ -37,3 +37,29 @@
 | Timestamps com Fração | `TIMESTAMP(6)` | Usar se frações de segundo forem cruciais |
 | Flags / Indicadores | `VARCHAR2(1 CHAR)` | 'S' / 'N' ou 'A' / 'I' |
 
+---
+
+## 3. Arquitetura Multi-Tenant e Prevenção de Violação de Chave Única (`ORA-00001`)
+
+Em ambientes analíticos consolidados onde múltiplos órgãos, secretarias ou prefeituras (tenants) compartilham o mesmo schema físico de DW:
+
+### 3.1 Colisão de Chaves Naturais
+- Identificadores numéricos transacionais (`ID_USUARIO`, `ID_PROCEDIMENTO`, `ID_UNIDADE`) colidem frequentemente entre diferentes tenants (ex: o usuário `10` existe em múltiplos órgãos com identidades e pessoas completamente distintas).
+- **🛑 Regra Anti-Falha (`ORA-00001`):** NUNCA crie constraints de unicidade (`UNIQUE`) considerando apenas a coluna do ID natural. Toda constraint física de unicidade em dimensões multi-tenant DEVE ser composta com a coluna identificadora do tenant:
+  ```sql
+  -- CORRETO:
+  ALTER TABLE "SCHEMA_OLAP"."DIM_USUARIO" 
+    ADD CONSTRAINT "UK_DIM_USUARIO" UNIQUE ("ID_USUARIO", "COD_TENANT", "DTC_EXPIRACAO");
+
+  -- INCORRETO (Causa ORA-00001 na carga concorrente do 2º tenant):
+  -- ALTER TABLE "SCHEMA_OLAP"."DIM_USUARIO" ADD CONSTRAINT "UK_DIM_USUARIO" UNIQUE ("ID_USUARIO");
+  ```
+
+### 3.2 Resolução Numérica de Chaves Naturais no ETL/ELT
+- Para evitar colisões de dados antes da alocação da Surrogate Key definitiva, aplique nos mapeamentos de Staging/DW a composição numérica com base no código do tenant:
+  ```sql
+  to_number(to_char(V_TENANT) || '000' || to_char(ORIGEM.ID_NATURAL))
+  ```
+- Isso garante chaves unívocas na esteira de integração, preservando a rastreabilidade original.
+
+

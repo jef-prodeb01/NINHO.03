@@ -14,7 +14,7 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 | :--- | :--- | :--- |
 | **`planejador-dw-oracle`** | Planejamento de Data Warehouse | Modela Star Schema (Kimball), SCD2, Fatos, Dimensões, Sequences, Tuning/Índices e Tablespaces. |
 | **`gerador-etl-hop`** | Apenas se `[x] Apache Hop` marcado | Gera pipelines `.hpl` e workflows `.hwf` para o Apache Hop 2.x. |
-| **`gerador-consultas-odi`** | Apenas se `[x] ODI` marcado | Gera consultas analíticas SQL para interfaces/mappings do Oracle Data Integrator 12c. |
+| **`gerador-consultas-odi`** | Apenas se `[x] ODI` marcado ou tuning | Gera consultas SQL, procedures, mappings, pacotes, cenários e diagnóstico preditivo de tuning (CDC Incremental, IKM Merge, PK na Staging) para ODI 12c. |
 | **`extrator-api-python`** | Apenas se `[x] Extratores Python` marcado | Gera scripts Python com retentativas, paginação e bulk insert para aterrissar APIs na Staging. |
 | **`extrator-ftps-lote-hop`** | Apenas se `[x] Ingestão FTPS/SFTP` marcado | Gera shell scripts com curl seguro, manifesto CSV de lote e pipeline/workflow Hop 2.x. |
 | **`camada-semantica-oracle`** | Camada Semântica sobre DW | Constrói views em 3 camadas e gera os scripts DDL/INSERT das 8 tabelas `META_*`. |
@@ -25,12 +25,13 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 
 ---
 
-## 🛑 As 3 Regras de Ouro Invioláveis
+## 🛑 As 4 Regras de Ouro Invioláveis
 
 1. **Gate 0 Mandatório:** Antes de qualquer ação técnica, certifique-se de que o INTAKE do módulo correspondente (`INTAKE_DW.md`, `INTAKE_SEMANTICA.md` ou `INTAKE_GOVERNANCA.md`) foi preenchido com as tecnologias marcadas. Se pendente, envie o link direto ao engenheiro e interrompa a execução.
    - *Nota de Flexibilidade:* Se regras de negócio ou perguntas estiverem documentadas em arquivos na pasta `entrega/<modulo>/`, utilize-as sem bloquear o Gate 0.
 2. **Geração Estritamente Condicional:** NUNCA gere scripts para ferramentas desmarcadas (ex: nunca crie Apache Hop se o engenheiro não assinalou Hop).
 3. **Destino Canônico de Saída:** Grave arquivos estritamente nas pastas oficiais de `saida/` (ex: `saida/planejador_dw/01_...` a `11_...` ou `saida/camada_semantica/`). **NUNCA crie subpastas com o nome do projeto dentro de `saida/`.**
+4. **Alinhamento Técnico Mandatório (Copiloto Consultivo — Não Gere no Escuro):** Como os projetos de dados são altamente diversos e possuem particularidades de negócio que nenhuma ferramenta estática quantifica sozinha, o agente NUNCA deve tomar decisões arquiteturais críticas ou gerar artefatos finais de forma isolada. Se faltar informação crítica, se houver ambiguidade de domínio ou se existirem múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga), o agente DEVE pausar a geração física, apresentar o diagnóstico e abrir um espaço de discussão técnica com o Engenheiro de Dados para construir o modelo final a quatro mãos antes de codificar.
 
 ---
 
@@ -39,6 +40,8 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 - `/inspecionar-fontes`: Audita arquivos depositados nas pastas de entrega.
 - `/gerar-blueprint`: Compila o Blueprint técnico com a Matriz De/Para de colunas 100% fiel à origem.
 - `/aprovar-blueprint`: Autoriza o início da geração física dos scripts DDL e de esteira.
+- `/auditar-mapa-odi`: Executa o motor preditivo de tuning em XML de mappings ODI (`python core/scripts_comuns/auditar_mapa_odi.py`).
 - `/validar-entrega`: Executa o checklist pré-voo automatizado (`python core/scripts_comuns/validar_entrega.py all`).
 - `/concluir-dw`: Realiza o handoff e a transição contínua para a Camada Semântica.
+
 

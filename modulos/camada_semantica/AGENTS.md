@@ -52,6 +52,8 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
    - Toda métrica cadastrada em `META_METRICA` e calculada nas views deve ter sua aditividade declarada (`ADITIVA`, `SEMI_ADITIVA` com restrição, ou `NAO_ADITIVA`). Nunca assuma aditividade sem validação.
 5. **Comentários em Tudo (`COMMENT ON`):**
    - Toda view e tabela gerada deve conter comando `COMMENT ON TABLE` e comentários nas colunas calculadas.
+6. **Alinhamento Técnico Mandatório (Copiloto Consultivo — Não Gere no Escuro):**
+   - O agente NUNCA deve tomar decisões analíticas ou semânticas críticas de forma isolada. Se houver ambiguidade de regras, filtros ocultos de relatórios legados ou grão não explícito, pause a geração e alinhe a quatro mãos com o Engenheiro/Analista de Dados antes de codificar.
 
 ---
 
