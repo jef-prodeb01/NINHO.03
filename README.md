@@ -29,12 +29,16 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 NINHO /
 │
 ├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
-│   ├── planejador-dw-oracle/                   # Skill de modelagem dimensional, SCD2 e Dual Strategy
-│   ├── gerador-etl-hop/                        # Skill condicional de Apache Hop 2.x
-│   ├── extrator-api-python/                    # Skill condicional de extratores Python oracledb
-│   ├── camada-semantica-oracle/                # Skill de views analíticas e 8 tabelas META_
-│   ├── governanca-dados-corporativa/           # Skill de catálogos Mongo, LAI e LGPD
-│   └── validador-qualidade-entrega/            # Skill de validação pré-voo e gates de qualidade
+│   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning e Índices
+│   ├── gerador-etl-hop/                        # Pipelines (.hpl) e workflows (.hwf) do Apache Hop 2.x
+│   ├── gerador-consultas-odi/                  # Consultas analíticas para interfaces/mappings do ODI 12c
+│   ├── extrator-api-python/                    # Extratores Python modulares (REST, OAuth2, bulk insert)
+│   ├── extrator-ftps-lote-hop/                 # Ingestão em lote via FTPS/SFTP + Shell curl + Apache Hop
+│   ├── camada-semantica-oracle/                # Views em 3 camadas e carga das 8 tabelas META_*
+│   ├── seguranca-rls-oracle/                   # Row Level Security (RLS) e VPD (DBMS_RLS) no Oracle
+│   ├── governanca-dados-corporativa/           # Catálogos Mongo, formulários DataZone, LAI e LGPD
+│   ├── engenharia-reversa-pbix/                # Engenharia reversa de relatórios Power BI legados para DW
+│   └── validador-qualidade-entrega/            # Validação pré-voo e gates automatizados de integridade
 │
 ├── 🧠 core/                                    # NÚCLEO COMPARTILHADO & PADRÕES CORPORATIVOS
 │   ├── convencoes/

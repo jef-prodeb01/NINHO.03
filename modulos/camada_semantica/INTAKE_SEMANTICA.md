@@ -104,6 +104,7 @@ Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
 - [x] **Documento de Entendimento Semântico (`DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`)**
 - [x] **DDLs das Views Analíticas (`saida/camada_semantica/vw_analiticas/`)**
 - [ ] **DDL de Criação das Tabelas `META_*` (`01_create_meta_tables.sql`)** *(apenas se não existirem)*
+- [ ] **Script de Segurança RLS / VPD (`02_rls_template.sql`)** *(se RLS selecionado na Seção 4.2)*
 - [x] **Carga do Glossário de Termos (`01_meta_glossario.sql`)**
 - [x] **Carga do Catálogo de Métricas (`02_meta_metrica.sql`)**
 - [x] **Carga do Dicionário de Objetos e Colunas (`03_meta_objeto.sql`)**

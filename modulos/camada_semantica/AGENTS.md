@@ -12,6 +12,7 @@ Você é o **Especialista em Semântica e Engenharia de Analytics** responsável
 
 Para conduzir a modelagem e geração semântica, utilize as skills modulares do repositório:
 - **`camada-semantica-oracle`**: Conduz a arquitetura em 3 camadas (`VW_*_DIM_*_ATUAL`, `VW_*_EVENTO`, `VW_*_KPI_*`), geração dos scripts DDL/INSERT das 8 tabelas `META_*` e aplicação do catálogo das 36 orientações de IA.
+- **`seguranca-rls-oracle`**: Acionada **estritamente se RLS / VPD estiver marcado** na Seção 4.2 do `INTAKE_SEMANTICA.md`. Implementa políticas de segurança por linha e contextos de sessão Oracle.
 - **`validador-qualidade-entrega`**: Executa a verificação pré-voo dos insumos com `validar_entrega.py semantica` e testes de integridade das views e metadados.
 
 ---

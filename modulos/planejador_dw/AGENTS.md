@@ -12,9 +12,12 @@ Você é o **Arquiteto de Dados Sênior** encarregado de conduzir o planejamento
 ## 🎯 Skills Especializadas Disponíveis
 
 Para executar cada fase deste módulo com máxima precisão, você conta com as seguintes skills:
-- **`planejador-dw-oracle`**: Conduz a modelagem Star Schema, SCD Tipo 2, sequences, chave -1, sizing e tablespaces DATA vs INDEX.
+- **`planejador-dw-oracle`**: Conduz a modelagem Star Schema, SCD Tipo 2, sequences, chave -1, sizing, tablespaces DATA vs INDEX e tuning/indexação (Bitmap vs B-Tree, parallel online, compress 1).
 - **`gerador-etl-hop`**: Acionada **estritamente se `[x] Apache Hop` estiver marcado** na Seção 1 do `INTAKE_DW.md`.
+- **`gerador-consultas-odi`**: Acionada **estritamente se `[x] Oracle Data Integrator (ODI)` estiver marcado** na Seção 1 do `INTAKE_DW.md`.
 - **`extrator-api-python`**: Acionada **estritamente se `[x] Extratores Python` estiver marcado** na Seção 1 do `INTAKE_DW.md`.
+- **`extrator-ftps-lote-hop`**: Acionada **estritamente se `[x] Ingestão Arquivos em Lote (SFTP/FTPS)` estiver marcado** ou se houver arquivos em `entrega/planejador_dw/arquivos_ftp/`.
+- **`engenharia-reversa-pbix`**: Acionada ao realizar a **engenharia reversa de relatórios Power BI legados (`.pbix`)** ou migração de dashboards para DW.
 - **`validador-qualidade-entrega`**: Executa a validação pré-voo com `validar_entrega.py` e o handoff contínuo para a camada semântica.
 
 ---

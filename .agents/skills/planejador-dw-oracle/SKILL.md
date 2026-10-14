@@ -50,12 +50,14 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 
 ---
 
-## 3. Gestão de Tablespaces e Storage no Oracle
+## 3. Gestão de Tablespaces, Storage e Tuning no Oracle
 
-Consulte o guia detalhado em [tablespaces_oracle.md](./references/tablespaces_oracle.md).
+Consulte os guias detalhados em:
+- [tablespaces_oracle.md](./references/tablespaces_oracle.md) (Organização de Tablespaces e Storage)
+- [tuning_indices_performance.md](./references/tuning_indices_performance.md) (Estratégias de Índices Bitmap vs B-Tree, Paralelismo e Compressão)
 - **Separação Física:** Se informado no Intake, aponte tabelas para `TABLESPACE <TS_DATA>` e índices para `TABLESPACE <TS_INDEX>`.
 - **Dimensões:** Aceitam **apenas índices B-Tree**. NUNCA use Bitmaps em dimensões.
-- **Compressão:** Em fatos históricas de alta volumetria, recomende `COMPRESS FOR OLTP` ou `COMPRESS FOR QUERY HIGH`.
+- **Compressão:** Em fatos históricas de alta volumetria, recomende `COMPRESS FOR OLTP` ou `COMPRESS FOR QUERY HIGH`. Em índices compostos, utilize `COMPRESS 1`.
 
 ---
 

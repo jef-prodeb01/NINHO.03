@@ -12,11 +12,15 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 
 | Skill | Quando Ativar | O que Faz |
 | :--- | :--- | :--- |
-| **`planejador-dw-oracle`** | Planejamento de Data Warehouse | Modela Star Schema (Kimball), SCD2, Fatos, Dimensões, Sequences e Tablespaces Oracle. |
+| **`planejador-dw-oracle`** | Planejamento de Data Warehouse | Modela Star Schema (Kimball), SCD2, Fatos, Dimensões, Sequences, Tuning/Índices e Tablespaces. |
 | **`gerador-etl-hop`** | Apenas se `[x] Apache Hop` marcado | Gera pipelines `.hpl` e workflows `.hwf` para o Apache Hop 2.x. |
+| **`gerador-consultas-odi`** | Apenas se `[x] ODI` marcado | Gera consultas analíticas SQL para interfaces/mappings do Oracle Data Integrator 12c. |
 | **`extrator-api-python`** | Apenas se `[x] Extratores Python` marcado | Gera scripts Python com retentativas, paginação e bulk insert para aterrissar APIs na Staging. |
+| **`extrator-ftps-lote-hop`** | Apenas se `[x] Ingestão FTPS/SFTP` marcado | Gera shell scripts com curl seguro, manifesto CSV de lote e pipeline/workflow Hop 2.x. |
 | **`camada-semantica-oracle`** | Camada Semântica sobre DW | Constrói views em 3 camadas e gera os scripts DDL/INSERT das 8 tabelas `META_*`. |
+| **`seguranca-rls-oracle`** | Apenas se `[x] RLS` marcado | Implementa Row Level Security (RLS) e Virtual Private Database (VPD) no Oracle. |
 | **`governanca-dados-corporativa`** | Governança e LGPD | Gera esquemas MongoDB, formulários AWS DataZone e matriz de sensibilidade/mascaramento. |
+| **`engenharia-reversa-pbix`** | Ao migrar dashboards Power BI legados | Desconstrói relatórios Power BI (`.pbix`/Layout), extrai filtros/DAX e projeta DW Star Schema. |
 | **`validador-qualidade-entrega`** | Pré-voo e Testes | Executa auditoria automática de formulários e integridade de arquivos com `validar_entrega.py`. |
 
 ---

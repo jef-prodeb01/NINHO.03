@@ -34,17 +34,26 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 - [ ] **Oracle Data Integrator (ODI):**
   - Mapeamentos de carga direta banco-a-banco via DBLink / JDBC.
   - Orquestração de pacotes, cenários e tabelas auxiliares `ODI_DIM_*`.
-  - *(Se marcado: gera `03_create_odi_dim_tables.sql` e instruções de pacotes no relatório).*
+  - Consultas SQL analíticas para interfaces/mappings com surrogate keys `SEQ_*.NEXTVAL`, SCD2 e lookups `NVL(dim.KEY, -1)`.
+  - *(Se marcado: gera `03_create_odi_dim_tables.sql`, `selects_odi_dimensoes.sql` e `selects_odi_fatos.sql`).*
 
 - [ ] **Apache Hop (.hpl / .hwf):**
-  - Pipelines de ingestão para arquivos recebidos via SFTP, FTP, compartilhamento de rede ou CSV/Excel.
+  - Pipelines e workflows no Apache Hop 2.x para transformação de dados e orquestração.
   - *(Se marcado: gera arquivos na pasta `06_pipelines_hop/`).*
   - *(Se NÃO marcado: NENHUM arquivo Hop será gerado).*
+
+- [ ] **Ingestão de Arquivos em Lote (SFTP / FTPS / FTP):**
+  - Descoberta automatizada de arquivos remotos via Shell Script + `curl` seguro, manifesto CSV e pipeline/workflow Hop.
+  - *(Se marcado: gera `extrair_metadados_ftps.sh`, `stg_meta.hpl` e DDL `STG_CONTROLE_ARQUIVOS_FTPS`).*
 
 - [ ] **Extratores Python (.py):**
   - Scripts modulares para consumo de APIs Web REST, autenticação OAuth2 / Bearer Token, paginação e parse de JSON aninhado.
   - *(Se marcado: gera scripts na pasta `07_extratores_python/`).*
   - *(Se NÃO marcado: NENHUM script Python de API será gerado).*
+
+- [ ] **Engenharia Reversa de Dashboard Legado (.pbix / Power BI):**
+  - Desconstrução de relatórios Power BI existentes (Layout, visuais, filtros e medidas DAX) para projetar o modelo dimensional DW e produzir o Guia do Analista de BI.
+  - *(Se marcado: analisa a pasta `entrega/planejador_dw/` e gera `regras_visuais_origem.md` e `GUIA_ANALISTA_BI_<PROJETO>.md`).*
 
 - [ ] **Procedures PL/SQL Puras / Triggers:**
   - Carga, transformações e manutenção 100% internas no banco Oracle sem ferramentas externas.
