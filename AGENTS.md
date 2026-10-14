@@ -19,7 +19,7 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 | **`extrator-ftps-lote-hop`** | Apenas se `[x] Ingestão FTPS/SFTP` marcado | Gera shell scripts com curl seguro, manifesto CSV de lote e pipeline/workflow Hop 2.x. |
 | **`camada-semantica-oracle`** | Camada Semântica sobre DW | Constrói views em 3 camadas e gera os scripts DDL/INSERT das 8 tabelas `META_*`. |
 | **`seguranca-rls-oracle`** | Apenas se `[x] RLS` marcado | Implementa Row Level Security (RLS) e Virtual Private Database (VPD) no Oracle. |
-| **`governanca-dados-corporativa`** | Governança e LGPD | Gera esquemas MongoDB, formulários AWS DataZone e matriz de sensibilidade/mascaramento. |
+| **`governanca-dados-corporativa`** | Governança, MongoDB & AWS SageMaker | Audita insumos do cliente (Gate 0.5 de devolução na origem), gera esquemas MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`), matriz LGPD/LAI e publicação no **AWS Glue & Amazon SageMaker Catalog (ex-DataZone)**. |
 | **`engenharia-reversa-pbix`** | Ao migrar dashboards Power BI legados | Desconstrói relatórios Power BI (`.pbix`/Layout), extrai filtros/DAX e projeta DW Star Schema. |
 | **`validador-qualidade-entrega`** | Pré-voo e Testes | Executa auditoria automática de formulários e integridade de arquivos com `validar_entrega.py`. |
 
@@ -27,19 +27,21 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 
 ## 🛑 As 4 Regras de Ouro Invioláveis
 
-1. **Gate 0 Mandatório:** Antes de qualquer ação técnica, certifique-se de que o INTAKE do módulo correspondente (`INTAKE_DW.md`, `INTAKE_SEMANTICA.md` ou `INTAKE_GOVERNANCA.md`) foi preenchido com as tecnologias marcadas. Se pendente, envie o link direto ao engenheiro e interrompa a execução.
-   - *Nota de Flexibilidade:* Se regras de negócio ou perguntas estiverem documentadas em arquivos na pasta `entrega/<modulo>/` ou se a **Opção 3 / Radar Consultivo da IA** estiver assinalada, utilize-as sem bloquear o Gate 0.
+1. **Gate 0 & Gate 0.5 Mandatórios:**
+   - **Gate 0 (Intake):** Antes de qualquer ação técnica, certifique-se de que o INTAKE do módulo correspondente (`INTAKE_DW.md`, `INTAKE_SEMANTICA.md` ou `INTAKE_GOVERNANCA.md`) foi preenchido com as tecnologias marcadas. Se pendente, envie o link direto ao engenheiro e interrompa a execução. *(Nota: se regras/insumos estiverem em `entrega/<modulo>/` ou a Opção 3 / Radar Consultivo da IA estiver assinalada, utilize-as sem bloquear a leitura inicial).*
+   - **Gate 0.5 (Qualidade na Origem — Governança de Dados):** Na Governança de Dados, a responsabilidade por manter os dados e dicionários corretos é **exclusiva do cliente**. Nossa atuação limita-se ao transporte para o MongoDB e publicação no AWS SageMaker Catalog / Glue. Se o cliente enviar planilhas com campos/classificações LGPD em branco ou amostras CSV com registros vazios/colunas fantasmas (`;;;`), bloqueie a geração e emita o **Relatório de Devolução ao Cliente** (`python core/scripts_comuns/inspecionar_insumos_governanca.py`).
 2. **Geração Estritamente Condicional:** NUNCA gere scripts para ferramentas desmarcadas (ex: nunca crie Apache Hop se o engenheiro não assinalou Hop).
-3. **Destino Canônico de Saída:** Grave arquivos estritamente nas pastas oficiais de `saida/` (ex: `saida/planejador_dw/01_...` a `11_...` ou `saida/camada_semantica/`). **NUNCA crie subpastas com o nome do projeto dentro de `saida/`.**
+3. **Destino Canônico de Saída:** Grave arquivos estritamente nas pastas oficiais de `saida/` (ex: `saida/planejador_dw/01_...` a `11_...`, `saida/camada_semantica/` ou `saida/governanca_dados/`). **NUNCA crie subpastas com o nome do projeto dentro de `saida/`.**
 4. **Alinhamento Técnico Mandatório & Radar Consultivo da IA (Copiloto Consultivo — Não Gere no Escuro):** Como os projetos de dados são altamente diversos e muitas vezes o cliente não percebe de imediato todo o potencial analítico da sua base, o agente NUNCA deve tomar decisões arquiteturais críticas no escuro e DEVE atuar proativamente:
-   - Se faltar informação crítica, se houver ambiguidade de domínio ou múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga), pause a geração física e abra discussão técnica com o Engenheiro de Dados.
-   - Tanto no **Planejador de DW** quanto na **Camada Semântica**, apresente sempre o **💡 Radar Consultivo da IA** separado do escopo original do cliente, sugerindo novos KPIs de alto valor, regras implícitas de sanitização/qualidade e novas perguntas de negócio (Executivas, Táticas e Auditoria) para o engenheiro aprovar antes da codificação.
+   - Se faltar informação crítica, se houver ambiguidade de domínio ou múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga, enquadramento LGPD/LAI), pause a geração física e abra discussão técnica com o Engenheiro de Dados.
+   - No **Planejador de DW**, na **Camada Semântica** e na **Governança de Dados**, apresente sempre o **💡 Radar Consultivo da IA** separado do escopo original do cliente, sugerindo novos KPIs de alto valor, conceitos semânticos, regras implícitas de sanitização/qualidade e novas perguntas de negócio para o engenheiro aprovar antes da codificação.
 
 ---
 
 ## 🚀 Comandos Rápidos de Orquestração
 
 - `/inspecionar-fontes`: Audita arquivos depositados nas pastas de entrega e executa o extrator determinístico de DDLs e Radar Consultivo de KPIs (`python core/scripts_comuns/inspecionar_ddl_origem.py`).
+- `/inspecionar-governanca`: Audita planilhas `.xlsx` (`Dados - Insumos` / `Dicionário de Dados`) e amostras `.csv` do cliente no Gate 0.5, gerando a Matriz DE/PARA MongoDB PRODEB ou o Relatório de Devolução ao Cliente (`python core/scripts_comuns/inspecionar_insumos_governanca.py`).
 - `/gerar-blueprint`: Compila o Blueprint técnico com a Matriz De/Para de colunas 100% fiel à origem e o Radar Consultivo da IA (Novos KPIs, Regras e Perguntas Sugeridas).
 - `/aprovar-blueprint`: Autoriza o início da geração física dos scripts DDL e de esteira.
 - `/auditar-mapa-odi`: Executa o motor preditivo de tuning em XML de mappings ODI (`python core/scripts_comuns/auditar_mapa_odi.py`).

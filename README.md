@@ -18,7 +18,7 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 | :--- | :--- | :--- | :--- | :--- |
 | 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md) | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(inclui Guia de BI para Handoff)* |
 | 🧠 **Engenheiro de Dados**<br/>*(Criar Camada Semântica & Metadados)* | 📘 [**Guia de Camada Semântica**](documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md)<br/>📋 [Formulário INTAKE_SEMANTICA](modulos/camada_semantica/INTAKE_SEMANTICA.md) | 📥 [`entrega/camada_semantica/`](entrega/camada_semantica/) | ⚙️ [`modulos/camada_semantica/`](modulos/camada_semantica/README.md) | 📤 [`saida/camada_semantica/`](saida/camada_semantica/) |
-| 🛡️ **Engenheiro de Governança**<br/>*(Lakehouse Mongo, LAI e LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>🏛️ [Arquitetura Framework](modulos/governanca_dados/ARQUITETURA_FRAMEWORK_GOVERNANCA.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) | ⚙️ [`modulos/governanca_dados/`](modulos/governanca_dados/README.md) | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) |
+| 🛡️ **Engenheiro de Governança**<br/>*(MongoDB PRODEB, AWS SageMaker Catalog, LAI/LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>📋 [Formulário INTAKE_GOVERNANCA](modulos/governanca_dados/INTAKE_GOVERNANCA.md)<br/>🏛️ [Arquitetura Mongo + AWS SageMaker](modulos/governanca_dados/ARQUITETURA_MONGO_AWS.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) | ⚙️ [`modulos/governanca_dados/`](modulos/governanca_dados/README.md) | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) |
 | ✅ **Líder Técnico / QA**<br/>*(Validação, Qualidade e Catálogo)* | 📋 [**Checklist de Validação**](documentacao/checklists/CHECKLIST_VALIDACAO.md)<br/>📜 [Convenções DW](core/convencoes/CONVENCOES_DW.md) | 📚 [Catálogo de Projetos](documentacao/catalogo_projetos/PROJETO_RESUMO.md) | 🧠 [`core/`](core/README.md) | 📚 [`documentacao/`](documentacao/README.md) |
 
 ---
@@ -28,7 +28,7 @@ Não perca tempo procurando arquivos. Localize seu perfil abaixo e acesse direta
 ```text
 NINHO /
 │
-├── AGENTS.md                                  # 🤖 Orquestrador Principal do NINHO (4 Regras de Ouro)
+├── AGENTS.md                                  # 🤖 Orquestrador Principal do NINHO (Regras de Ouro & Gates)
 ├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
 │   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning e Índices
 │   ├── gerador-etl-hop/                        # Pipelines (.hpl) e workflows (.hwf) do Apache Hop 2.x
@@ -37,7 +37,7 @@ NINHO /
 │   ├── extrator-ftps-lote-hop/                 # Ingestão em lote via FTPS/SFTP + Shell curl + Apache Hop
 │   ├── camada-semantica-oracle/                # Views em 3 camadas e carga das 8 tabelas META_*
 │   ├── seguranca-rls-oracle/                   # Row Level Security (RLS) e VPD (DBMS_RLS) no Oracle
-│   ├── governanca-dados-corporativa/           # Catálogos Mongo, formulários DataZone, LAI e LGPD
+│   ├── governanca-dados-corporativa/           # Governança PRODEB MongoDB, AWS SageMaker Catalog (ex-DataZone) e LGPD/LAI
 │   ├── engenharia-reversa-pbix/                # Engenharia reversa de relatórios Power BI legados para DW
 │   └── validador-qualidade-entrega/            # Validação pré-voo e gates automatizados de integridade
 │
@@ -47,6 +47,8 @@ NINHO /
 │   │   └── CONVENCOES_SEMANTICA.md             # 📜 DNA da Semântica (Views, 8 Tabelas META_, AI Rules)
 │   ├── scripts_comuns/                         # 🛠️ Utilitários Python/SQL reutilizáveis
 │   │   ├── validar_entrega.py                  # 🔍 Validador pré-voo de formulários e insumos
+│   │   ├── inspecionar_ddl_origem.py           # 🔎 Extrator determinístico de DDLs e Radar Consultivo de KPIs
+│   │   ├── inspecionar_insumos_governanca.py   # 🛡️ Auditor Gate 0.5 de planilhas/CSVs do cliente + DE/PARA MongoDB
 │   │   ├── auditar_mapa_odi.py                 # 🦅 Motor preditivo de auditoria e tuning ODI 12c
 │   │   ├── transicionar_dw_para_semantica.py   # 🔄 Handoff automatizado DW -> Camada Semântica
 │   │   └── gerar_mock_dados.py                 # 🎲 Gerador de dados sintéticos para testes no Power BI
@@ -59,7 +61,7 @@ NINHO /
 │   │   ├── arquivos_ftp/                       # Layouts de arquivos recebidos via lote/SFTP
 │   │   └── api_specs/                          # Swagger/OpenAPI e payloads JSON de APIs
 │   ├── camada_semantica/                       # 📁 DDLs do DW Oracle, amostras e relatórios de carga
-│   ├── governanca_dados/                       # 📁 Classificações LAI e inventários LGPD
+│   ├── governanca_dados/                       # 📁 Planilha padrão PRODEB (.xlsx), amostras (.csv) e LGPD/LAI
 │   └── README.md                               # 📖 Roteiro de preenchimento dos insumos
 │
 ├── ⚙️ modulos/                                 # MOTORES DE INTELIGÊNCIA & EXECUÇÃO
@@ -75,8 +77,13 @@ NINHO /
 │   │   ├── templates/                          # 📄 Templates de views analíticas e tabelas META_
 │   │   └── README.md                           # 📖 Manual completo da Camada Semântica
 │   │
-│   ├── governanca_dados/                       # 🛡️ MÓDULO 3: Lakehouse MongoDB & AWS Glue/DataZone
-│   │   ├── ARQUITETURA_FRAMEWORK_GOVERNANCA.md # 🏛️ Envelope canônico, LAI, LGPD e Glue
+│   ├── governanca_dados/                       # 🛡️ MÓDULO 3: Governança PRODEB MongoDB & AWS SageMaker Catalog
+│   │   ├── INTAKE_GOVERNANCA.md                # 📋 Formulário de requisitos de governança e Gate 0.5
+│   │   ├── AGENTS.md                           # 🤖 Orquestrador de Governança (Gate 0.5 de devolução ao cliente)
+│   │   ├── ARQUITETURA_MONGO_AWS.md            # 🏛️ Arquitetura MongoDB Enterprise + AWS Glue & SageMaker Catalog
+│   │   ├── DOCUMENTO_CONSOLIDADO_GOVERNANCA_DADOS.md # 📘 Padrão PRODEB MongoDB ($jsonSchema, BSON, 5 coleções)
+│   │   ├── CAMADA_SEMANTICA_GOVERNANCA_DADOS_MONGODB.md # 🧠 Camada Semântica (tb_sem_dominios e tb_sem_conceitos)
+│   │   ├── templates/                          # 📄 Template oficial Excel (Dados - Insumos / Dicionário de Dados)
 │   │   └── README.md                           # 📖 Manual do módulo de Governança
 │   │
 │   └── README.md                               # 📖 Visão integrada dos módulos
@@ -109,7 +116,7 @@ NINHO /
     │   ├── 10_testes_integridade/              # Scripts de testes pós-carga
     │   └── 11_dicionario_dados/                # Dicionário de dados HTML
     ├── camada_semantica/                       # 📦 Views analíticas geradas e cargas nas 8 tabelas META_
-    ├── governanca_dados/                       # 📦 Schemas Mongo e especificações do DataZone
+    ├── governanca_dados/                       # 📦 Schemas MongoDB, AWS SageMaker Catalog e Relatórios Gate 0.5
     └── README.md                               # 📖 Catálogo de saídas da plataforma
 ```
 

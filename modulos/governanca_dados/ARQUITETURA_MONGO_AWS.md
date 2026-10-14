@@ -1,224 +1,119 @@
-# Arquitetura de Governança de Dados para Governo
-## MongoDB Lakehouse + AWS Glue Data Catalog + Amazon DataZone
+# Arquitetura de Governança de Dados Corporativa (PRODEB / Governo da Bahia)
+## Origem Saneada pelo Cliente ➔ MongoDB Enterprise (Padrão PRODEB) ➔ AWS Glue & Amazon SageMaker Catalog
 
-> **Status:** Documento de Planejamento & Arquitetura  
-> **Data de Criação:** 28/09/2026  
-> **Contexto:** Ecossistema Governamental Multi-Órgão, Multi-Diretoria e Multi-Unidade  
-> **Storage Central:** MongoDB (Data Lakehouse)  
-> **Catálogo e Governança:** AWS Glue Data Catalog & Amazon DataZone (sem uso do Amazon S3)  
-> **Ferramentas de Ingestão:** Apache Hop, Python e ODI (Oracle Data Integrator)
-
----
-
-## 1. Visão Geral e Diretrizes Arquiteturais
-
-Este planejamento estabelece a estratégia de governança para consolidar e governar dados provenientes de fontes heterogêneas (CSV, Excel, APIs REST e Bancos de Dados) em um ambiente público estadual/municipal.
-
-### Premissas e Restrições Fixadas:
-1. **Sem Amazon S3:** O armazenamento de objetos S3 não será utilizado por requisitos contratuais e de compliance local.
-2. **MongoDB como Data Lakehouse Central:** O MongoDB atua como a camada de persistência flexível, raw, staging e curadoria documental.
-3. **Desacoplamento do DW Relacional (Oracle):** A modelagem dimensional e os bancos Oracle pertencem a outro projeto/contrato e não fazem parte deste escopo na nuvem.
-4. **Governança Ativa via AWS:** A catalogação técnica é realizada pelo **AWS Glue Data Catalog** e a governança de negócio, conformidade LAI/LGPD e publicação de produtos de dados ocorrem no **Amazon DataZone**.
-5. **Esteira de Ferramentas Híbridas:**
-   - **Apache Hop:** Ingestão de arquivos (CSV, TXT, planilhas Excel) e push para o Mongo.
-   - **Python:** Consumo de APIs REST, transformações complexas e automação de metadados na AWS via `boto3`.
-   - **ODI:** Extração de bancos relacionais legados e carregamento nas coleções do Mongo.
+> **Status:** Arquitetura Oficial Consolidada  
+> **Contexto:** Ecossistema Governamental Multi-Órgão (SAEB, SEFAZ, SSP, DETRAN, PLANSERV, SUPREV, BA.GOV.BR)  
+> **Escopo da Equipe de Engenharia:** Transporte, Estruturação Canônica no MongoDB e Publicação de Governança na AWS  
+> **Responsabilidade na Origem:** O Órgão Cliente é 100% responsável pela completude e qualidade dos dados na origem (Gate 0.5 de Devolução Obrigatória)  
+> **Persistência Documental & Semântica:** MongoDB Enterprise (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`)  
+> **Catálogo e Governança em Nuvem (AWS):** **AWS Glue Data Catalog** + **Amazon SageMaker Unified Studio / SageMaker Catalog** *(evolução oficial que substitui o antigo Amazon DataZone standalone)*  
+> **Ferramentas de Transporte:** Oracle Data Integrator (ODI 12c), Apache Hop e Python (`pymongo` / `boto3`)
 
 ---
 
-## 2. Topologia da Arquitetura
+## 1. Premissas Inegociáveis e Fronteira de Responsabilidade
+
+1. **Gate 0.5 — Responsabilidade dos Dados na Origem é do Cliente:**
+   - A equipe técnica atua **exclusivamente no transporte dos dados para o MongoDB e na integração final com a AWS**.
+   - Se o cliente enviar planilhas de insumos (`Dados - Insumos` / `Dicionário de Dados`) com células obrigatórias em branco, textos evasivos (*"ver com sap"*, *"a definir"*, *"xxxx"*), sem classificação LGPD (`Anonimizar?`, `Sensibilidade`, `Sensível?`), ou arquivos de dados (`.csv`/`.xlsx`) com **registros vazios em chaves de negócio ou colunas fantasmas (`;;;`)**, o processo é **bloqueado na entrada** pelo script `inspecionar_insumos_governanca.py` e **devolvido ao cliente** para correção na fonte.
+2. **Padronização Canônica PRODEB no MongoDB Enterprise:**
+   - **Código do Dataset:** `SIGLA_ORGAO_UNIDADE_TEMA_VERSAO` em `UPPER_SNAKE_CASE` (ex.: `SAEB_SGC_ATENDIMENTO_V1`, `PLANSERV_BENEFICIARIO_CADASTRO_V1`).
+   - **Nomenclatura de Atributos:** `snake_case` minúsculo, sem acentos, iniciado obrigatoriamente por prefixo semântico de 3 letras (`cod_`, `nom_`, `des_`, `num_`, `ind_`, `dtc_`, `dth_`, `val_`, `qtd_`, `prc_`, `sts_`, `tip_`, `ref_`, `lst_`, `jsn_`, `sig_`, `txt_`, `hor_`).
+   - **Tipagem BSON Estrita (`validationLevel: "strict"`):**
+     - Documentos e códigos (`CPF`, `CNPJ`, `RG`, `CEP`, `CNH`, `RENAVAM`, `Matrícula`, `Telefone`) são **sempre `"string"`** (preserva zeros à esquerda).
+     - Valores monetários (`val_`) e percentuais (`prc_`) são **sempre `"decimal"` (`Decimal128`)** (proibido `double`/`float`).
+     - Datas (`dtc_`, `dth_`) são **sempre `"date"` ISO-8601 UTC**.
+3. **Evolução AWS — Do Amazon DataZone para o Amazon SageMaker Unified Studio / SageMaker Catalog:**
+   - Como o Amazon DataZone standalone foi unificado pela AWS na nova geração do **Amazon SageMaker Unified Studio (SageMaker Catalog & SageMaker Lakehouse)**, toda a camada de governança em nuvem publica seus ativos técnicos no **AWS Glue Data Catalog** e governa Domínios, Glossários Semânticos, Metadata Forms (LGPD/LAI) e Produtos de Dados no **Amazon SageMaker Catalog**.
+
+---
+
+## 2. Topologia Ponta a Ponta (Origem ➔ Gate 0.5 ➔ MongoDB ➔ AWS SageMaker Catalog)
 
 ```mermaid
 flowchart TD
-    subgraph FONTES["Fontes Governamentais"]
-        F_ARQ["Arquivos CSV / Excel (FTP, Rede, Pastas)"]
-        F_API["APIs Web de Sistemas Públicos"]
-        F_DB["Bancos Relacionais Legados (OLTP)"]
+    subgraph CLIENTE["1. Órgão Cliente (Responsável pelo Saneamento na Origem)"]
+        INS["Planilha PRODEB (.xlsx)<br/>• Aba 'Dados - Insumos'<br/>• Aba 'Dicionário de Dados'"]
+        DADOS["Fontes de Dados (CSV, API, BD)<br/>(Ex: SAP RH Bahia, Planserv, Detran, BA.GOV.BR)"]
     end
 
-    subgraph INGEST["Esteira de Ingestão & Processamento"]
-        HOP["🔄 Apache Hop<br/>(Lê CSV/Excel e formata Envelope)"]
-        PY["🐍 Python<br/>(Consome APIs e normaliza documentos)"]
-        ODI["👑 ODI<br/>(Extrai de bases relacionais)"]
+    subgraph GATE["2. Gate 0.5 — Auditoria de Entrada (inspecionar_insumos_governanca.py)"]
+        AUD{"Dados e Metadados<br/>100% Completos?"}
+        DEV["🛑 BLOQUEIO E DEVOLUÇÃO AO CLIENTE<br/>(relatorio_devolucao_cliente.md)<br/>• Registros vazios / NULL em chaves<br/>• Colunas fantasmas (;;;) no CSV<br/>• Falta de Tipo, Descrição ou LGPD"]
     end
 
-    subgraph MONGO["MongoDB (Lakehouse Central do Governo)"]
-        subgraph DB_SSP["Database: gov_ssp (Segurança Pública)"]
-            SSP_R["raw_deic_ocorrencias"]
-            SSP_T["trusted_ocorrencias_policiais"]
-            SSP_C["curated_indicadores_criminais"]
-        end
-        subgraph DB_SEFAZ["Database: gov_sefaz (Fazenda / Tributos)"]
-            SEFAZ_R["raw_sipar_processos"]
-            SEFAZ_T["trusted_arrecadacao_tributaria"]
-            SEFAZ_C["curated_arrecadacao_mensal"]
-        end
-        subgraph DB_SAEB["Database: gov_saeb (Administração / RH)"]
-            SAEB_R["raw_folha_servidores"]
-            SAEB_T["trusted_quadro_funcional"]
-        end
+    subgraph TRANSPORTE["3. Camada de Transporte (Apenas Dados Aprovados)"]
+        ODI["👑 ODI 12c<br/>(Bancos Relacionais)"]
+        HOP["🔄 Apache Hop<br/>(Arquivos CSV / Excel Saneados)"]
+        PY["🐍 Python<br/>(APIs REST & Automação)"]
     end
 
-    subgraph AWS_GOV["AWS Governança (Sem Amazon S3)"]
-        GLUE["⚙️ AWS Glue Data Catalog<br/>(Conexões JDBC/MongoDB DocumentDB)<br/>• Descoberta de Esquemas e Tipos"]
-        
-        subgraph DATAZONE["🌐 Amazon DataZone (Data Mesh Governamental)"]
-            DZ_DOM["Domínios de Dados<br/>(Domínio SSP, Domínio SEFAZ, etc.)"]
-            DZ_GLOSS["Glossário de Negócio<br/>(Termos, Sinônimos e Fórmulas)"]
-            DZ_FORMS["Metadata Forms<br/>(Classificação LAI, PII/LGPD, Donos)"]
-            DZ_PROD["Produtos de Dados & Assinaturas<br/>(Data Sharing intersetorial)"]
+    subgraph MONGO["4. MongoDB Enterprise (Persistência & Governança PRODEB)"]
+        COL_DADOS["Coleções de Negócio (RAW / TRUSTED)<br/>• Validação $jsonSchema Strict<br/>• Envelope _org e _governance"]
+        COL_CAT["Catálogo & Semântica Ativa:<br/>• tb_dataset (Metadados e Linhagem)<br/>• tb_sem_dominios (Domínios Corporativos)<br/>• tb_sem_conceitos (Conceitos Canônicos)"]
+        COL_AUD["Auditoria & Quarentena:<br/>• tb_auditoria_eventos (TTL 5 anos)<br/>• tb_quarentena_<tema>_<yyyymmdd>"]
+    end
+
+    subgraph AWS["5. Governança Corporativa na AWS"]
+        GLUE["⚙️ AWS Glue Data Catalog<br/>• Glue Connection / Crawler MongoDB<br/>• Tabelas Técnicas & Tipos BSON"]
+        subgraph SAGEMAKER["🌐 Amazon SageMaker Unified Studio / SageMaker Catalog (ex-DataZone)"]
+            SM_DOM["Domain Units por Órgão<br/>(SAEB, SEFAZ, SSP, DETRAN, PLANSERV)"]
+            SM_GLOSS["Business Glossary<br/>(Sincronizado com tb_sem_dominios / tb_sem_conceitos)"]
+            SM_FORMS["Metadata Forms<br/>• lgpd_compliance_form<br/>• lai_transparency_form<br/>• prodeb_provenance_form"]
+            SM_LAKE["SageMaker Lakehouse & Data Sharing<br/>(Assinatura governada entre Secretarias)"]
         end
     end
 
-    F_ARQ --> HOP --> MONGO
-    F_API --> PY --> MONGO
-    F_DB --> ODI --> MONGO
-
-    MONGO -.->|Glue Connection & Crawlers| GLUE
-    GLUE -->|Publicação de Ativos Técnicos| DATAZONE
-    DZ_DOM --> DZ_PROD
-    DZ_GLOSS --> DZ_PROD
-    DZ_FORMS --> DZ_PROD
+    INS --> AUD
+    DADOS --> AUD
+    AUD -->|Reprovado (Dados/Metadados Vazios)| DEV
+    DEV -.->|Cliente corrige na fonte| CLIENTE
+    AUD -->|Aprovado| TRANSPORTE
+    ODI & HOP & PY --> COL_DADOS
+    ODI & HOP & PY --> COL_CAT
+    ODI & HOP & PY --> COL_AUD
+    COL_DADOS -.->|Glue Crawler / JDBC| GLUE
+    COL_CAT -->|Sync via boto3| SM_GLOSS
+    COL_CAT -->|Sync via boto3| SM_FORMS
+    GLUE --> SM_DOM --> SM_LAKE
+    SM_GLOSS --> SM_LAKE
+    SM_FORMS --> SM_LAKE
 ```
 
 ---
 
-## 3. Organização dos Projetos no MongoDB
+## 3. Arquitetura das 5 Coleções Oficiais no MongoDB Enterprise
 
-Para suportar a complexidade da administração pública (Secretarias, Diretorias e Unidades) sem gerar dispersão descontrolada de coleções (*Collection Sprawl*), adotou-se o modelo **Domain-Driven com Tagging Organizacional**.
+| Coleção MongoDB | Papel Arquitetural | Regras e Índices Obrigatórios |
+| :--- | :--- | :--- |
+| **`<colecao_negocio>`** *(RAW / TRUSTED)* | Armazena os documentos de negócio transportados da origem com atributos no padrão PRODEB (`cod_`, `nom_`, `val_`, `dtc_`) e blocos `_org` / `_governance`. | Validador `$jsonSchema` com `validationLevel: "strict"` e `validationAction: "error"`. |
+| **`tb_dataset`** | Catálogo Técnico, Operacional, Custódia (`Data Owner`/`Steward`), Sensibilidade LGPD/LAI e Linhagem (`provenance`) de cada dataset. | Índice único em `cod_dataset` (`SIGLA_ORGAO_UNIDADE_TEMA_VERSAO`). |
+| **`tb_sem_dominios`** | Catálogo de Domínios Semânticos Corporativos (ex.: `DOM_IDENTIFICACAO_CIVIL`, `DOM_VIDA_FUNCIONAL`, `DOM_PREVIDENCIA_SAUDE`). | Índice único em `cod_dominio`. |
+| **`tb_sem_conceitos`** | Dicionário Semântico de Conceitos Canônicos (ex.: `CON_CPF_CIDADAO`, `CON_MATRICULA_SERVIDOR`) mapeando quais datasets/atributos implementam cada conceito. | Índice único em `cod_conceito` + índice em `cod_dominio`. |
+| **`tb_auditoria_eventos`** | Trilha imutável de auditoria de cargas, acessos e mudanças de schema (conformidade Art. 37 LGPD). | **Índice TTL obrigatório de 5 anos (`expireAfterSeconds: 157680000`)** sobre `dth_evento`. |
 
-### 3.1 Nível 1: Databases por Órgão / Secretaria
-A divisão física no MongoDB ocorre por Órgão. Isso permite:
-- **RBAC e Isolamento:** Usuários e serviços de um órgão só acessam seu próprio banco.
-- **Gestão de Quota:** Alocação e medição de recursos por secretaria.
-- **Correspondência Direta no DataZone:** Cada banco vira um **Data Domain** no DataZone.
-
-Exemplos de Databases:
-- `gov_ssp`: Secretaria da Segurança Pública
-- `gov_sefaz`: Secretaria da Fazenda
-- `gov_saeb`: Secretaria da Administração
-- `gov_sesab`: Secretaria da Saúde
-
-### 3.2 Nível 2: Camadas em Prefixos de Coleções
-Dentro de cada database, as coleções representam as camadas do Lakehouse:
-1. `raw_<entidade>` (Camada Bronze): Aterrissagem bruta do dado conforme extraído pela fonte.
-2. `trusted_<entidade>` (Camada Prata): Dado limpo, deduplicado, tipado e validado.
-3. `curated_<visao>` (Camada Ouro): Agregações prontas para consumo de relatórios e painéis.
-
-### 3.3 Nível 3: Diretorias e Unidades dentro do Envelope Canônico
-Diretorias, Coordenações, Delegacias, Postos e Escolas **não viram coleções separadas**. Elas residem obrigatoriamente dentro do bloco canônico `_org` em cada documento.
-
-#### Estrutura do Documento Padrão:
-```json
-{
-  "_id": ObjectId("66f82c4e1a2b3c4d5e6f7a8b"),
-  
-  "_org": {
-    "cod_orgao": 23,
-    "sigla_orgao": "SSP",
-    "nome_orgao": "SECRETARIA DA SEGURANCA PUBLICA",
-    "cod_diretoria": 104,
-    "sigla_diretoria": "DEIC",
-    "nome_diretoria": "DEPARTAMENTO DE REPRESSAO A CRIMES ORGANIZADOS",
-    "cod_unidade": 5012,
-    "sigla_unidade": "DRFR",
-    "nome_unidade": "1A DELEGACIA DE REPRESSAO A FURTOS E ROUBOS",
-    "municipio_ibge": 2927408,
-    "nome_municipio": "SALVADOR"
-  },
-
-  "_governance": {
-    "classificacao_sigilo": "RESERVADO",
-    "grau_lai": "RESERVADO_5_ANOS",
-    "possui_pii_lgpd": true,
-    "base_legal": "SEGURANCA_PUBLICA_ART_4_LGPD",
-    "data_carga": ISODate("2026-09-28T12:00:00Z"),
-    "lote_execucao": "LOTE_20260928_01",
-    "ferramenta_ingestao": "APACHE_HOP",
-    "pipeline_origem": "pipe_deic_ocorrencias_excel",
-    "versao_schema": "1.0"
-  },
-
-  "dados": {
-    "NUMERO_BOLETIM": "2026-003491",
-    "DATA_FATO": ISODate("2026-09-20T14:30:00Z"),
-    "NATUREZA_DELITO": "ROUBO A ESTABELECIMENTO COMERCIAL",
-    "HOUVE_FLAGRANTE": "S",
-    "VALOR_ESTIMADO": 12500.00
-  }
-}
-```
+> **Isolamento de Rejeições (`tb_quarentena_<tema>_<yyyymmdd>`):** Caso algum registro falhe na validação BSON durante a janela de transporte, ele jamais contamina a coleção principal nem é descartado silenciosamente; é gravado em coleção de quarentena com o motivo do erro para notificação ao órgão de origem.
 
 ---
 
-## 4. Estratégia de Índices no MongoDB
+## 4. Integração entre MongoDB e Amazon SageMaker Catalog & AWS Glue
 
-Para manter consultas por diretoria, unidade ou município performáticas em coleções com milhões de registros:
-
-```javascript
-// 1. Consultas analíticas por Diretoria e Data
-db.trusted_ocorrencias_policiais.createIndex(
-  { "_org.cod_diretoria": 1, "dados.DATA_FATO": -1 },
-  { name: "idx_org_diretoria_data" }
-);
-
-// 2. Consultas por Unidade Operacional e Sigilo LAI
-db.trusted_ocorrencias_policiais.createIndex(
-  { "_org.cod_unidade": 1, "_governance.classificacao_sigilo": 1 },
-  { name: "idx_org_unidade_sigilo" }
-);
-
-// 3. Consultas Geográficas / IBGE
-db.trusted_ocorrencias_policiais.createIndex(
-  { "_org.municipio_ibge": 1, "dados.NATUREZA_DELITO": 1 },
-  { name: "idx_org_ibge_natureza" }
-);
-
-// 4. Auditoria de Carga e Rastreabilidade
-db.trusted_ocorrencias_policiais.createIndex(
-  { "_governance.lote_execucao": 1, "_governance.data_carga": -1 },
-  { name: "idx_gov_lote_data" }
-);
-```
+| Elemento no MongoDB (PRODEB) | Equivalente no AWS Glue & Amazon SageMaker Catalog |
+| :--- | :--- |
+| `sig_orgao` (`SAEB`, `SEFAZ`, `SSP`, `DETRAN`, `PLANSERV`) | **Domain / Domain Unit** no Amazon SageMaker Unified Studio |
+| Coleção de negócio validada (`$jsonSchema`) | **Glue Table** no AWS Glue Data Catalog + **Catalog Asset** no SageMaker Catalog |
+| Documento em `tb_dataset` | **Metadata Forms** anexados ao ativo (`prodeb_provenance_form`, `lgpd_compliance_form`, `lai_transparency_form`) |
+| Documentos em `tb_sem_dominios` | **Business Glossary** no Amazon SageMaker Catalog |
+| Documentos em `tb_sem_conceitos` | **Business Glossary Terms** vinculados às colunas do ativo |
+| `ind_dados_pessoais` / `ind_dados_sensiveis` | Governança de acesso e políticas de assinatura no **SageMaker Catalog / Lake Formation** |
 
 ---
 
-## 5. Integração com a AWS (Glue Catalog & Amazon DataZone)
+## 5. Artefatos Gerados pelo Módulo (`saida/governanca_dados/`)
 
-### 5.1 AWS Glue Data Catalog (Sem S3)
-- **Glue Connection:** Criação de conexões de rede do tipo **DocumentDB / MongoDB** via VPC / VPN conectando diretamente ao cluster MongoDB.
-- **Glue Crawlers:**
-  - Varrem as coleções `trusted_*` e `curated_*` de cada database do MongoDB.
-  - Inferem o esquema estruturado dos documentos (campos de `dados.*`, `_org.*` e `_governance.*`).
-  - Registram tabelas virtuais no Glue Data Catalog (ex.: `gov_ssp.trusted_ocorrencias_policiais`).
-
-### 5.2 Amazon DataZone (Governança & Negócio)
-- **Data Domains:** Cada órgão é configurado como um Domínio no DataZone (`Domínio Segurança Pública`, `Domínio Fazenda`, etc.).
-- **Domain Units / Projetos:** As Diretorias (ex.: DEIC, PM, DPT) são mapeadas como Projetos ou Domain Units para restringir curadoria e publicações.
-- **Business Glossary (Glossário de Negócio):** Termos técnicos do MongoDB são vinculados a definições claras para o cidadão e gestores públicos.
-- **Metadata Forms Específicos para Governo:**
-  - *Formulário LAI:* Classificação de sigilo (Ostensivo, Reservado, Secreto, Ultrassecreto).
-  - *Formulário LGPD:* Indicação de campos com PII (CPF, Nome, Endereço, Biometria).
-  - *Formulário de Custódia:* Identificação do Data Owner (gestor da pasta) e Data Steward (técnico responsável).
-- **Data Sharing (Assinatura de Dados):** Mecanismo de solicitação e aprovação formal para cruzamento de dados entre secretarias distintas.
-
----
-
-## 6. Matriz de Responsabilidade das Ferramentas
-
-| Ferramenta | Entrada | Saída | Papel no Framework |
-| :--- | :--- | :--- | :--- |
-| **Apache Hop** | Arquivos CSV, TXT, Excel (via FTP/Rede) | MongoDB (`raw_*` ou `trusted_*`) | Ingestão em lote de arquivos, injeção dos blocos `_org` e `_governance`, carga no Mongo via `MongoDB Output`. |
-| **Python** | APIs REST, Swagger, Webhooks | MongoDB (`raw_*` ou `trusted_*`) | Consumo de endpoints dinâmicos, tratamento de JSONs aninhados e automação AWS (`boto3`). |
-| **ODI** | Tabelas de bancos relacionais legados | MongoDB (`trusted_*`) | Extração massiva de sistemas transacionais e carga no MongoDB via conector JDBC. |
-| **MongoDB** | Payloads de Hop, Python e ODI | Storage Lakehouse central | Persistência NoSQL, particionamento lógico por órgão/diretoria e camada de dados para a AWS. |
-| **AWS Glue** | Coleções do MongoDB | Tabelas do Catálogo Técnico | Catalogação contínua de esquemas, tipos de dados e partições sem depender do S3. |
-| **Amazon DataZone** | Tabelas do Glue Catalog | Catálogo de Governança Ativa | Gestão de Domínios, Glossário de Negócio, conformidade LAI/LGPD e produtos de dados. |
-
----
-
-## 7. Próximos Passos para Implementação
-
-1. **Definição dos Schemas JSON Schema / BSON:** Criar os validadores para as coleções do MongoDB garantindo que nenhum documento entre sem o bloco `_org` e `_governance`.
-2. **Pipelines Modelo no Apache Hop e Python:** Construir os fluxos de exemplo que leem Excel/API e gravam com o Envelope Canônico no MongoDB.
-3. **Modelos de Metadata Forms para o DataZone:** Escrever as especificações em JSON dos formulários de LAI, LGPD e Data Ownership para importação no DataZone via script `boto3`.
+1. **`saida/governanca_dados/relatorio_devolucao_cliente_<ORGAO>.md`**: Emitido quando o Gate 0.5 detecta campos vazios, registros em branco ou omissões na planilha/amostra do cliente.
+2. **`saida/governanca_dados/schemas_mongo/`**:
+   - Script `.js` com `db.createCollection("<colecao>", { validator: { $jsonSchema: ... }, validationLevel: "strict" })` e índices compostos.
+   - Script `.js` de registro do dataset em `tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos` e `tb_auditoria_eventos` (incluindo índice TTL de 5 anos).
+3. **`saida/governanca_dados/aws_sagemaker_catalog/`** *(e espelho de compatibilidade em `aws_datazone/`)*:
+   - Definições JSON dos Metadata Forms (`lgpd_compliance_form`, `lai_transparency_form`, `prodeb_provenance_form`), Glossário Semântico e script Python `boto3` para publicação no **AWS Glue Data Catalog** e **Amazon SageMaker Unified Studio / SageMaker Catalog**.

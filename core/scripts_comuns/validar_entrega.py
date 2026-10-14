@@ -376,21 +376,31 @@ def validar_intake_governanca(base_dir: Path) -> dict:
 
     content = intake_path.read_text(encoding="utf-8", errors="ignore")
 
-    # Checar se diretrizes vêm por arquivos na pasta entrega
+    # Checar se diretrizes/planilhas vêm por arquivos na pasta entrega
     pasta_entrega_gov = base_dir / "entrega" / "governanca_dados"
     tem_docs_gov = False
     if pasta_entrega_gov.exists():
-        docs_gov = [f for f in pasta_entrega_gov.glob("*") if f.is_file() and f.suffix.lower() in [".md", ".txt", ".docx", ".pdf"] and f.name.lower() != "readme.md"]
+        docs_gov = [
+            f for f in pasta_entrega_gov.glob("*")
+            if f.is_file() and f.suffix.lower() in [".xlsx", ".csv", ".md", ".txt", ".docx", ".pdf"]
+            and f.name.lower() != "readme.md" and not f.name.startswith("~$")
+        ]
         if docs_gov:
             tem_docs_gov = True
 
-    opcao2_gov = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Diretrizes documentadas", content, re.IGNORECASE))
+    opcao1_gov = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 1:", content, re.IGNORECASE))
+    opcao2_gov = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:", content, re.IGNORECASE))
+    opcao3_gov = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 3:", content, re.IGNORECASE))
+
+    if opcao3_gov:
+        print_ok("💡 Radar Consultivo da IA habilitado para Governanca (conceitos semanticos, regras BSON e alertas LGPD).")
+        results["sucessos"] += 1
 
     # Checar se campos de exemplo ainda contêm [Ex: ...]
     placeholders = re.findall(r"(\[Ex:.*?\])", content)
     if placeholders:
-        if tem_docs_gov or opcao2_gov:
-            print_ok("Diretrizes de governança fornecidas via arquivos na pasta 'entrega/governanca_dados/'.")
+        if tem_docs_gov or opcao1_gov or opcao2_gov or opcao3_gov:
+            print_ok("Insumos/diretrizes de governanca fornecidos via arquivos na pasta 'entrega/governanca_dados/' ou descoberta assistida.")
             results["sucessos"] += 1
         else:
             print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
@@ -402,44 +412,47 @@ def validar_intake_governanca(base_dir: Path) -> dict:
         results["sucessos"] += 1
 
     # Checar órgão / cliente
-    org_match = re.search(r"\*\*Nome do Órgão / Cliente:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
-    if org_match and org_match.group(1).strip() and not org_match.group(1).strip().startswith("[Ex:"):
+    org_match = re.search(r"\*\*(?:Sigla|Nome) do Órgão / Cliente.*?:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    if org_match and org_match.group(1).strip() and not org_match.group(1).strip().startswith(("[Ex:", "[Nome")):
         print_ok(f"Orgao/Cliente identificado: {org_match.group(1).strip()}")
         results["sucessos"] += 1
     else:
-        print_warn("Nome do Orgao/Cliente pendente na Secao 0.")
+        print_warn("Sigla/Nome do Orgao/Cliente pendente na Secao 0.")
         results["avisos"] += 1
 
-    # Checar projeto / domínio
-    proj_match = re.search(r"\*\*Nome do Projeto / Domínio:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
-    if proj_match and proj_match.group(1).strip() and not proj_match.group(1).strip().startswith("[Ex:"):
-        print_ok(f"Projeto/Dominio identificado: {proj_match.group(1).strip()}")
+    # Checar código canônico do dataset ou projeto/domínio
+    ds_match = (
+        re.search(r"\*\*Código Canônico do Dataset.*?:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+        or re.search(r"\*\*Nome do Projeto / Domínio:\*\*\s*`?(.*?)`?$", content, re.MULTILINE)
+    )
+    if ds_match and ds_match.group(1).strip() and not ds_match.group(1).strip().startswith(("[Ex:", "[Nome")):
+        print_ok(f"Dataset/Dominio identificado: {ds_match.group(1).strip()}")
         results["sucessos"] += 1
     else:
-        print_warn("Nome do Projeto/Dominio pendente na Secao 0.")
+        print_warn("Codigo Canonico do Dataset (`SIGLA_ORGAO_UNIDADE_TEMA_VERSAO`) pendente na Secao 0.")
         results["avisos"] += 1
 
-    # Checar Seção 1 - Tecnologias de Governança (MANDATÓRIO)
-    sec1_match = re.search(r"## Seção 1 — Seleção de Tecnologias de Governança.*?(?=## Seção 2)", content, re.DOTALL | re.IGNORECASE)
+    # Checar Seção 1 - Tecnologias de Governança / Transporte (MANDATÓRIO)
+    sec1_match = re.search(r"## Seção 1 — Seleção de Tecnologias.*?(?=## Seção 2)", content, re.DOTALL | re.IGNORECASE)
     if sec1_match:
         sec1_text = sec1_match.group(0)
         techs = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec1_text, re.IGNORECASE)
         if not techs:
-            print_err("NENHUMA tecnologia de governanca marcada com [x] na Secao 1 do INTAKE_GOVERNANCA.md!")
-            print_err("     Abra 'modulos/governanca_dados/INTAKE_GOVERNANCA.md' e marque MongoDB, DataZone/Glue, Hop ou Python.")
+            print_err("NENHUMA tecnologia marcada com [x] na Secao 1 do INTAKE_GOVERNANCA.md!")
+            print_err("     Abra 'modulos/governanca_dados/INTAKE_GOVERNANCA.md' e marque MongoDB, Amazon SageMaker Catalog/Glue, ODI, Hop ou Python.")
             results["erros"] += 1
         else:
-            print_ok(f"Tecnologias de governanca selecionadas ({len(techs)} opcao(oes)):")
+            print_ok(f"Tecnologias de governanca/transporte selecionadas ({len(techs)} opcao(oes)):")
             for t in techs:
                 print(f"     -> {t}")
             results["sucessos"] += 1
 
-    # Checar Seção 2 - LGPD / LAI
-    sec2_match = re.search(r"## Seção 2 — Diretrizes de Conformidade Legal.*?(?=## Seção 3)", content, re.DOTALL | re.IGNORECASE)
+    # Checar Seção 2 - Gate de Qualidade e LGPD / LAI
+    sec2_match = re.search(r"## Seção 2 —.*?(?=## Seção 3)", content, re.DOTALL | re.IGNORECASE)
     if sec2_match:
         regras_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec2_match.group(0), re.IGNORECASE)
         if regras_marcadas:
-            print_ok(f"Diretrizes LGPD/LAI marcadas ({len(regras_marcadas)} item(ns)).")
+            print_ok(f"Diretrizes LGPD/LAI e opcoes de insumos marcadas ({len(regras_marcadas)} item(ns)).")
             results["sucessos"] += 1
         else:
             print_warn("Nenhuma diretriz de LGPD/LAI marcada na Secao 2.")
@@ -450,7 +463,7 @@ def validar_intake_governanca(base_dir: Path) -> dict:
 
 def validar_arquivos_governanca(base_dir: Path) -> dict:
     results = {"erros": 0, "avisos": 0, "sucessos": 0}
-    print(f"\n{NEGRITO}2. Inspecionando Insumos em 'entrega/governanca_dados/':{RESET}")
+    print(f"\n{NEGRITO}2. Inspecionando Insumos em 'entrega/governanca_dados/' (Gate 0.5 — Qualidade na Origem):{RESET}")
 
     pasta_entrega = base_dir / "entrega" / "governanca_dados"
     if not pasta_entrega.exists():
@@ -458,15 +471,39 @@ def validar_arquivos_governanca(base_dir: Path) -> dict:
         results["erros"] += 1
         return results
 
-    arquivos = [f for f in pasta_entrega.glob("*") if f.is_file() and f.name.lower() != "readme.md"]
+    arquivos = [
+        f for f in pasta_entrega.glob("*")
+        if f.is_file() and f.name.lower() != "readme.md" and not f.name.startswith("~$")
+    ]
     if arquivos:
         print_ok(f"Encontrado(s) {len(arquivos)} arquivo(s) de insumo em 'entrega/governanca_dados/':")
         for f in arquivos:
             print(f"     - {f.name} ({f.stat().st_size} bytes)")
         results["sucessos"] += 1
+
+        # Executa auditoria determinística Gate 0.5 se houver .xlsx ou .csv
+        arqs_tabular = [f for f in arquivos if f.suffix.lower() in (".xlsx", ".csv")]
+        if arqs_tabular:
+            try:
+                from inspecionar_insumos_governanca import inspecionar_xlsx, inspecionar_csv
+                for arq in arqs_tabular:
+                    res = inspecionar_xlsx(arq) if arq.suffix.lower() == ".xlsx" else inspecionar_csv(arq)
+                    bloqueios = res.get("bloqueios_devolucao", [])
+                    if bloqueios:
+                        print_err(
+                            f"[GATE 0.5 — DEVOLVER AO CLIENTE] '{arq.name}' possui {len(bloqueios)} pendencia(s) na origem (campos/registros vazios ou sem LGPD):"
+                        )
+                        for b in bloqueios[:5]:
+                            print_err(f"     -> {b}")
+                        results["erros"] += 1
+                    else:
+                        print_ok(f"[GATE 0.5] '{arq.name}' aprovado sem campos/registros obrigatorios vazios.")
+                        results["sucessos"] += 1
+            except Exception as exc:
+                print_warn(f"Nao foi possivel executar auditoria detalhada Gate 0.5: {exc}")
     else:
-        print_warn("Nenhum arquivo de insumo adicional (DDL, CSV, JSON, mapeamentos LGPD/LAI) em 'entrega/governanca_dados/'.")
-        print_warn("     (Opcional: catalogacao pode ser iniciada a partir do DW ou DDL corporativo).")
+        print_warn("Nenhum arquivo de insumo (.xlsx, .csv, mapeamentos LGPD/LAI) depositado em 'entrega/governanca_dados/'.")
+        print_warn("     Deposite a planilha padrao PRODEB (.xlsx) e execute: python core/scripts_comuns/inspecionar_insumos_governanca.py")
         results["avisos"] += 1
 
     return results
@@ -495,6 +532,7 @@ PASTAS_CANONICAS_SAIDA_SEMANTICA = {
 PASTAS_CANONICAS_SAIDA_GOVERNANCA = {
     "schemas_mongo",
     "aws_datazone",
+    "aws_sagemaker_catalog",
 }
 
 
