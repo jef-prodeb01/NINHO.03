@@ -65,6 +65,28 @@
         <decimal>.</decimal>
         <group>,</group>
       </field>
+      <field>
+        <name>TAMANHO_BYTES</name>
+        <length>15</length>
+        <type>Integer</type>
+        <format>#</format>
+        <trim_type>both</trim_type>
+        <precision>0</precision>
+        <currency>$</currency>
+        <decimal>.</decimal>
+        <group>,</group>
+      </field>
+      <field>
+        <name>STATUS_CARGA</name>
+        <length>30</length>
+        <type>String</type>
+        <format/>
+        <trim_type>both</trim_type>
+        <precision>-1</precision>
+        <currency>$</currency>
+        <decimal>.</decimal>
+        <group>,</group>
+      </field>
     </fields>
     <distribute>Y</distribute>
     <copies>1</copies>
@@ -126,8 +148,18 @@
         <rename>DATA_MODIFICACAO</rename>
         <update>Y</update>
       </value>
+      <value>
+        <name>TAMANHO_BYTES</name>
+        <rename>TAMANHO_BYTES</rename>
+        <update>Y</update>
+      </value>
+      <value>
+        <name>STATUS_CARGA</name>
+        <rename>STATUS_CARGA</rename>
+        <update>Y</update>
+      </value>
       <schema>${DB_DW_OWNER}</schema>
-      <table>STG_CONTROLE_ARQUIVOS_FTPS</table>
+      <table>STG_CONTROLE_LOTE_FTP</table>
     </lookup>
     <commit>100</commit>
     <update_bypassed>N</update_bypassed>

@@ -27,13 +27,13 @@ Camada 3: Views KPI de Alto Nível (VW_<PROJETO>_KPI_<MEDIDA>_POR_<DIM>)
 - **Abstração de Legados:** Decodifique códigos com `CASE WHEN ... ELSE 'NÃO IDENTIFICADO'` e renomeie colunas legadas com erro ortográfico para nomes limpos e padronizados.
 - **Validação em 5 Dimensões:** Toda consulta para IA deve atender aos gates de *Sintaxe*, *Semântica*, *Resultado*, *Segurança* e *Explicação*.
 
-Consulte as convenções completas em [convencoes_semantica.md](./references/convencoes_semantica.md).
+Consulte as convenções completas em [convencoes_semantica.md](./references/convencoes_semantica.md) e o template canônico das 3 camadas em [template_views_3_camadas.sql](./templates/template_views_3_camadas.sql).
 
 ---
 
 ## 2. Catálogo de Metadados: As 8 Tabelas `META_*`
 
-O schema semântico padronizado baseia-se em 8 tabelas centrais:
+O schema semântico padronizado baseia-se em 8 tabelas centrais (consulte o template idempotente de `MERGE INTO` em [template_inserts_meta.sql](./templates/template_inserts_meta.sql)):
 1. `META_GLOSSARIO`: Termos de negócio, sinônimos e definições em linguagem comum.
 2. `META_METRICA`: Fórmulas homologadas, tipo de aditividade (`ADITIVA`, `SEMI_ADITIVA`, `NAO_ADITIVA`) e filtros obrigatórios.
 3. `META_OBJETO`: Inventário de views e tabelas do DW com nível de sensibilidade e regras de uso.
@@ -48,7 +48,7 @@ O schema semântico padronizado baseia-se em 8 tabelas centrais:
 
 ## 2.1 💡 Radar Consultivo da IA: Expansão de KPIs, Regras de Negócio e Perguntas
 
-Muitas vezes o cliente solicita um escopo inicial fechado ou enxuto sem perceber todo o potencial analítico das tabelas Fato e Dimensão do DW. Antes de gerar os scripts SQL finais, apresente no `DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` dois blocos claramente separados:
+Muitas vezes o cliente solicita um escopo inicial fechado ou enxuto sem perceber todo o potencial analítico das tabelas Fato e Dimensão do DW. Antes de gerar os scripts SQL finais, apresente no `saida/camada_semantica/DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` dois blocos claramente separados:
 
 1. **🎯 Escopo Solicitado pelo Cliente (Mandatório):**
    - Views `KPI`, métricas (`META_METRICA`), regras (`META_REGRA_NEGOCIO`) e perguntas (`META_CONSULTA_NEGOCIO`) explicitamente pedidas no `INTAKE_SEMANTICA.md` ou nos documentos da pasta `entrega/camada_semantica/`.
@@ -69,22 +69,24 @@ Muitas vezes o cliente solicita um escopo inicial fechado ou enxuto sem perceber
 Antes de gerar os scripts, verifique o estado do schema (Seção 0.2 do `INTAKE_SEMANTICA.md`):
 
 ### Cenário 1: Primeira Execução no Schema (Tabelas META_* Inexistentes)
-- Gere o DDL das 8 tabelas: `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`.
-- Gere os INSERTs completos (incluindo as 36 orientações `GLOBAL` de IA).
+- Preserve/utilize o DDL das 8 tabelas: `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql`.
+- Gere os INSERTs/MERGEs completos (incluindo as 36 orientações `GLOBAL` de IA).
 
 ### Cenário 2: Tabelas META_* Já Existem no Schema (Reexecução ou Compartilhamento)
-- 🛑 **NÃO gere nem tente executar CREATE TABLE.** Pule o script `01_create_meta_tables.sql`.
+- 🛑 **NÃO gere nem tente executar CREATE TABLE.** Pule a execução do script `01_create_meta_tables.sql`.
 - Nos scripts `01_meta_glossario.sql` a `08_meta_valor_dominio.sql`:
-  - Gere **APENAS ACRESCENTAR** utilizando `MERGE INTO` ou `WHERE NOT EXISTS`.
-  - Vincule todas as novidades do projeto à coluna `PROJETO = '<NOME_PROJETO>'`.
+  - Gere **APENAS ACRESCENTAR** utilizando `MERGE INTO` (conforme [template_inserts_meta.sql](./templates/template_inserts_meta.sql)).
+  - Vincule todas as novidades do projeto à coluna `PROJETO = '<PROJETO>'`.
 
 ---
 
 ## 4. Destino dos Artefatos Canônicos
 
 Gere os arquivos diretamente nas pastas canônicas:
-- Views SQL: `saida/camada_semantica/vw_analiticas/`
-- Scripts de Metadados: `saida/camada_semantica/meta_projeto/`
-- Script de Validação e Testes: `saida/camada_semantica/meta_projeto/09_validacoes.sql`
+- Documento de Entendimento e Radar Consultivo: `saida/camada_semantica/DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`
+- Views SQL (baseadas em [template_views_3_camadas.sql](./templates/template_views_3_camadas.sql)): `saida/camada_semantica/vw_analiticas/`
+- Scripts de Metadados (baseados em [template_inserts_meta.sql](./templates/template_inserts_meta.sql)): `saida/camada_semantica/meta_projeto/`
+- Script de Segurança RLS/VPD (opcional, se marcado no Intake): `saida/camada_semantica/meta_projeto/02_rls.sql`
+- Script de Validação e Testes (baseado em [template_09_validacoes.sql](./templates/template_09_validacoes.sql)): `saida/camada_semantica/meta_projeto/09_validacoes.sql`
 - Catálogo Corporativo: `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `PROJETO_VERSION.md`
 

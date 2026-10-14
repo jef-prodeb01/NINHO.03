@@ -7,7 +7,7 @@ Este documento é a referência conceitual unificada da plataforma **NINHO**, ni
 ## 🏛️ Conceitos Fundamentais de Data Warehouse
 
 ### 1. Modelo Estrela (Star Schema)
-Arquitetura dimensional preconizada por Ralph Kimball onde uma ou mais **Tabelas Fato** ficam centralizadas e conectam-se diretamente às **Tabelas Dimensão**. É o padrão ouro para relatórios no Power BI e Apache Superset, pois elimina joins complexos em cascata (floco de neve) e maximiza a performance do motor colunar VertiPaq.
+Arquitetura dimensional preconizada por Ralph Kimball onde uma ou mais **Tabelas Fato** ficam centralizadas e conectam-se diretamente às **Tabelas Dimensão**. É o padrão ouro para relatórios no Power BI, pois elimina joins complexos em cascata (floco de neve) e maximiza a performance do motor colunar VertiPaq.
 
 ### 2. Tabela Fato (`FATO_*`)
 Tabela que armazena os eventos quantitativos e transações do negócio (ex: *uma venda realizada, um processo judicial protocolado, um gasto de computação em nuvem*). Contém:

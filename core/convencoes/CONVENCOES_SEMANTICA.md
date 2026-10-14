@@ -9,24 +9,24 @@
 
 | Prefixo | Significado | Tipo Oracle típico |
 |---|---|---|
-| `sk_` | Chave substituta (surrogate key) de dimensão | `NUMBER` |
-| `id_` | Identificador de negócio (natural key) | `NUMBER` ou `VARCHAR2` |
-| `cd_` | Código curto de referência/domínio | `VARCHAR2` |
-| `nm_` | Nome | `VARCHAR2` |
-| `descricao_` | Descrição funcional (mais longa que `nm_`) | `VARCHAR2` |
-| `dt_` | Data ou data+hora de negócio | `DATE` |
-| `dtc_` | Data de controle/técnica (ex.: `dtc_expiracao` do SCD2) | `DATE` |
-| `vl_` | Valor monetário ou numérico livre | `NUMBER` |
-| `qt_` | Quantidade/contagem | `NUMBER` |
-| `pct_` | Percentual | `NUMBER` |
-| `ind_` | Indicador binário de negócio (S/N) | `CHAR(1)` |
-| `categoria_` | Classificação/categoria de uma dimensão | `VARCHAR2` |
+| `SK_` | Chave substituta (surrogate key) de dimensão | `NUMBER` |
+| `ID_` | Identificador de negócio (natural key) | `NUMBER` ou `VARCHAR2` |
+| `CD_` | Código curto de referência/domínio | `VARCHAR2` |
+| `NM_` | Nome | `VARCHAR2` |
+| `DS_` / `DESCRICAO_` | Descrição funcional (mais longa que `NM_`) | `VARCHAR2` |
+| `DT_` | Data ou data+hora de negócio | `DATE` |
+| `DTC_` | Data de controle/técnica (ex.: `DTC_EXPIRACAO` do SCD2) | `DATE` |
+| `VL_` | Valor monetário ou numérico livre | `NUMBER` |
+| `QT_` | Quantidade/contagem | `NUMBER` |
+| `PCT_` | Percentual | `NUMBER` |
+| `IND_` | Indicador binário de negócio (S/N) | `CHAR(1)` |
+| `CATEGORIA_` | Classificação/categoria de uma dimensão | `VARCHAR2` |
 
 ## Booleanos
 
 Nunca usar `NUMBER(1)`/`BOOLEAN`. Sempre `CHAR(1) DEFAULT 'S' NOT NULL`
-com domínio `'S'` / `'N'` (ver Seção "Armadilhas Oracle vs. Postgres"
-do [README.md](../../modulos/camada_semantica/README.md)). Colunas booleanas começam com `ind_`.
+com domínio `'S'` / `'N'` (ver Seção "Armadilhas Críticas: Oracle vs PostgreSQL"
+de [convencoes_semantica.md](../../.agents/skills/camada-semantica-oracle/references/convencoes_semantica.md)). Colunas booleanas começam com `IND_`.
 
 ## Nomenclatura de views (arquitetura em 3 camadas)
 

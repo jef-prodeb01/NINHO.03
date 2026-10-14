@@ -6,8 +6,8 @@
 ## Como a IA gera as views
 
 ```
-1. IA usa modulos/camada_semantica/templates/01_views_analiticas.sql como base
-2. IA gera um arquivo por view (ex: VW_PROJETO_DIM_CIDADE.sql)
+1. IA usa .agents/skills/camada-semantica-oracle/templates/template_views_3_camadas.sql como base
+2. IA gera um arquivo por view (ex: VW_PROJETO_DIM_CIDADE_ATUAL.sql)
 3. Engenheiro valida a view
 4. Engenheiro confirma execução
 5. IA gera próxima view

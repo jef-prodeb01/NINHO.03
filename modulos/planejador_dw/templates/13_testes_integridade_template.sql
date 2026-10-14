@@ -15,7 +15,7 @@ PROMPT ========================================================================
 
 -- ----------------------------------------------------------------------------
 -- TESTE 1: Auditoria da Última Execução na TB_CONTROLE_CARGA
--- Esperado: DES_STATUS_EXECUCAO = 'SUCESSO' e QTD_REGISTROS_ERRO = 0
+-- Esperado: STATUS_EXECUCAO = 'SUCESSO' e DES_MENSAGEM_ERRO IS NULL
 -- ----------------------------------------------------------------------------
 PROMPT [TESTE 1] Verificando status da última execução na TB_CONTROLE_CARGA...
 
@@ -101,8 +101,9 @@ SELECT
     INDEX_NAME,
     INDEX_TYPE,
     STATUS
-FROM USER_INDEXES
-WHERE TABLE_NAME IN ('<FATO_TABELA>', '<DIM_ENTIDADE_1>', '<DIM_ENTIDADE_2>', 'DIM_TEMPO')
+FROM ALL_INDEXES
+WHERE OWNER = '<SCHEMA_OWNER>'
+  AND TABLE_NAME IN ('<FATO_TABELA>', '<DIM_ENTIDADE_1>', '<DIM_ENTIDADE_2>', 'DIM_TEMPO')
   AND STATUS <> 'VALID';
 
 

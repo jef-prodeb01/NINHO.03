@@ -30,7 +30,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
-PRESERVED_FILENAMES = {".gitkeep", "README.md"}
+PRESERVED_FILENAMES = {".gitkeep", "README.md", "01_create_meta_tables.sql"}
 
 TARGET_DIRS = [
     BASE_DIR / "saida",
@@ -48,7 +48,7 @@ MODULE_FORM_FILES = [
 
 
 def listar_arquivos_gerados() -> dict[str, list[Path]]:
-    """Retorna os arquivos de projeto presentes em `saida/` e `entrega/` (exceto .gitkeep e README.md)."""
+    """Retorna os arquivos de projeto presentes em `saida/` e `entrega/` (exceto .gitkeep, README.md e base DDL)."""
     resultado: dict[str, list[Path]] = {"saida": [], "entrega": []}
     for chave, pasta_raiz in [("saida", BASE_DIR / "saida"), ("entrega", BASE_DIR / "entrega")]:
         if not pasta_raiz.exists():
@@ -114,6 +114,15 @@ def exportar_projeto(destino_base: str, sigla_projeto: str) -> int:
             caminho_dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(caminho_origem, caminho_dest)
             copiados += 1
+
+    # 1.1 Copiar script base 01_create_meta_tables.sql da camada semântica
+    base_meta_sql = BASE_DIR / "saida" / "camada_semantica" / "meta_projeto" / "01_create_meta_tables.sql"
+    if base_meta_sql.exists():
+        rel = base_meta_sql.relative_to(BASE_DIR)
+        caminho_dest = pasta_pacote / rel
+        caminho_dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(base_meta_sql, caminho_dest)
+        copiados += 1
 
     # 2. Copiar formulários INTAKE e PROJETO preenchidos
     for form in MODULE_FORM_FILES:

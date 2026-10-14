@@ -208,20 +208,20 @@ class ODIMappingAuditor:
                 "titulo": "Detecção de Colunas de Atualização Clássicas em Carga Total",
                 "gravidade": "CRÍTICA",
                 "descricao": (
-                    f"A origem contém colunas de auditoria/modificação ({', '.join(self.update_columns_found[:5])}), "
+                    f"A origem contém colunas de auditoria/modificação ({', '.join(self.update_date_cols[:5])}), "
                     f"mas o mapeamento está configurado para Carga Total (Truncate & Load ou sem filtro temporal). "
                     f"Reprocessar 100% da base todos os dias causa degradação linear de horas à medida que a base cresce."
                 ),
                 "prescricao": [
-                    "Adicionar componente FILTRO no Canvas ODI com buffer deslizante: `UPDATED_AT >= TRUNC(SYSDATE) - 2` (ou variável `#V_DATA_ULTIMA_CARGA`).",
+                    f"Adicionar componente FILTRO no Canvas ODI com buffer deslizante: `{self.update_date_cols[0]} >= TRUNC(SYSDATE) - 2` (ou variável `#V_DATA_ULTIMA_CARGA`).",
                     "Alterar IKM para `IKM Oracle Merge` ou `IKM Oracle Incremental Update`.",
                     "Configurar Primary Key física na tabela Staging para viabilizar a correspondência de linhas (Target Key)."
                 ]
             })
 
         # Heurística 1C: Apenas Data de Criação (Tabela Append-Only / Imutável)
-        elif self.create_columns_found and not self.update_columns_found and not self.close_columns_found:
-            col_criacao = self.create_columns_found[0]
+        elif self.create_date_cols and not self.update_date_cols and not self.close_date_cols:
+            col_criacao = self.create_date_cols[0]
             self.heuristics_triggered.append({
                 "id": "H1C_CDC_APPEND_ONLY",
                 "titulo": f"Detecção de Tabela Append-Only / Histórica com Data de Criação ({col_criacao})",
@@ -324,7 +324,7 @@ class ODIMappingAuditor:
         print(f"{NEGRITO}Objeto Auditado:{RESET} {self.mapping_name}")
         print(f"{NEGRITO}Arquivo Fonte:{RESET} {self.xml_path.name}")
         print(f"{NEGRITO}Tabelas Staging Detectadas ({len(self.stg_targets)}):{RESET} {', '.join(self.stg_targets[:6])}{'...' if len(self.stg_targets) > 6 else ''}")
-        print(f"{NEGRITO}Colunas de Atualização Encontradas:{RESET} {', '.join(self.update_columns_found) if self.update_columns_found else 'Nenhuma'}")
+        print(f"{NEGRITO}Colunas de Atualização Encontradas:{RESET} {', '.join(self.update_date_cols) if self.update_date_cols else 'Nenhuma'}")
         print(f"{NEGRITO}Carga Total (Truncate):{RESET} {'SIM' if self.truncate_detected else 'NÃO'}")
         print(f"{NEGRITO}Filtros no Canvas:{RESET} {'SIM' if self.has_filter_components else 'NÃO (Extração Completa)'}\n")
 
@@ -346,7 +346,7 @@ class ODIMappingAuditor:
         content.append(f"## 1. Resumo Executivo da Auditoria\n")
         content.append(f"O mapeamento foi submetido ao **Motor de Regras Preditivas do NINHO**. Foram identificadas oportunidades cruciais de desaceleração e tuning preventivo:")
         content.append(f"- **Volume de Fluxos no Canvas:** {len(self.stg_targets)} fluxos independentes.")
-        content.append(f"- **Colunas de Auditoria na Origem:** `{', '.join(self.update_columns_found) if self.update_columns_found else 'Nenhuma detectada'}`.")
+        content.append(f"- **Colunas de Auditoria na Origem:** `{', '.join(self.update_date_cols) if self.update_date_cols else 'Nenhuma detectada'}`.")
         content.append(f"- **Estratégia Atual Identificada:** {'Carga Total com TRUNCATE (Full Load)' if self.truncate_detected else 'Carga Direta sem Filtro Temporal'}.")
         content.append(f"- **Diagnóstico de Gargalo:** Reprocessamento diário redundante de dados históricos estáticos.\n")
 
@@ -362,12 +362,23 @@ class ODIMappingAuditor:
                 content.append(f"- {step}")
             content.append(f"\n")
 
+        if self.create_date_cols and self.close_date_cols:
+            c_ab = self.create_date_cols[0]
+            c_fe = self.close_date_cols[0]
+            filtro_recomendado = f"`({c_ab} >= TRUNC(SYSDATE) - 3 OR {c_fe} >= TRUNC(SYSDATE) - 3 OR {c_fe} IS NULL)`"
+        elif self.update_date_cols:
+            filtro_recomendado = f"`{self.update_date_cols[0]} >= TRUNC(SYSDATE) - 2`"
+        elif self.create_date_cols:
+            filtro_recomendado = f"`{self.create_date_cols[0]} >= TRUNC(SYSDATE) - 1`"
+        else:
+            filtro_recomendado = "`UPDATED_AT >= TRUNC(SYSDATE) - 2`"
+
         content.append(f"---\n")
         content.append(f"## 3. Matriz de Configuração De/Para no ODI Studio\n")
         content.append(f"| Objeto / Parâmetro | Configuração Atual (Lenta) | Configuração Preditiva Otimizada | Racional Técnico |")
         content.append(f"| :--- | :--- | :--- | :--- |")
         content.append(f"| **Estratégia de Carga** | Full Load (Truncate & Insert) | **CDC Incremental por Data** | Transfere apenas linhas alteradas recentemente |")
-        content.append(f"| **Filtro na Origem** | Nenhum (Lê 100% da tabela) | `UPDATED_AT >= TRUNC(SYSDATE) - 2` | Janela deslizante de segurança (buffer D-2) |")
+        content.append(f"| **Filtro na Origem** | Nenhum (Lê 100% da tabela) | {filtro_recomendado} | Janela deslizante / ciclo de vida ativo |")
         content.append(f"| **Integration KM (IKM)** | `IKM Oracle Insert` / `Control Append` | **`IKM Oracle Merge`** | Operação atômica nativa de alta velocidade |")
         content.append(f"| **Target Key no Canvas** | `Undefined` | **`PK_<TABELA>`** | Permite correspondência de chaves para o Merge |")
         content.append(f"| **Opção FLOW_CONTROL** | `True` (Gera tabelas `E$_`) | **`False`** | Elimina checagem de erros desnecessária |")

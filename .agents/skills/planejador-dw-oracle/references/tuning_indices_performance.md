@@ -51,14 +51,15 @@ ALTER INDEX "SCHEMA_OLAP"."IDX_FATO_ORGAO_DATA" NOPARALLEL;
 
 Nas dimensões SCD Tipo 2, os seguintes índices B-Tree devem ser sempre criados:
 
-1. **Chave Primária Surrogate (`SK_*`):** Índice Único B-Tree.
-2. **Lookup de Carga Incremental do ETL:**
+1. **Chave Primária Surrogate (`DIMENSION_KEY`):** Índice Único B-Tree (`PK_DIM_<ENTIDADE>`).
+2. **Histórico de Vigência (`ID_<ENTIDADE>`, `DTC_EFETIVACAO`):** Índice Único ou B-Tree suportando `UK_DIM_<ENTIDADE>_HIST`.
+3. **Lookup de Carga Incremental do ETL (`ID_<ENTIDADE>`, `DTC_EXPIRACAO`):**
    ```sql
-   CREATE INDEX "SCHEMA_OLAP"."IDX_DIM_CLIENTE_SCD2" 
-   ON "SCHEMA_OLAP"."DIM_CLIENTE" ("COD_NATURAL", "FLG_VIGENTE") 
-   TABLESPACE "SCHEMA_DATA" COMPRESS 1;
+   CREATE INDEX "SCHEMA_OLAP"."IDX_DIM_CLIENTE_LOOKUP" 
+   ON "SCHEMA_OLAP"."DIM_CLIENTE" ("ID_CLIENTE", "DTC_EXPIRACAO") 
+   TABLESPACE "SCHEMA_INDEX";
    ```
-3. **Campos de Busca Frequente no BI:** Sigla, Nome, Código Natural e Descrição da Categoria.
+4. **Campos de Busca Frequente no BI:** Sigla, Nome, Código Natural e Descrição da Categoria.
 
 ---
 
@@ -77,29 +78,29 @@ EXEC DBMS_STATS.GATHER_TABLE_STATS(ownname => 'SCHEMA_OLAP', tabname => 'FATO_AT
 Em esteiras de carga massiva (Truncate & Load ou Carga Batch com `INSERT /*+ APPEND PARALLEL(4) */`), manter índices secundários (Bitmap ou B-Tree) ativos durante a inserção causa degradação extrema de desempenho por contenção de I/O e geração massiva de redo.
 
 ### 6.1 Arquitetura do Ciclo
-1. **Pré-Carga (`PRC_PRE_CARGA_FATOS`):** Desativa todos os índices secundários (`uniqueness = 'NONUNIQUE'`) colocando-os em estado `UNUSABLE`. **Mantém a Primary Key / Unique ativa** para garantir a integridade do grão.
+1. **Pré-Carga (`PRC_PRE_CARGA_FATO`):** Desativa todos os índices secundários (`uniqueness = 'NONUNIQUE'`) colocando-os em estado `UNUSABLE`. **Mantém a Primary Key / Unique ativa** para garantir a integridade do grão.
 2. **Carga Massiva (ETL/ELT):** Executa `INSERT /*+ APPEND */` em alta velocidade (Direct-Path Write).
-3. **Pós-Carga (`PRC_POS_CARGA_FATOS`):** Reconstrói os índices em paralelo (`REBUILD PARALLEL 4 NOLOGGING`), redefine imediatamente para `NOPARALLEL LOGGING` e dispara coleta de estatísticas (`DBMS_STATS.GATHER_TABLE_STATS`).
+3. **Pós-Carga (`PRC_POS_CARGA_FATO`):** Reconstrói os índices em paralelo (`REBUILD PARALLEL 4 NOLOGGING`), redefine imediatamente para `NOPARALLEL LOGGING` e dispara coleta de estatísticas (`DBMS_STATS.GATHER_TABLE_STATS`).
 
-### 6.2 Stored Procedure de Pré-Carga (`PRC_PRE_CARGA_FATOS`)
+### 6.2 Stored Procedure de Pré-Carga (`PRC_PRE_CARGA_FATO`)
 
 ```sql
-CREATE OR REPLACE PROCEDURE "SCHEMA_OLAP"."PRC_PRE_CARGA_FATOS" (
-  p_tabela_alvo IN VARCHAR2 DEFAULT NULL
+CREATE OR REPLACE PROCEDURE "SCHEMA_OLAP"."PRC_PRE_CARGA_FATO" (
+  p_tabela_fato IN VARCHAR2,
+  p_owner       IN VARCHAR2 DEFAULT 'SCHEMA_OLAP'
 ) 
 AUTHID CURRENT_USER
 IS
-  v_owner VARCHAR2(30) := 'SCHEMA_OLAP';
   v_sql   VARCHAR2(1000);
   v_count NUMBER := 0;
 BEGIN
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_PRE_CARGA_FATOS] Iniciando desativação de índices secundários...');
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_PRE_CARGA_FATO] Iniciando desativação de índices secundários...');
 
   FOR r IN (
     SELECT i.owner, i.table_name, i.index_name
     FROM all_indexes i
-    WHERE i.owner = v_owner
-      AND (p_tabela_alvo IS NULL OR i.table_name = UPPER(TRIM(p_tabela_alvo)))
+    WHERE i.owner = UPPER(TRIM(p_owner))
+      AND i.table_name = UPPER(TRIM(p_tabela_fato))
       -- Mantém PK e índices de unicidade ativos para garantir a integridade do grão
       AND i.uniqueness = 'NONUNIQUE'
       AND i.status = 'VALID'
@@ -115,37 +116,36 @@ BEGIN
     END;
   END LOOP;
 
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_PRE_CARGA_FATOS] Concluído. Total de índices desativados: ' || v_count);
-END PRC_PRE_CARGA_FATOS;
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_PRE_CARGA_FATO] Concluído. Total de índices desativados: ' || v_count);
+END PRC_PRE_CARGA_FATO;
 /
 ```
 
-### 6.3 Stored Procedure de Pós-Carga (`PRC_POS_CARGA_FATOS`)
+### 6.3 Stored Procedure de Pós-Carga (`PRC_POS_CARGA_FATO`)
 
 ```sql
-CREATE OR REPLACE PROCEDURE "SCHEMA_OLAP"."PRC_POS_CARGA_FATOS" (
-  p_tabela_alvo IN VARCHAR2 DEFAULT NULL,
-  p_parallel    IN NUMBER   DEFAULT 4
+CREATE OR REPLACE PROCEDURE "SCHEMA_OLAP"."PRC_POS_CARGA_FATO" (
+  p_tabela_fato IN VARCHAR2,
+  p_owner       IN VARCHAR2 DEFAULT 'SCHEMA_OLAP'
 )
 AUTHID CURRENT_USER
 IS
-  v_owner VARCHAR2(30) := 'SCHEMA_OLAP';
   v_sql   VARCHAR2(1000);
   v_count NUMBER := 0;
 BEGIN
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATOS] Iniciando REBUILD de índices UNUSABLE...');
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATO] Iniciando REBUILD de índices UNUSABLE...');
 
   -- 1. Rebuild acelerado em paralelo com NOLOGGING
   FOR r IN (
     SELECT i.owner, i.table_name, i.index_name
     FROM all_indexes i
-    WHERE i.owner = v_owner
-      AND (p_tabela_alvo IS NULL OR i.table_name = UPPER(TRIM(p_tabela_alvo)))
+    WHERE i.owner = UPPER(TRIM(p_owner))
+      AND i.table_name = UPPER(TRIM(p_tabela_fato))
       AND i.status = 'UNUSABLE'
     ORDER BY i.table_name, i.index_name
   ) LOOP
     BEGIN
-      v_sql := 'ALTER INDEX "' || r.owner || '"."' || r.index_name || '" REBUILD PARALLEL ' || p_parallel || ' NOLOGGING';
+      v_sql := 'ALTER INDEX "' || r.owner || '"."' || r.index_name || '" REBUILD PARALLEL 4 NOLOGGING';
       EXECUTE IMMEDIATE v_sql;
 
       -- RESET OBRIGATÓRIO: impede que dashboards executem em paralelo e restaura logging
@@ -159,36 +159,22 @@ BEGIN
     END;
   END LOOP;
 
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATOS] Rebuild concluído. Total: ' || v_count);
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATO] Rebuild concluído. Total: ' || v_count);
 
   -- 2. Atualização imediata de estatísticas do CBO
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATOS] Coletando estatísticas CBO...');
-  FOR t IN (
-    SELECT table_name
-    FROM all_tables
-    WHERE owner = v_owner
-      AND (p_tabela_alvo IS NULL OR table_name = UPPER(TRIM(p_tabela_alvo)))
-      AND table_name LIKE 'FAT%'
-    ORDER BY table_name
-  ) LOOP
-    BEGIN
-      DBMS_STATS.GATHER_TABLE_STATS(
-        ownname          => v_owner,
-        tabname          => t.table_name,
-        estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
-        method_opt       => 'FOR ALL COLUMNS SIZE AUTO',
-        degree           => p_parallel,
-        cascade          => TRUE,   -- Atualiza índices e colunas simultaneamente
-        no_invalidate    => FALSE   -- Invalida cursores obsoletos imediatamente
-      );
-    EXCEPTION
-      WHEN OTHERS THEN
-        DBMS_OUTPUT.PUT_LINE('>> ERRO em DBMS_STATS para ' || t.table_name || ': ' || SQLERRM);
-    END;
-  END LOOP;
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATO] Coletando estatísticas CBO...');
+  DBMS_STATS.GATHER_TABLE_STATS(
+    ownname          => UPPER(TRIM(p_owner)),
+    tabname          => UPPER(TRIM(p_tabela_fato)),
+    estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+    method_opt       => 'FOR ALL COLUMNS SIZE AUTO',
+    degree           => 4,
+    cascade          => TRUE,
+    no_invalidate    => FALSE
+  );
 
-  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATOS] Ciclo de pós-carga finalizado com sucesso.');
-END PRC_POS_CARGA_FATOS;
+  DBMS_OUTPUT.PUT_LINE('>> [PRC_POS_CARGA_FATO] Ciclo de pós-carga finalizado com sucesso.');
+END PRC_POS_CARGA_FATO;
 /
 ```
 

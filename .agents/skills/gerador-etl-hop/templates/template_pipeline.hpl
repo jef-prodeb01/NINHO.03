@@ -41,7 +41,7 @@
   </order>
   <transform>
     <name>Leitura Arquivo Origem</name>
-    <type>CSVFileInput</type>
+    <type>CSVInput</type>
     <description/>
     <distribute>Y</distribute>
     <custom_distribution/>
@@ -58,7 +58,7 @@
     <enclosure>"</enclosure>
     <header>Y</header>
     <buffer_size>50000</buffer_size>
-    <lazy_conversion>Y</lazy_conversion>
+    <lazy_conversion>N</lazy_conversion>
     <add_filename_result>N</add_filename_result>
     <parallel>N</parallel>
     <newline_possible>N</newline_possible>

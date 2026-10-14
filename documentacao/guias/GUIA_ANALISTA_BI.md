@@ -1,6 +1,6 @@
 # Padrão Corporativo de Handoff para Business Intelligence — Especificação de Entrega para Power BI
 
-Este guia estabelece os padrões corporativos de Business Intelligence que o **Engenheiro de Dados** e a IA do **NINHO** devem aplicar na geração do artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (armazenado em `saida/planejador_dw/08_datasets_bi/`), entregável essencial para que a equipe externa de **Analistas de BI** e **Desenvolvedores de Painéis** construa relatórios no **Microsoft Power BI** e **Apache Superset** com autonomia e conformidade.
+Este guia estabelece os padrões corporativos de Business Intelligence que o **Engenheiro de Dados** e a IA do **NINHO** devem aplicar na geração do artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (armazenado em `saida/planejador_dw/08_datasets_bi/`), entregável essencial para que a equipe externa de **Analistas de BI** e **Desenvolvedores de Painéis** construa relatórios no **Microsoft Power BI** com autonomia e conformidade.
 
 > 🛡️ **Aviso de Arquitetura & Governança da Plataforma:**  
 > O **NINHO** é uma plataforma de engenharia analítica de uso **100% exclusivo para Engenheiros de Dados**. O Analista de BI **não acessa o repositório NINHO nem possui módulos de execução no sistema**.  
@@ -28,10 +28,7 @@ Este guia estabelece os padrões corporativos de Business Intelligence que o **E
   - [6.3 Divisão Segura com DIVIDE](#63-divisao-segura)
   - [6.4 Organização em Pastas de Exibição (Display Folders)](#64-pastas-exibicao)
   - [6.5 Fórmulas Canônicas de Inteligência Temporal (Time Intelligence)](#65-time-intelligence)
-- [7. Consumo via Apache Superset (Modern Data Stack)](#7-apache-superset)
-  - [7.1 Estrutura dos Datasets Declarativos (.yaml)](#71-datasets-yaml)
-  - [7.2 Métricas Virtuais em SQL](#72-metricas-virtuais)
-- [8. Checklist de Qualidade e Homologação Pré-Publicação](#8-checklist-qualidade)
+- [7. Checklist de Qualidade e Homologação Pré-Publicação](#7-checklist-qualidade)
 
 ---
 
@@ -57,7 +54,6 @@ flowchart TD
 
     subgraph BI[Ferramentas de Consumo Analítico]
         PBI[Microsoft Power BI<br/>Import Mode / VertiPaq]
-        SPS[Apache Superset<br/>Datasets Declarativos YAML]
     end
 
     DIM -->|Expirações Filtradas| VWDIM
@@ -73,14 +69,11 @@ flowchart TD
     VWEV -.->|Consumo Direto / Relatórios Rápidos| PBI
     VWKPI -.->|Painéis Executivos| PBI
     META -.->|Atingimento de Metas| PBI
-
-    VWEV --> SPS
-    VWKPI --> SPS
 ```
 
 ### Qual camada conectar no seu relatório?
 1. **Modelos Ricos e Detalhados (Power BI):** Conecte diretamente nas tabelas dimensionais (`DIM_*` ou `VW_DIM_*_ATUAL`), na dimensão calendário (`DIM_TEMPO` ou `VW_DIM_TEMPO`) e nas tabelas fato (`FATO_*`), montando um **Star Schema** puro no Power BI.
-2. **Relatórios Rápidos, Self-Service ou Apache Superset:** Conecte nas views da Camada Semântica (`VW_EVENTO`, `VW_KPI_*`), onde os joins, filtros de vigência e regras de negócio já vêm pré-resolvidos pelo banco.
+2. **Relatórios Rápidos ou Self-Service:** Conecte nas views da Camada Semântica (`VW_EVENTO`, `VW_KPI_*`), onde os joins, filtros de vigência e regras de negócio já vêm pré-resolvidos pelo banco.
 
 ---
 
@@ -141,8 +134,8 @@ erDiagram
 ### 3.2 Ocultação de Chaves Técnicas e Surrogate Keys
 
 Para manter o modelo limpo, intuitivo e amigável para usuários de negócio:
-1. **Oculte na Tabela Fato:** Todas as Foreign Keys numéricas (`DIM_TEMPO`, `SK_PROJETO`, `DIM_CLUSTER`, etc.). Usuários nunca devem arrastar chaves da fato para os visuais.
-2. **Oculte nas Dimensões:** A Surrogate Key (`DIMENSION_KEY` ou `SK_*`), flags de auditoria (`DES_ATUALIZA`) e datas de vigência técnica (`DTC_EFETIVACAO`, `DTC_EXPIRACAO`).
+1. **Oculte na Tabela Fato:** Todas as Foreign Keys numéricas (`DIM_TEMPO`, `DIM_PROJETO`, `DIM_CLUSTER`, etc.). Usuários nunca devem arrastar chaves da fato para os visuais.
+2. **Oculte nas Dimensões:** A Surrogate Key (`DIMENSION_KEY`), flags de auditoria (`DES_ATUALIZAR`, `SIN_ATIVO`) e datas de vigência técnica (`DTC_EFETIVACAO`, `DTC_EXPIRACAO`).
 3. **Deixe Visíveis:** Apenas colunas descritivas de negócio (`NOM_PROJETO`, `DES_AMBIENTE`, `NOM_CLASSIFICACAO`) e métricas na tabela de medidas.
 
 ---
@@ -174,7 +167,7 @@ Por padrão, ferramentas de BI ordenam campos de texto alfabeticamente (ex: *Abr
 | Coluna Exibida no Gráfico | Coluna de Ordenação Obrigatória | Exemplo de Valor Exibido |
 | :--- | :--- | :--- |
 | `DES_MES` / `DES_MES_NOME` | **`NUM_MES`** | Janeiro, Fevereiro, Março... |
-| `DES_MES_ANO` / `DES_MES_ANO_ABREV` | **`COD_ANO_MES`** ou **`DES_MES_ANO_NUMERICO`** | Jan/2026, Fev/2026, Mar/2026... |
+| `DES_ANO_MES` / `DES_MES_ANO` | **`NUM_ANO_MES`** ou **`COD_ANO_MES`** | Jan/2026, Fev/2026, Mar/2026... |
 | `DES_TRIMESTRE` | **`NUM_TRIMESTRE`** | 1º Trimestre, 2º Trimestre... |
 | `DES_SEMESTRE` | **`NUM_SEMESTRE`** | 1º Semestre, 2º Semestre... |
 | `DES_BIMESTRE` | **`NUM_BIMESTRE`** | 1º Bimestre, 2º Bimestre... |
@@ -186,8 +179,8 @@ Por padrão, ferramentas de BI ordenam campos de texto alfabeticamente (ex: *Abr
 
 A `DIM_TEMPO` disponibiliza atributos avançados pré-calculados que dispensam cálculos complexos em DAX:
 - **`NUM_SEMESTRE` / `DES_SEMESTRE`:** Crucial para instituições públicas e de ensino (ex: *2026.1*, *2026.2*).
-- **`IND_FINAL_SEMANA` (1/0):** Permite filtrar instantaneamente apenas dias úteis ou fins de semana.
-- **`IND_FERIADO_FACULTATIVO` (1/0):** Identifica feriados nacionais e pontos facultativos mapeados no calendário corporativo.
+- **`IND_FINAL_SEMANA` (1/0) ou `SIN_FIM_SEMANA` ('S'/'N'):** Permite filtrar instantaneamente apenas dias úteis ou fins de semana.
+- **`IND_FERIADO_FACULTATIVO` (1/0) ou `SIN_FERIADO` ('S'/'N'):** Identifica feriados nacionais e pontos facultativos mapeados no calendário corporativo.
 
 ---
 
@@ -196,18 +189,18 @@ A `DIM_TEMPO` disponibiliza atributos avançados pré-calculados que dispensam c
 
 ### Como Trabalhar com a Linha `-1` (Registro Padrão Não Informado)
 Todas as dimensões do nosso DW contêm obrigatoriamente a linha técnica com `DIMENSION_KEY = -1`:
-- `NOM_... = 'NÃO INFORMADO'` ou `'NÃO SE APLICA'`.
-- `DES_ATUALIZA = 'S'`.
+- `NOM_... = 'NAO INFORMADO'` ou `'NAO SE APLICA'`.
+- `DES_ATUALIZAR = 'N'` e `SIN_ATIVO = 'S'`.
 
 **No Power BI:**  
 Graças à linha `-1`, quando uma fato tiver uma chave desconhecida ou nula, ela se conectará à linha `-1` da dimensão em vez de criar uma linha em branco (`(Blank)`) nos visuais.  
-*Recomendação:* Deixe o valor `'NÃO INFORMADO'` visível nos filtros ou configure filtros de página para excluí-lo caso o relatório exija apenas entidades plenamente identificadas.
+*Recomendação:* Deixe o valor `'NAO INFORMADO'` visível nos filtros ou configure filtros de página para excluí-lo caso o relatório exija apenas entidades plenamente identificadas.
 
 ### Como Consumir Dimensões com Histórico (SCD Tipo 2)
 Se uma dimensão possui versionamento histórico (múltiplas linhas para a mesma entidade de negócio, com `DTC_EFETIVACAO` e `DTC_EXPIRACAO`):
 1. **Para Relatórios que exigem apenas o Estado Atual (Vigente):**
-   - Conecte preferencialmente na view correspondente da Camada Semântica: `VW_DIM_<ENTIDADE>_ATUAL`. Essa view já contém o filtro `WHERE DTC_EXPIRACAO IS NULL AND DIMENSION_KEY <> -1`.
-   - Se conectar na tabela física `DIM_*`, filtre no Power Query ou no filtro da tabela `DES_ATUALIZA = 'S'` (ou `DTC_EXPIRACAO IS BLANK`).
+   - Conecte preferencialmente na view correspondente da Camada Semântica: `VW_<PROJETO>_DIM_<ENTIDADE>` (ou `VW_DIM_<ENTIDADE>_ATUAL`). Essa view já contém o filtro `WHERE DTC_EXPIRACAO IS NULL AND DIMENSION_KEY <> -1`.
+   - Se conectar na tabela física `DIM_*`, filtre no Power Query ou no filtro da tabela `DTC_EXPIRACAO IS BLANK` (ou `SIN_ATIVO = 'S'`).
 2. **Para Análises Históricas Ponto-a-Ponto (*Point-in-Time*):**
    - Conecte diretamente na tabela fato. Como a fato armazena a Surrogate Key (`DIMENSION_KEY`) vigente no momento exato do fato ocorrido, a relação trará o contexto histórico exato da época da transação automaticamente.
 
@@ -319,66 +312,10 @@ CALCULATE(
 
 ---
 
-<a id="7-apache-superset"></a>
-## 7. Consumo via Apache Superset (Modern Data Stack)
+<a id="7-checklist-qualidade"></a>
+## 7. Checklist de Qualidade e Homologação Pré-Publicação
 
-Para dashboards construídos no **Apache Superset**, os datasets são versionados no Git através de especificações declarativas em formato YAML, geradas automaticamente na pasta `saida/planejador_dw/08_datasets_bi/`.
-
-<a id="71-datasets-yaml"></a>
-### 7.1 Estrutura dos Datasets Declarativos (`.yaml`)
-
-O arquivo `.yaml` define a tabela/view consumida, colunas temporais, dimensões e métricas corporativas:
-
-```yaml
-table_name: VW_COST_MGMT_CONSOLIDADO
-schema: GESTAODIS_OLAP
-database_name: Oracle_DW_Corporativo
-filter_select_enabled: true
-main_dttm_col: DTC_COMPLETA
-
-columns:
-  - column_name: DTC_COMPLETA
-    is_dttm: true
-    type: DATE
-    verbose_name: "Data de Referência"
-    
-  - column_name: NOM_PROJETO
-    is_dimension: true
-    type: VARCHAR2
-    verbose_name: "Nome do Projeto / Namespace"
-    
-  - column_name: NOM_CLUSTER
-    is_dimension: true
-    type: VARCHAR2
-    verbose_name: "Cluster OpenShift"
-```
-
-<a id="72-metricas-virtuais"></a>
-### 7.2 Métricas Virtuais em SQL
-
-No Superset, as métricas devem ser expressas em SQL padrão Oracle, garantindo agregação dinâmica:
-
-```yaml
-metrics:
-  - metric_name: custo_total_consolidado
-    verbose_name: "Custo Total Consolidado (R$)"
-    expression: "SUM(VAL_CUSTO_TOTAL_CONSOLIDADO)"
-    metric_type: currency
-    d3format: "$,.2f"
-
-  - metric_name: percentual_overhead
-    verbose_name: "Overhead vs Total (%)"
-    expression: "CASE WHEN SUM(VAL_CUSTO_TOTAL_CONSOLIDADO) > 0 THEN (SUM(VAL_CUSTO_DISTRIBUIDO) / SUM(VAL_CUSTO_TOTAL_CONSOLIDADO)) * 100 ELSE 0 END"
-    metric_type: percentage
-    d3format: ".1f%"
-```
-
----
-
-<a id="8-checklist-qualidade"></a>
-## 8. Checklist de Qualidade e Homologação Pré-Publicação
-
-Antes de publicar o relatório no **Power BI Service (Portal UNEBi / Gateway Corporativo)** ou disponibilizar o dashboard no **Apache Superset**, o analista de BI deve validar obrigatoriamente a lista abaixo:
+Antes de publicar o relatório no **Power BI Service (Portal UNEBi / Gateway Corporativo)**, o analista de BI deve validar obrigatoriamente a lista abaixo:
 
 - [ ] **Modo de Conexão:** O modelo está em **Import Mode** (a menos que haja autorização prévia para DirectQuery).
 - [ ] **Star Schema:** Todos os relacionamentos são de **1 para Muitos (1:\*)** das Dimensões para a Fato.

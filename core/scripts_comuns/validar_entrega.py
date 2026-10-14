@@ -292,7 +292,7 @@ def validar_intake_semantica(base_dir: Path) -> dict:
         sec1_sem_text = sec1_sem_match.group(0)
         ferramentas_marcadas = re.findall(r"-\s*\[x\]\s*\*\*(.*?)\*\*", sec1_sem_text, re.IGNORECASE)
         if not ferramentas_marcadas:
-            print_warn("Nenhuma ferramenta de consumo (Power BI, Superset, etc.) marcada com [x] na Secao 1 do INTAKE_SEMANTICA.md.")
+            print_warn("Nenhuma ferramenta de consumo (Power BI, Agentes IA, etc.) marcada com [x] na Secao 1 do INTAKE_SEMANTICA.md.")
             results["avisos"] += 1
         else:
             print_ok(f"Ferramentas de consumo selecionadas ({len(ferramentas_marcadas)} opcao(oes)):")
@@ -571,21 +571,33 @@ def validar_saida_gerada(base_dir: Path) -> dict:
     if intake_dw.exists() and saida_dw.exists():
         intake_txt = intake_dw.read_text(encoding="utf-8", errors="ignore")
         hop_marcado = bool(re.search(r"-\s*\[x\]\s*\*\*Apache Hop", intake_txt, re.IGNORECASE))
+        ftps_marcado = bool(re.search(r"-\s*\[x\]\s*\*\*Ingest[aã]o\s+Arquivos\s+em\s+Lote", intake_txt, re.IGNORECASE))
         py_marcado = bool(re.search(r"-\s*\[x\]\s*\*\*Extratores Python", intake_txt, re.IGNORECASE))
 
         pasta_hop = saida_dw / "06_pipelines_hop"
         if pasta_hop.exists():
-            arqs_hop = [f for f in pasta_hop.iterdir() if f.is_file() and f.suffix.lower() in [".hpl", ".hwf"]]
-            if arqs_hop and not hop_marcado:
+            arqs_hop = [
+                f for f in pasta_hop.rglob("*")
+                if f.is_file() and f.suffix.lower() in [".hpl", ".hwf", ".sh"]
+            ]
+            if arqs_hop and not (hop_marcado or ftps_marcado):
                 print_err(
-                    f"VIOLACAO DA REGRA DE OURO 2: {len(arqs_hop)} arquivo(s) Apache Hop gerado(s) "
-                    f"em '06_pipelines_hop/', mas Apache Hop NAO esta marcado no INTAKE_DW.md!"
+                    f"VIOLACAO DA REGRA DE OURO 2: {len(arqs_hop)} arquivo(s) Apache Hop/FTPS gerado(s) "
+                    f"em '06_pipelines_hop/', mas Apache Hop / Ingestao FTPS NAO esta marcado no INTAKE_DW.md!"
                 )
                 results["erros"] += 1
+            for f_hop in arqs_hop:
+                if f_hop.suffix.lower() == ".hpl":
+                    hpl_txt = f_hop.read_text(encoding="utf-8", errors="ignore")
+                    if "<type>CSVFileInput</type>" in hpl_txt:
+                        print_err(
+                            f"[{f_hop.name}] Plugin ID invalido '<type>CSVFileInput</type>' detectado! Use '<type>CSVInput</type>' no Apache Hop 2.x."
+                        )
+                        results["erros"] += 1
 
         pasta_py = saida_dw / "07_extratores_python"
         if pasta_py.exists():
-            arqs_py = [f for f in pasta_py.iterdir() if f.is_file() and f.suffix.lower() == ".py"]
+            arqs_py = [f for f in pasta_py.rglob("*.py") if f.is_file()]
             if arqs_py and not py_marcado:
                 print_err(
                     f"VIOLACAO DA REGRA DE OURO 2: {len(arqs_py)} script(s) Python gerado(s) "
@@ -613,13 +625,31 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                 print_err(f"[{f_sql.name}] Contem placeholder nao substituido: <{ph[0]}>")
                 results["erros"] += 1
 
-            # Proibição de BITMAP INDEX em Dimensões
+            # Proibição de BITMAP INDEX em Dimensões e verificação de antipadrões SCD2
             if "03_dimensoes" in f_sql.parts or f_sql.name.upper().startswith("DIM_"):
                 if re.search(r"CREATE\s+BITMAP\s+INDEX", txt, re.IGNORECASE):
                     print_err(
                         f"[{f_sql.name}] PROIBIDO criar BITMAP INDEX em tabelas de Dimensao (risco de deadlock ORA-00060)!"
                     )
                     results["erros"] += 1
+                if re.search(r"\bDES_ATUALIZA\b", txt, re.IGNORECASE):
+                    print_err(
+                        f"[{f_sql.name}] Coluna SCD2 incorreta 'DES_ATUALIZA' detectada! O padrao corporativo exige 'DES_ATUALIZAR'."
+                    )
+                    results["erros"] += 1
+                if "2999-12-31" in txt or "9999-12-31" in txt:
+                    print_warn(
+                        f"[{f_sql.name}] Data magica ('2999-12-31'/'9999-12-31') detectada em dimensao! Prefira 'DTC_EXPIRACAO IS NULL'."
+                    )
+                    results["avisos"] += 1
+
+            # Verificação de NOPARALLEL após REBUILD PARALLEL em procedimentos de manutenção
+            if "05_procedimentos_manutencao" in f_sql.parts:
+                if re.search(r"REBUILD\s+PARALLEL", txt, re.IGNORECASE) and not re.search(r"NOPARALLEL", txt, re.IGNORECASE):
+                    print_warn(
+                        f"[{f_sql.name}] 'REBUILD PARALLEL' detectado sem retorno para 'NOPARALLEL LOGGING'. Risco de degradacao de queries OLAP!"
+                    )
+                    results["avisos"] += 1
 
             if re.search(r"VALUES\s*\(\s*-1\b|'NAO INFORMADO'", txt, re.IGNORECASE):
                 tem_menos_um = True
@@ -633,22 +663,58 @@ def validar_saida_gerada(base_dir: Path) -> dict:
             results["sucessos"] += 1
 
     # 4. Auditoria de SQLs gerados na Camada Semântica
-    sqls_sem = [f for f in saida_sem.rglob("*.sql")] if saida_sem.exists() else []
+    ddl_meta_base = saida_sem / "meta_projeto" / "01_create_meta_tables.sql"
+    if saida_sem.exists():
+        if ddl_meta_base.exists():
+            print_ok("Script base '01_create_meta_tables.sql' presente em 'saida/camada_semantica/meta_projeto/'.")
+            results["sucessos"] += 1
+        else:
+            print_err("Script base '01_create_meta_tables.sql' ausente em 'saida/camada_semantica/meta_projeto/'!")
+            results["erros"] += 1
+
+    sqls_sem = [
+        f for f in saida_sem.rglob("*.sql") if f.name != "01_create_meta_tables.sql"
+    ] if saida_sem.exists() else []
     if sqls_sem:
-        print_ok(f"Auditando {len(sqls_sem)} script(s) SQL gerados em 'saida/camada_semantica/'...")
+        print_ok(f"Auditando {len(sqls_sem)} script(s) SQL de projeto gerados em 'saida/camada_semantica/'...")
         for f_sql in sqls_sem:
             txt = f_sql.read_text(encoding="utf-8", errors="ignore")
 
-            # Prefixos banidos
-            banidos = re.findall(r"\b(SEM_VW_[A-Z0-9_]+|TST_[A-Z0-9_]+)\b", txt, re.IGNORECASE)
+            # Prefixos banidos (SEM_VW_, SEC_, TST_)
+            banidos = re.findall(r"\b(SEM_VW_[A-Z0-9_]+|SEC_[A-Z0-9_]+|TST_[A-Z0-9_]+)\b", txt, re.IGNORECASE)
             if banidos:
                 print_err(f"[{f_sql.name}] Contem prefixo banido pelas convencoes: {banidos[0]}")
                 results["erros"] += 1
 
             # Placeholders esquecidos
-            ph = re.findall(r"<(PROJETO|SCHEMA_ALVO|DIMENSAO|FATO|MEDIDA)>", txt, re.IGNORECASE)
+            ph = re.findall(r"<(PROJETO|NOME_PROJETO|SCHEMA_ALVO|DIMENSAO|FATO|MEDIDA)>", txt, re.IGNORECASE)
             if ph:
                 print_err(f"[{f_sql.name}] Contem placeholder nao substituido: <{ph[0]}>")
+                results["erros"] += 1
+
+            # Identificadores entre aspas duplas em minúsculas
+            aspas_minusculas = re.findall(r'"([a-z_][a-z0-9_]*)"', txt)
+            if aspas_minusculas:
+                print_err(
+                    f"[{f_sql.name}] Identificador entre aspas duplas em minusculas detectado (proibido no Oracle): \"{aspas_minusculas[0]}\""
+                )
+                results["erros"] += 1
+
+            # Sintaxe LIMIT (PostgreSQL/MySQL) em vez de FETCH FIRST n ROWS ONLY (Oracle 12c+)
+            if re.search(r"\bLIMIT\s+\d+\b", txt, re.IGNORECASE):
+                print_err(
+                    f"[{f_sql.name}] Sintaxe 'LIMIT n' detectada! No Oracle 12c+ utilize 'FETCH FIRST n ROWS ONLY'."
+                )
+                results["erros"] += 1
+
+            # Aditividade fora do padrão (hífen ou acento em vez de underscore sem acento)
+            adit_invalida = re.findall(
+                r"'(SEMI-ADITIVA|NÃO-ADITIVA|NAO-ADITIVA|NÃO_ADITIVA)'", txt, re.IGNORECASE
+            )
+            if adit_invalida:
+                print_err(
+                    f"[{f_sql.name}] Valor de TIPO_ADITIVIDADE fora do padrao ('{adit_invalida[0]}'). Use estritamente 'ADITIVA', 'SEMI_ADITIVA' ou 'NAO_ADITIVA'."
+                )
                 results["erros"] += 1
 
             # COMMENT ON TABLE com "Uma linha representa" nas views analíticas
@@ -662,7 +728,7 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     results["sucessos"] += 1
 
     if not sqls_dw and not sqls_sem:
-        print_ok("Nenhum script SQL gerado em 'saida/' no momento (diretorio limpo para novo projeto).")
+        print_ok("Nenhum script SQL de projeto gerado em 'saida/' no momento (diretorio limpo para novo projeto).")
         results["sucessos"] += 1
 
     return results

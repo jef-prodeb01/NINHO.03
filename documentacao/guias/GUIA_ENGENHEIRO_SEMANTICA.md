@@ -391,10 +391,12 @@ Como o RLS será implementado?
 > **Importante:** A IA precisa saber os filtros para incluí-los nas views
 > analíticas automaticamente. Exemplo:
 > ```sql
-> CREATE VIEW vw_projeto_evento AS
+> CREATE OR REPLACE VIEW VW_PROJETO_EVENTO AS
 > SELECT * FROM FATO_X
-> WHERE <coluna_filtro> IN (
->   SELECT segmento FROM usuario_segmentos WHERE usuario = SYS_CONTEXT('USERENV', 'SESSION_USER')
+> WHERE <COLUNA_FILTRO> IN (
+>   SELECT SEGMENTO FROM USUARIO_SEGMENTOS
+>   WHERE PROJETO = 'PROJETO'
+>     AND USUARIO = UPPER(SYS_CONTEXT('USERENV', 'SESSION_USER'))
 > );
 > ```
 
@@ -427,7 +429,7 @@ deles (sem traduzir para técnico — isso é trabalho nosso).
 ## Empacotamento e entrega
 
 ```
-entrega/
+entrega/camada_semantica/
 ├── ddl/
 │   └── ddl_completo.sql          <- Seção 1 (select único)
 ├── amostras/
@@ -442,7 +444,7 @@ entrega/
 <a id="checklist-final-entrega"></a>
 ## Checklist final antes de entregar
 
-- [ ] Pasta `entrega/` criada com subpastas `ddl/` e `amostras/`
+- [ ] Pasta `entrega/camada_semantica/` preenchida com subpastas `ddl/` e `amostras/`
 - [ ] DDL completo com constraints e comentários
 - [ ] Perfil dos dados com as 5 perguntas-armadilha respondidas
 - [ ] ETL: documento ou as 6 respostas
@@ -611,7 +613,7 @@ Pronto. Tudo documentado.
 <a id="checklist-final-projeto"></a>
 ## Checklist final antes de entregar
 
-- [ ] Pasta `entrega/` criada com subpastas `ddl/` e `amostras/`
+- [ ] Pasta `entrega/camada_semantica/` preenchida com subpastas `ddl/` e `amostras/`
 - [ ] DDL completo com constraints e comentários
 - [ ] Perfil dos dados com as 5 perguntas-armadilha respondidas
 - [ ] ETL: documento ou as 6 respostas
@@ -666,8 +668,8 @@ Insumos:
 
 3. Regras de aditividade:
 - <medida_1>: ADITIVA (pode somar livremente)
-- <medida_2>: SEMI-ADITIVA (somar apenas se status = 'ATIVO')
-- <medida_3>: NÃO-ADITIVA (não somar)
+- <medida_2>: SEMI_ADITIVA (somar apenas se status = 'ATIVO')
+- <medida_3>: NAO_ADITIVA (não somar)
 
 4. Perguntas dos usuários:
 - <pergunta_1>
@@ -679,7 +681,7 @@ Insumos:
 - <regra_2>
 - ...
 
-Gere os 4 scripts SQL (01 a 04) e preencha o PROJETO_RESUMO.md.
+Gere as views analíticas em 3 camadas e os scripts das 8 tabelas META_* (01 a 09), e preencha o PROJETO_RESUMO.md.
 ```
 
 ### Prompt 1.2 — Projeto com modelo complexo
@@ -703,7 +705,7 @@ Insumos:
 4. Perguntas: <liste>
 5. Regras: <liste>
 
-Gere os 4 scripts SQL e preencha o PROJETO_RESUMO.md.
+Gere as views analíticas em 3 camadas e os scripts das 8 tabelas META_* (01 a 09), e preencha o PROJETO_RESUMO.md.
 ```
 
 ---
@@ -727,7 +729,7 @@ Nova tabela:
 - Grão: Uma linha representa <descreva>
 - Medidas e aditividade:
   - <medida_1>: ADITIVA
-  - <medida_2>: SEMI-ADITIVA
+  - <medida_2>: SEMI_ADITIVA
 - Dimensões relacionadas:
   - DIM_<X> (via FK id_dim_x)
   - DIM_<Y> (via FK id_dim_y)
@@ -783,7 +785,7 @@ Nova coluna:
 - Nome: <coluna_nova>
 - Tipo: <NUMBER/VARCHAR2/etc>
 - Descrição: <descreva>
-- Aditividade: <ADITIVA/SEMI-ADITIVA/NÃO-ADITIVA>
+- Aditividade: <ADITIVA/SEMI_ADITIVA/NAO_ADITIVA>
 
 DDL atualizado:
 <cole aqui o DDL completo atualizado>
@@ -928,12 +930,12 @@ Projeto: <NOME_DO_PROJETO>
 Versão atual: <versão>
 
 Nova view:
-- Nome: vw_<projeto>_<nome>
+- Nome: VW_<PROJETO>_<NOME>
 - Tipo: <DETALHE/RESUMO_TEMPO/RESUMO_DIMENSAO/EVOLUCAO/COMPOSICAO>
 - Fato base: FATO_<NOME>
 - Dimensões envolvidas: DIM_<X>, DIM_<Y>
 - Grão: Uma linha representa <descreva>
-- Aditividade: <ADITIVA/SEMI-ADITIVA/NÃO-ADITIVA>
+- Aditividade: <ADITIVA/SEMI_ADITIVA/NAO_ADITIVA>
 - SQL base: <cole aqui o SQL desejado>
 
 Gere a view com COMMENTs e atualize o PROJETO_RESUMO.md.
@@ -949,7 +951,7 @@ Projeto: <NOME_DO_PROJETO>
 Versão atual: <versão>
 
 View a remover:
-- Nome: vw_<projeto>_<nome>
+- Nome: VW_<PROJETO>_<NOME>
 - Motivo: <descreva por que está removendo>
 
 Gere script de DROP VIEW e atualize o PROJETO_RESUMO.md.
@@ -1046,8 +1048,7 @@ Contexto para a nova IA:
    - Sempre atualizar documentacao/catalogo_projetos/PROJETO_RESUMO.md após mudanças
    - Nunca alterar META_ diretamente no Oracle
    - Validar scripts antes de executar
-   - Gerar documentação baseando-se em modulos/camada_semantica/templates/ antes de copiar para documentacao/catalogo_projetos/
-
+   - Gerar scripts e documentação baseando-se nos templates de .agents/skills/camada-semantica-oracle/templates/
 Gere um resumo técnico para a nova IA.
 ```
 
@@ -1315,18 +1316,17 @@ Versão atual: <versão>
 
 Ação:
 - Remover filtros de todas as views
-- Manter tabela usuario_segmentos (para uso futuro)
+- Manter tabela USUARIO_SEGMENTOS (para uso futuro)
 - Remover política RLS das views
 
 Views que precisam de UPDATE:
-- vw_<projeto>_evento
-- vw_<projeto>_resumo_tempo
-- vw_<projeto>_resumo_<dimensao>
+- VW_<PROJETO>_EVENTO
+- VW_<PROJETO>_KPI_*
 
 Gere:
 1. UPDATE em todas as views (remove WHERE filtro)
 2. DROP POLICY em todas as views
-3. INSERT para META_REGRA_NEGOCIO (status REMOVIDA)
+3. UPDATE/MERGE para META_REGRA_NEGOCIO (STATUS_REGRA = 'INATIVA')
 4. Atualize o PROJETO_RESUMO.md
 ```
 
@@ -1454,53 +1454,53 @@ O projeto segue uma arquitetura em 3 camadas, inspirada no projeto SEI Municipal
 <a id="camada-1-dim"></a>
 ## Camada 1 — VIEWS DIM (versão vigente)
 
-- Filtram apenas a versão vigente de cada dimensão SCD Type 2 (`dtc_expiracao IS NULL`)
-- Grao: um registro por objeto vigente
+- Filtram apenas a versão vigente de cada dimensão SCD Type 2 (`DTC_EXPIRACAO IS NULL` ou `FLG_ATUAL = 'S'`)
+- Grão: um registro por objeto vigente
 - São usadas como base para as views EVENTO
-- Exemplo: `vw_<projeto>_dim_<dimensao>_atual`
+- Exemplo: `VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL` (arquivo `vw_<projeto>_dim_<dimensao>.sql`)
 
 <a id="camada-2-evento"></a>
 ## Camada 2 — VIEWS EVENTO (camada intermediária)
 
 - Normalizam os dados brutos em registros analíticos
 - FATO + JOINs com DIMs (incluindo dimensões temporais)
-- Incluem: SKs, datas calculadas, medidas, indicadores (ind_concluido, ind_em_aberto)
+- Incluem: SKs, datas calculadas, medidas, indicadores (`IND_CONCLUIDO`, `IND_EM_ABERTO`)
 - São a BASE para gerar views KPI
-- Exemplo: `vw_<projeto>_evento`
+- Exemplo: `VW_<PROJETO>_EVENTO` (arquivo `vw_<projeto>_evento.sql`)
 
 <a id="camada-3-kpi"></a>
 ## Camada 3 — VIEWS KPI (consolidadas)
 
 - Consolidadas para responder perguntas específicas dos usuários
 - Geradas a partir das views EVENTO e DIM
-- Usam CTEs para cálculos (COUNT DISTINCT, SUM, AVG)
-- Grao: depende do projeto (ex: por mês, por dia, por dimensão, etc.)
-- Exemplo: `vw_<projeto>_kpi_<medida>_por_<dimensao>`
+- Usam CTEs para cálculos (`COUNT DISTINCT`, `SUM`, `AVG`)
+- Grão: depende do projeto (ex: por mês, por dia, por dimensão, etc.)
+- Exemplo: `VW_<PROJETO>_KPI_<MEDIDA>_POR_<DIMENSAO>` (arquivo `vw_<projeto>_kpi_<nome>.sql`)
 
 <a id="views-materializadas"></a>
 ## Views Materializadas (opcional)
 
 - Para consultas pesadas com performance
-- BUILD IMMEDIATE, REFRESH COMPLETE ON DEMAND
-- Exemplo: `mv_<projeto>_kpi_<medida>_por_<dimensao>`
+- `BUILD IMMEDIATE`, `REFRESH COMPLETE ON DEMAND`
+- Exemplo: `MV_<PROJETO>_KPI_<MEDIDA>_POR_<DIMENSAO>`
 
 <a id="fluxo-dependencia"></a>
 ## Fluxo de Dependência
 
 ```
-DIM (vw_<projeto>_dim_*_atual)
+DIM (VW_<PROJETO>_DIM_*_ATUAL)
   ↓
-EVENTO (vw_<projeto>_evento)
+EVENTO (VW_<PROJETO>_EVENTO)
   ↓
-KPI (vw_<projeto>_kpi_*)
+KPI (VW_<PROJETO>_KPI_*)
   ↓
-MV (mv_<projeto>_kpi_*) — opcional
+MV (MV_<PROJETO>_KPI_*) — opcional
 ```
 
 <a id="como-ia-gera-views"></a>
 ## Como a IA gera as views
 
-1. **Gera VIEWS DIM** — Filtra dimensões SCD Type 2 (dtc_expiracao IS NULL)
+1. **Gera VIEWS DIM** — Filtra dimensões SCD Type 2 (`DTC_EXPIRACAO IS NULL` ou `FLG_ATUAL = 'S'`)
 2. **Gera VIEWS EVENTO** — Join FATO + DIMs, inclui medidas e indicadores
 3. **Gera VIEWS KPI** — CTEs com cálculos a partir de views EVENTO
 4. **Gera VIEWS MATERIALIZADAS** — Opcional, para performance

@@ -19,7 +19,7 @@ Esta pasta armazena os scripts SQL, procedimentos, pipelines, extratores e relat
 | `05_procedimentos_manutencao/` | `07_prc_pos_carga_fato.sql` (rebuild NOLOGGING e stats). | Gerado para a Estratégia A (Truncate & Load). |
 | `06_pipelines_hop/` | Pipelines (`.hpl`) e workflows (`.hwf`) do Apache Hop. | **CONDICIONAL:** Apenas gerado se **Apache Hop** for assinalado no INTAKE. |
 | `07_extratores_python/` | Extratores Python (`.py`) para APIs REST / OAuth2. | **CONDICIONAL:** Apenas gerado se **Extratores Python** for assinalado no INTAKE. |
-| `08_datasets_bi/` | `superset_dataset_<fato>.yaml` e `GUIA_ANALISTA_BI_<PROJETO>.md`. | Handoff analítico para Power BI e Apache Superset. |
+| `08_datasets_bi/` | `GUIA_ANALISTA_BI_<PROJETO>.md`. | Handoff analítico para Power BI. |
 | `09_relatorio_estrategias/` | `RELATORIO_ESTRATEGIAS.md` (topologia, matriz De/Para, sizing). | Relatório técnico completo de arquitetura. |
 | `10_testes_integridade/` | `13_testes_integridade.sql` (validação de FKs e integridade). | Suíte de validação e qualidade pós-carga. |
 | `11_dicionario_dados/` | `dicionario_dados.html` (dicionário interativo de dados). | Documentação HTML navegável de tabelas e colunas. |

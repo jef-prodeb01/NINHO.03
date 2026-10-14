@@ -156,14 +156,14 @@ python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto COAPS_FIN
 
 <a id="15-inspetor-ddl-origem"></a>
 ### 1.5 Inspetor Determinístico de DDLs de Origem (`inspecionar_ddl_origem.py`)
-> **Cenário:** Antes de gerar o Blueprint Técnico (Etapa 1), execute o inspetor determinístico sobre os arquivos `.sql` depositados em `entrega/planejador_dw/schemas_origem/`. Ele extrai 100% das colunas, chaves primárias, chaves estrangeiras, índices originais e diagnostica automaticamente as colunas temporais para CDC incremental (incluindo detecção de **CDC por Ciclo de Vida / Eventos** quando a tabela não possui coluna `updated_at`).
+> **Cenário:** Antes de gerar o Blueprint Técnico (Etapa 1), execute o inspetor determinístico sobre os arquivos `.sql` depositados em `entrega/planejador_dw/ddl/`. Ele extrai 100% das colunas, chaves primárias, chaves estrangeiras, índices originais e diagnostica automaticamente as colunas temporais para CDC incremental (incluindo detecção de **CDC por Ciclo de Vida / Eventos** quando a tabela não possui coluna `updated_at`).
 
 ```bash
 # Inspecionar todos os DDLs depositados na pasta padrão de entrega
 python core/scripts_comuns/inspecionar_ddl_origem.py
 
 # Inspecionar uma pasta específica e salvar o inventário Markdown completo
-python core/scripts_comuns/inspecionar_ddl_origem.py --pasta entrega/planejador_dw/schemas_origem --saida saida/planejador_dw/09_relatorio_estrategias/inventario_ddl_origem.md
+python core/scripts_comuns/inspecionar_ddl_origem.py --caminho entrega/planejador_dw/ddl --saida saida/planejador_dw/09_relatorio_estrategias/inventario_ddl_origem.md
 ```
 
 ---
@@ -209,11 +209,11 @@ python core/scripts_comuns/gerenciar_projeto.py --resetar --confirmar
 ```text
 Ordem Obrigatória:
 1. TABELA DE CONTROLE: 01_controle_carga/01_tb_controle_carga.sql
-2. TABELAS DE STAGING: 02_staging/02_stg_<tabelas>.sql
-3. DIMENSÃO TEMPO:     03_dimensoes/03_dim_tempo.sql
-4. DEMAIS DIMENSÕES:   03_dimensoes/03_dim_<entidades>.sql (inclui Sequences e linha -1)
-5. TABELAS FATOS:      04_fatos/04_fat_<processos>.sql
-6. PROCEDURES PÓS-ETL: 05_procedimentos_manutencao/prc_pos_carga_fato.sql
+2. TABELAS DE STAGING: 02_staging/02_create_stg_tables.sql
+3. DIMENSÕES ODI/SCD2: 03_dimensoes/03_create_odi_dim_tables.sql e 04_create_dim_tables.sql
+4. LINHA SENTINELA -1: 03_dimensoes/06_init_default_records.sql
+5. TABELAS FATOS:      04_fatos/05_create_fato_tables.sql
+6. PROCEDURES PÓS-ETL: 05_procedimentos_manutencao/07_prc_pos_carga_fato.sql
 7. SMOKE TESTS:        10_testes_integridade/13_testes_integridade.sql
 ```
 
@@ -224,11 +224,12 @@ CONNECT usuario_dw/senha@ORCL_PROD;
 
 -- Executar os scripts gerados nas pastas canônicas de saida/planejador_dw/
 @saida/planejador_dw/01_controle_carga/01_tb_controle_carga.sql;
-@saida/planejador_dw/02_staging/02_stg_tabelas.sql;
-@saida/planejador_dw/03_dimensoes/03_dim_tempo.sql;
-@saida/planejador_dw/03_dimensoes/03_dim_entidades.sql;
-@saida/planejador_dw/04_fatos/04_fat_processos.sql;
-@saida/planejador_dw/05_procedimentos_manutencao/prc_pos_carga_fato.sql;
+@saida/planejador_dw/02_staging/02_create_stg_tables.sql;
+@saida/planejador_dw/03_dimensoes/03_create_odi_dim_tables.sql;
+@saida/planejador_dw/03_dimensoes/04_create_dim_tables.sql;
+@saida/planejador_dw/03_dimensoes/06_init_default_records.sql;
+@saida/planejador_dw/04_fatos/05_create_fato_tables.sql;
+@saida/planejador_dw/05_procedimentos_manutencao/07_prc_pos_carga_fato.sql;
 @saida/planejador_dw/10_testes_integridade/13_testes_integridade.sql;
 ```
 
@@ -265,24 +266,28 @@ ALTER SEQUENCE "<SCHEMA>"."SEQ_DIM_<ENTIDADE>" RESTART WITH 105420;
 
 ```sql
 -- Inserir o registro técnico na dimensão (caso ainda não exista)
-INSERT INTO "<SCHEMA>"."DIM_<ENTIDADE>" (
-    SK_<ENTIDADE>,
+MERGE INTO "<SCHEMA>"."DIM_<ENTIDADE>" d
+USING (SELECT -1 AS DIMENSION_KEY FROM DUAL) s
+ON (d.DIMENSION_KEY = s.DIMENSION_KEY)
+WHEN NOT MATCHED THEN
+INSERT (
+    DIMENSION_KEY,
     ID_<ENTIDADE>,
     DES_<CAMPO_TEXTO>,
-    DTC_INICIO_VIGENCIA,
+    SIN_ATIVO,
+    DTC_EFETIVACAO,
     DTC_EXPIRACAO,
-    FLG_VERSAO_ATUAL
-) 
-SELECT 
-    -1, 
-    -1, 
-    'NAO INFORMADO', 
-    TO_DATE('1900-01-01', 'YYYY-MM-DD'), 
-    NULL, 
-    'S' 
-FROM DUAL
-WHERE NOT EXISTS (
-    SELECT 1 FROM "<SCHEMA>"."DIM_<ENTIDADE>" WHERE SK_<ENTIDADE> = -1
+    DES_ATUALIZAR,
+    DTC_CARGA
+) VALUES (
+    -1,
+    -1,
+    'NAO INFORMADO',
+    'S',
+    TO_DATE('1900-01-01', 'YYYY-MM-DD'),
+    NULL,
+    'N',
+    SYSDATE
 );
 COMMIT;
 
@@ -291,7 +296,7 @@ SELECT TABLE_NAME, 'PRESENTE' AS STATUS
 FROM USER_TABLES
 WHERE TABLE_NAME LIKE 'DIM_%'
   AND TABLE_NAME IN (
-      SELECT SUBSTR(TABLE_NAME, 1, 30) FROM USER_TAB_COLUMNS WHERE COLUMN_NAME LIKE 'SK_%'
+      SELECT SUBSTR(TABLE_NAME, 1, 30) FROM USER_TAB_COLUMNS WHERE COLUMN_NAME = 'DIMENSION_KEY'
   );
 ```
 
@@ -302,31 +307,35 @@ WHERE TABLE_NAME LIKE 'DIM_%'
 > **Cenário:** Expiração da versão antiga e inserção da nova versão quando atributos rastreados de uma dimensão sofrem alteração no sistema de origem.
 
 ```sql
--- 1. Expirar a versão anterior definindo a DTC_EXPIRACAO e desativando a flag
+-- 1. Expirar a versão anterior definindo a DTC_EXPIRACAO e desativando a flag DES_ATUALIZAR
 UPDATE "<SCHEMA>"."DIM_<ENTIDADE>"
 SET 
     DTC_EXPIRACAO = SYSDATE - (1/86400),
-    FLG_VERSAO_ATUAL = 'N'
+    DES_ATUALIZAR = 'N'
 WHERE ID_<ENTIDADE> = :ID_ORIGEM
-  AND FLG_VERSAO_ATUAL = 'S';
+  AND DTC_EXPIRACAO IS NULL;
 
--- 2. Inserir a nova versão vigente com nova SK
+-- 2. Inserir a nova versão vigente com nova DIMENSION_KEY
 INSERT INTO "<SCHEMA>"."DIM_<ENTIDADE>" (
-    SK_<ENTIDADE>,
+    DIMENSION_KEY,
     ID_<ENTIDADE>,
     DES_NOME,
     DES_CATEGORIA,
-    DTC_INICIO_VIGENCIA,
+    SIN_ATIVO,
+    DTC_EFETIVACAO,
     DTC_EXPIRACAO,
-    FLG_VERSAO_ATUAL
+    DES_ATUALIZAR,
+    DTC_CARGA
 ) VALUES (
     "<SCHEMA>"."SEQ_DIM_<ENTIDADE>".NEXTVAL,
     :ID_ORIGEM,
     :NOVO_NOME,
     :NOVA_CATEGORIA,
+    'S',
     SYSDATE,
     NULL,
-    'S'
+    'S',
+    SYSDATE
 );
 COMMIT;
 ```
@@ -334,8 +343,8 @@ COMMIT;
 ---
 
 <a id="25-execucao-prc-pos-carga"></a>
-### 2.5 Execução da Procedure de Pós-Carga (PRC_POS_CARGA_FATO)
-> **Cenário:** Após a carga da Fato, a procedure rebuilda índices locais, recalcula as estatísticas do CBO e expurga registros temporários da Staging.
+### 2.5 Execução das Procedures de Pré e Pós-Carga (`PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO`)
+> **Cenário:** Antes do insert massivo (`/*+ APPEND PARALLEL(4) */`), `PRC_PRE_CARGA_FATO` marca os índices secundários como `UNUSABLE`. Após a carga da Fato, `PRC_POS_CARGA_FATO` reconstrói os índices com `PARALLEL 4 NOLOGGING`, redefine para `NOPARALLEL LOGGING` e recalcula as estatísticas do CBO.
 
 ```sql
 -- Executar no SQL*Plus / DBeaver com exibição dos logs DBMS_OUTPUT:
@@ -343,7 +352,8 @@ SET SERVEROUTPUT ON SIZE UNLIMITED;
 
 BEGIN
     "<SCHEMA>"."PRC_POS_CARGA_FATO"(
-        p_ano_mes => '202610'  -- Parâmetro opcional para partição específica
+        p_tabela_fato => 'FATO_<PROCESSO>',
+        p_owner       => '<SCHEMA>'
     );
 END;
 /
@@ -358,32 +368,34 @@ END;
 ```sql
 -- Top 15 últimas execuções de ETL com throughput
 SELECT 
-    ID_CONTROLE,
-    NOM_ROTINA,
-    ID_LOTE,
-    DTC_INICIO,
-    DTC_FIM,
-    ROUND((DTC_FIM - DTC_INICIO) * 86400, 1) AS DURACAO_SEG,
-    QTD_REGISTROS_LIDOS,
-    QTD_REGISTROS_INSERIDOS,
-    QTD_REGISTROS_ERRO,
+    ID_CARGA,
+    NOME_PROJETO,
+    NOME_TABELA_ALVO,
+    TIPO_CARGA,
+    DATA_INICIO,
+    DATA_FIM,
+    ROUND((DATA_FIM - DATA_INICIO) * 86400, 1) AS DURACAO_SEG,
+    QTD_LINHAS_PROCESSADAS,
+    QTD_LINHAS_INSERIDAS,
+    QTD_LINHAS_ATUALIZADAS,
+    QTD_LINHAS_REJEITADAS,
     CASE 
-        WHEN (DTC_FIM - DTC_INICIO) * 86400 > 0 
-        THEN ROUND(QTD_REGISTROS_INSERIDOS / ((DTC_FIM - DTC_INICIO) * 86400), 0)
+        WHEN (DATA_FIM - DATA_INICIO) * 86400 > 0 
+        THEN ROUND(QTD_LINHAS_PROCESSADAS / ((DATA_FIM - DATA_INICIO) * 86400), 0)
         ELSE 0 
     END AS LINHAS_POR_SEG,
-    DES_STATUS_EXECUCAO,
+    STATUS_EXECUCAO,
     DES_MENSAGEM_ERRO
 FROM "<SCHEMA>"."TB_CONTROLE_CARGA"
-ORDER BY DTC_INICIO DESC
+ORDER BY DATA_INICIO DESC
 FETCH FIRST 15 ROWS ONLY;
 
 -- Buscar rotinas que falharam nas últimas 24 horas
-SELECT NOM_ROTINA, ID_LOTE, DTC_INICIO, DES_MENSAGEM_ERRO
+SELECT NOME_PROJETO, NOME_TABELA_ALVO, DATA_INICIO, DES_MENSAGEM_ERRO
 FROM "<SCHEMA>"."TB_CONTROLE_CARGA"
-WHERE DES_STATUS_EXECUCAO = 'ERRO'
-  AND DTC_INICIO >= SYSDATE - 1
-ORDER BY DTC_INICIO DESC;
+WHERE STATUS_EXECUCAO = 'ERRO'
+  AND DATA_INICIO >= SYSDATE - 1
+ORDER BY DATA_INICIO DESC;
 ```
 
 ---
@@ -398,15 +410,15 @@ SELECT COUNT(*) AS QTD_ORFAOS
 FROM "<SCHEMA>"."FATO_<PROCESSO>" F
 WHERE NOT EXISTS (
     SELECT 1 FROM "<SCHEMA>"."DIM_<ENTIDADE>" D
-    WHERE D.SK_<ENTIDADE> = F.SK_<ENTIDADE>
+    WHERE D.DIMENSION_KEY = F.DIM_<ENTIDADE>
 );
 
 -- 2. Remediação: Atualizar órfãos para a linha técnica sentinela -1
 UPDATE "<SCHEMA>"."FATO_<PROCESSO>" F
-SET F.SK_<ENTIDADE> = -1
+SET F.DIM_<ENTIDADE> = -1
 WHERE NOT EXISTS (
     SELECT 1 FROM "<SCHEMA>"."DIM_<ENTIDADE>" D
-    WHERE D.SK_<ENTIDADE> = F.SK_<ENTIDADE>
+    WHERE D.DIMENSION_KEY = F.DIM_<ENTIDADE>
 );
 COMMIT;
 ```
@@ -453,7 +465,7 @@ ALTER TABLE "<SCHEMA>"."FATO_<PROCESSO>"
 ```sql
 -- 1. Consultar a visão vigente de uma dimensão (sem histórico expirado)
 SELECT * 
-FROM "<SCHEMA>"."VW_<PROJETO>_DIM_<ENTIDADE>_ATUAL"
+FROM "<SCHEMA>"."VW_<PROJETO>_DIM_<ENTIDADE>"
 FETCH FIRST 10 ROWS ONLY;
 
 -- 2. Consultar a visão analítica de evento (Fato com nomes amigáveis em português)
@@ -463,7 +475,7 @@ SELECT
     DES_CANAL,
     VLR_TOTAL_RECEITA,
     QTD_EVENTOS
-FROM "<SCHEMA>"."VW_<PROJETO>_EVENTO"
+FROM "<SCHEMA>"."VW_<PROJETO>_EVENTO_<PROCESSO>"
 WHERE DTC_EVENTO >= TRUNC(SYSDATE, 'MM')
 FETCH FIRST 20 ROWS ONLY;
 
@@ -565,7 +577,7 @@ EXEC PKG_<PROJETO>_SEGURANCA.DEFINIR_CONTEXTO;
 
 -- 4. Testar a consulta com RLS ativo
 SELECT DISTINCT DES_SEGMENTO, COUNT(*) AS TOTAL_LINHAS
-FROM "<SCHEMA>"."VW_<PROJETO>_EVENTO"
+FROM "<SCHEMA>"."VW_<PROJETO>_EVENTO_<PROCESSO>"
 GROUP BY DES_SEGMENTO;
 ```
 
@@ -598,18 +610,18 @@ SET SERVEROUTPUT ON SIZE UNLIMITED;
 > **Cenário:** Disparo de pipeline de ingestão ou transformação direto na linha de comando do servidor de ETL.
 
 ```bash
-# Execução simples com log básico
+# Execução simples com log básico (-f indica o arquivo .hpl ou .hwf)
 sh /opt/hop/hop-run.sh \
   -r local \
-  -p /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
+  -f /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
   -l Basic
 
-# Execução com passagem de parâmetros dinâmicos e log detalhado
+# Execução com passagem de parâmetros dinâmicos (-p) e log detalhado
 sh /opt/hop/hop-run.sh \
   -r local \
-  -p /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
+  -f /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
   -l Detailed \
-  -o "PARAM_DATA_CORTE=2026-10-01,PARAM_LOTE_ID=554"
+  -p "PARAM_DATA_CORTE=2026-10-01,PARAM_LOTE_ID=554"
 ```
 
 ---
@@ -623,7 +635,7 @@ sh /opt/hop/hop-run.sh \
 # Script de execução com checagem de status
 WORKFLOW="/opt/etl/saida/planejador_dw/06_pipelines_hop/wf_carga_mestre.hwf"
 
-sh /opt/hop/hop-run.sh -r local -p "$WORKFLOW" -l Basic
+sh /opt/hop/hop-run.sh -r local -f "$WORKFLOW" -l Basic
 EXIT_CODE=$?
 
 if [ $EXIT_CODE -ne 0 ]; then
@@ -644,7 +656,7 @@ fi
 ```bash
 # Colar este comando dentro do passo OdiOSCommand do Pacote do ODI:
 ssh -i /home/oracle/.ssh/id_rsa -o StrictHostKeyChecking=no oracle@servidor-hop.rede.local \
-  "sh /opt/hop/hop-run.sh -r local -p /dados/hop/<PROJETO>/wf_carga_<dominio>.hwf -l Basic"
+  "sh /opt/hop/hop-run.sh -r local -f /dados/hop/<PROJETO>/wf_carga_<dominio>.hwf -l Basic"
 ```
 
 ---
@@ -977,7 +989,7 @@ CALCULATE(
   GROUP BY TRUNC(DTC_ATUALIZACAO, 'MM')
   ORDER BY 1 DESC;
   ```
-* 🚪 **Quality Gate 3:** Matriz de atributos aprovada definindo colunas SCD1, colunas SCD2, chaves de negócio (`ID_*`) e flags de vigência (`DTC_INICIO`, `DTC_EXPIRACAO`, `FLG_VERSAO_ATUAL`).
+* 🚪 **Quality Gate 3:** Matriz de atributos aprovada definindo colunas SCD1, colunas SCD2, chaves de negócio (`ID_*`) e colunas de vigência/controle (`DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`, `SIN_ATIVO`).
 
 ---
 
@@ -1073,7 +1085,7 @@ CALCULATE(
   ```text
   /iniciar-semantica
   ```
-* **O que a IA analisa e devolve:** Proposta das views analíticas em 3 níveis (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`), mapeamento de sinônimos para o glossário e definição da aditividade das métricas.
+* **O que a IA analisa e devolve:** Proposta das views analíticas em 3 níveis (`VW_<PROJETO>_DIM_*`, `VW_<PROJETO>_EVENTO_*`, `VW_<PROJETO>_KPI_*`), mapeamento de sinônimos para o glossário e definição da aditividade das métricas.
 * **Comando Técnico de Apoio (Engenheiro executa no Oracle):**
   ```sql
   -- Validar a integridade do catálogo e sintaxe de todas as views criadas
@@ -1094,10 +1106,10 @@ CALCULATE(
 * **Query Técnica de Apoio (Engenheiro executa no Oracle):**
   ```sql
   -- Consultar mensagem detalhada da última rotina com falha
-  SELECT NOM_ROTINA, ID_LOTE, DTC_INICIO, DES_MENSAGEM_ERRO
+  SELECT NOME_PIPELINE, ID_EXECUCAO, DTC_INICIO_EXECUCAO, MENSAGEM_ERRO
   FROM "<SCHEMA>"."TB_CONTROLE_CARGA"
-  WHERE DES_STATUS_EXECUCAO = 'ERRO'
-  ORDER BY DTC_INICIO DESC
+  WHERE STATUS_EXECUCAO = 'ERRO'
+  ORDER BY DTC_INICIO_EXECUCAO DESC
   FETCH FIRST 1 ROWS ONLY;
   ```
 * 🚪 **Quality Gate 9:** Resolução e registro da causa raiz no arquivo `documentacao/catalogo_projetos/PROJETO_VERSION.md`.
@@ -1126,7 +1138,7 @@ Por favor, analise as fontes, identifique os processos de negócio, determine o 
 O Blueprint técnico apresentado está 100% aprovado! 
 Pode prosseguir com a geração de todos os artefatos físicos do projeto nas subpastas oficiais de `saida/planejador_dw/` (01_controle_carga a 11_dicionario_dados):
 - DDLs completos (Staging, Dimensões com Sequence e linha -1, Fatos particionadas);
-- Procedure de pós-carga e manutenção (PRC_POS_CARGA_FATO);
+- Procedures de pré-carga, pós-carga e manutenção (PRC_PRE_CARGA_FATO e PRC_POS_CARGA_FATO);
 - Pipelines Hop (.hpl/.hwf), Consultas/Mappings ODI ou Extratores Python (conforme marcado no INTAKE_DW.md);
 - Datasets de teste e o Relatório Executivo de Entrega.
 ```
@@ -1139,7 +1151,7 @@ Pode prosseguir com a geração de todos os artefatos físicos do projeto nas su
 As tabelas do DW foram implementadas e desejo estruturar a Camada Semântica corporativa e o Catálogo Ativo de Metadados. 
 Preenchi o formulário `INTAKE_SEMANTICA.md`. 
 Por favor, gere:
-1. Os scripts das views analíticas em 3 camadas (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`);
+1. Os scripts das views analíticas em 3 camadas (`VW_<PROJETO>_DIM_*`, `VW_<PROJETO>_EVENTO_*`, `VW_<PROJETO>_KPI_*`);
 2. Os DMLs das 8 tabelas de catálogo semântico (`META_GLOSSARIO`, `META_METRICA`, `META_OBJETO`, `META_RELACIONAMENTO`, `META_REGRA_NEGOCIO`, `META_CONSULTA_NEGOCIO`, `META_ORIENTACAO_IA`, `META_VALOR_DOMINIO`);
 3. O script de segurança RLS (`02_rls.sql`) e os testes de validação (`09_validacoes.sql`).
 ```
@@ -1172,7 +1184,7 @@ Por favor, analise a causa raiz (ex: erro de chave estrangeira, estouro de table
 ```text
 Preciso alterar a dimensão `DIM_<ENTIDADE>` de SCD Tipo 1 (sobrescrita) para SCD Tipo 2 (histórico com versionamento).
 Por favor, forneça o script de migração contendo:
-1. Adição das colunas `DTC_INICIO_VIGENCIA`, `DTC_EXPIRACAO` e `FLG_VERSAO_ATUAL`;
-2. Carga inicial retroativa dos registros vigentes;
-3. Atualização do pipeline de ETL / Merge para expirar a versão antiga e inserir a nova versão.
+1. Adição das colunas `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR` e `SIN_ATIVO`;
+2. Carga inicial retroativa dos registros vigentes (`DTC_EXPIRACAO IS NULL`, `DES_ATUALIZAR = 'S'`, `SIN_ATIVO = 'S'`);
+3. Atualização do pipeline de ETL / Merge para expirar a versão antiga (`DTC_EXPIRACAO = SYSDATE`, `DES_ATUALIZAR = 'N'`) e inserir a nova versão.
 ```

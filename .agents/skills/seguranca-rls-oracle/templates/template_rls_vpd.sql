@@ -7,15 +7,18 @@
 -- 1. TABELA DE APOIO: MAPEAMENTO USUARIO -> SEGMENTO(S)
 -- -------------------------------------------------------------
 CREATE TABLE USUARIO_SEGMENTOS (
+    PROJETO           VARCHAR2(50) DEFAULT 'GLOBAL' NOT NULL,
     USUARIO_ORACLE    VARCHAR2(128) NOT NULL,
     SEGMENTO          VARCHAR2(128) NOT NULL,
     IND_ACESSO_TOTAL  CHAR(1) DEFAULT 'N' NOT NULL,  -- 'S' ignora o filtro
     DT_CRIACAO        DATE DEFAULT SYSDATE NOT NULL,
-    CONSTRAINT PK_USUARIO_SEGMENTOS PRIMARY KEY (USUARIO_ORACLE, SEGMENTO)
+    CONSTRAINT PK_USUARIO_SEGMENTOS PRIMARY KEY (PROJETO, USUARIO_ORACLE, SEGMENTO),
+    CONSTRAINT CHK_USR_SEG_TOTAL CHECK (IND_ACESSO_TOTAL IN ('S', 'N'))
 );
 
 COMMENT ON TABLE USUARIO_SEGMENTOS IS
-'Mapeamento entre usuario de sessao e segmento(s) permitido(s) nas views com RLS.';
+'Mapeamento entre usuario de sessao, projeto e segmento(s) permitido(s) nas views com RLS.';
+COMMENT ON COLUMN USUARIO_SEGMENTOS.PROJETO IS 'Identificador do projeto (ex.: SEI, SIPAR) ou ''GLOBAL'' para permissao compartilhada.';
 COMMENT ON COLUMN USUARIO_SEGMENTOS.USUARIO_ORACLE IS 'Usuario Oracle (SYS_CONTEXT(''USERENV'',''SESSION_USER'')).';
 COMMENT ON COLUMN USUARIO_SEGMENTOS.SEGMENTO IS 'Codigo ou sigla do segmento (orgao, secretaria, campus, cliente).';
 COMMENT ON COLUMN USUARIO_SEGMENTOS.IND_ACESSO_TOTAL IS 'S = ignora filtro (administrador/auditor). N = restrito.';

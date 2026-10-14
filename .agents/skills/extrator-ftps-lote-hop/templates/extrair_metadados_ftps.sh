@@ -32,14 +32,14 @@ echo "Iniciando Varredura FTPS: ${REMOTE_URL} [Ambiente: ${AMBIENTE}]"
 echo "Data/Hora: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "=============================================================================="
 
-echo "NOME_ARQUIVO;DATA_ARQUIVO;HORA_ARQUIVO;TAMANHO_BYTES;STATUS_CARGA" > "${CSV_OUTPUT}"
+echo "NOME_PROJETO;NOME_ARQUIVO;DATA_MODIFICACAO;TAMANHO_BYTES;STATUS_CARGA" > "${CSV_OUTPUT}"
 
 curl -s --ssl-reqd --insecure \
      -u "${FTP_USER}:${FTP_PASS}" \
      --list-only "${REMOTE_URL}" | while read -r file; do
     if [[ "${file}" =~ \.(xlsx|csv|txt)$ ]]; then
         SIZE=$(curl -s --ssl-reqd --insecure -u "${FTP_USER}:${FTP_PASS}" -sI "${REMOTE_URL}${file}" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
-        echo "${file};$(date '+%Y-%m-%d');$(date '+%H:%M:%S');${SIZE:-0};PENDENTE" >> "${CSV_OUTPUT}"
+        echo "${PROJETO};${file};$(date '+%Y-%m-%d %H:%M:%S');${SIZE:-0};PENDENTE" >> "${CSV_OUTPUT}"
     fi
 done
 

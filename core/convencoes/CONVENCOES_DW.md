@@ -195,27 +195,49 @@ O Planejador de DW suporta duas estratégias distintas com base na volumetria e 
 
 ---
 
-## 7. Procedimento Automatizado Pós-Carga (`PRC_POS_CARGA_FATO`)
+## 7. Procedimentos Automatizados de Pré e Pós-Carga (`PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO`)
 
-Toda fato carregada via *Truncate & Load* deve possuir chamada automatizada para a procedure corporativa:
+Toda fato carregada via *Truncate & Load* (Estratégia A) deve utilizar o par de procedures corporativas em `07_prc_pos_carga_fato.sql`:
 ```sql
-CREATE OR REPLACE PROCEDURE "<SCHEMA>"."PRC_POS_CARGA_FATO" (
-    p_tabela_fato IN VARCHAR2
-) IS
+CREATE OR REPLACE PROCEDURE "<SCHEMA>"."PRC_PRE_CARGA_FATO" (
+    p_tabela_fato IN VARCHAR2,
+    p_owner       IN VARCHAR2 DEFAULT '<SCHEMA>'
+) AUTHID CURRENT_USER IS
     v_sql VARCHAR2(1000);
 BEGIN
-    -- 1. Rebuild NOLOGGING de índices UNUSABLE ou BITMAP da fato
+    -- Desativa índices secundários não-únicos antes do Direct-Path Insert (/*+ APPEND PARALLEL(4) */)
     FOR r IN (
-        SELECT index_name, status, index_type
+        SELECT owner, index_name
         FROM all_indexes
-        WHERE owner = '<SCHEMA>'
-          AND table_name = UPPER(p_tabela_fato)
+        WHERE owner = UPPER(TRIM(p_owner))
+          AND table_name = UPPER(TRIM(p_tabela_fato))
+          AND uniqueness = 'NONUNIQUE'
+          AND status = 'VALID'
+    ) LOOP
+        v_sql := 'ALTER INDEX "' || r.owner || '"."' || r.index_name || '" UNUSABLE';
+        EXECUTE IMMEDIATE v_sql;
+    END LOOP;
+END;
+/
+
+CREATE OR REPLACE PROCEDURE "<SCHEMA>"."PRC_POS_CARGA_FATO" (
+    p_tabela_fato IN VARCHAR2,
+    p_owner       IN VARCHAR2 DEFAULT '<SCHEMA>'
+) AUTHID CURRENT_USER IS
+    v_sql VARCHAR2(1000);
+BEGIN
+    -- 1. Rebuild PARALLEL 4 NOLOGGING de índices UNUSABLE ou BITMAP da fato + reset NOPARALLEL LOGGING
+    FOR r IN (
+        SELECT owner, index_name, status, index_type
+        FROM all_indexes
+        WHERE owner = UPPER(TRIM(p_owner))
+          AND table_name = UPPER(TRIM(p_tabela_fato))
           AND (status = 'UNUSABLE' OR index_type LIKE '%BITMAP%')
     ) LOOP
         BEGIN
-            v_sql := 'ALTER INDEX "<SCHEMA>"."' || r.index_name || '" REBUILD NOLOGGING';
+            v_sql := 'ALTER INDEX "' || r.owner || '"."' || r.index_name || '" REBUILD PARALLEL 4 NOLOGGING';
             EXECUTE IMMEDIATE v_sql;
-            v_sql := 'ALTER INDEX "<SCHEMA>"."' || r.index_name || '" LOGGING';
+            v_sql := 'ALTER INDEX "' || r.owner || '"."' || r.index_name || '" NOPARALLEL LOGGING';
             EXECUTE IMMEDIATE v_sql;
         EXCEPTION
             WHEN OTHERS THEN
@@ -223,14 +245,15 @@ BEGIN
         END;
     END LOOP;
 
-    -- 2. Coleta de Estatísticas completas com CASCADE
+    -- 2. Coleta de Estatísticas completas com CASCADE e grau 4
     DBMS_STATS.GATHER_TABLE_STATS(
-        ownname          => '<SCHEMA>',
-        tabname          => UPPER(p_tabela_fato),
+        ownname          => UPPER(TRIM(p_owner)),
+        tabname          => UPPER(TRIM(p_tabela_fato)),
         estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
         method_opt       => 'FOR ALL COLUMNS SIZE AUTO',
-        degree           => DBMS_STATS.DEFAULT_DEGREE,
-        cascade          => TRUE
+        degree           => 4,
+        cascade          => TRUE,
+        no_invalidate    => FALSE
     );
 END;
 /
@@ -257,7 +280,7 @@ ssh -i /home/oracle/.ssh/id_rsa user_hop@servidor-hop "/opt/apache-hop/hop-run.s
 
 ---
 
-## 9. Camada Semântica & Consumo Analítico (Power BI & Superset)
+## 9. Camada Semântica & Consumo Analítico (Power BI)
 
 ### 9.1 Padrão Power BI
 - **Modo de Conexão:** **Import Mode (Importação)** para a memória VertiPaq.
@@ -265,22 +288,18 @@ ssh -i /home/oracle/.ssh/id_rsa user_hop@servidor-hop "/opt/apache-hop/hop-run.s
 - **Relacionamentos:**
   - Cardinalidade: **1 para Muitos (1:*)** das Dimensões para a Fato.
   - Direção do Filtro Cruzado: **Única (Single)**.
-- **Dimensão Calendário (`DIM_TEMPO`):** Marcada como *Tabela de Data* oficial (`DTC_DATA`).
+- **Dimensão Calendário (`DIM_TEMPO`):** Marcada como *Tabela de Data* oficial (`DTC_COMPLETA`).
 - **Medidas DAX:** Tabela dedicada `_Medidas`, organizadas por pastas de exibição com cálculo explícito e tratamento de divisão por zero (`DIVIDE`).
-
-### 9.2 Padrão Modern Data Stack / Superset
-- Datasets definidos declarativamente em código **YAML** contendo métricas calculadas e expressões SQL exportáveis para versionamento em Git.
-- Scripts de bootstrap para criação automática de conexões e dashboards via API REST.
 
 ---
 
 ## 10. Arquitetura Lakehouse com MongoDB (Transição Cloud / AWS)
 
-Para cenários onde os dados processados transitam para um Lakehouse documental antes da publicação na AWS (AWS Glue e AWS DataZone):
+Para cenários onde os dados processados transitam para um Lakehouse documental antes da publicação na AWS (AWS Glue e **Amazon SageMaker Unified Studio / SageMaker Catalog — substituto do antigo AWS DataZone**):
 - **Estratégia de Multi-Tenancy Governamental:**
   - Segregação por Banco de Dados: `lakehouse_<orgao>` (ex: `lakehouse_sec`, `lakehouse_saeb`, `lakehouse_prodeb`).
   - Coleções Particionadas por Domínio: `<dominio>_<evento>` (ex: `sei_andamentos`, `finops_custos_diarios`).
-- **Padrão de Documento:** Cada documento armazena o evento em JSON flat com metadados de governança obrigatórios (`orgao`, `unidade_origem`, `extraido_em`, `batch_id`, `schema_version`) facilitando o catálogo automático pelo AWS Glue Crawler.
+- **Padrão de Documento:** Cada documento armazena o evento em JSON flat com metadados de governança obrigatórios (`orgao`, `unidade_origem`, `extraido_em`, `batch_id`, `schema_version`) facilitando o catálogo automático pelo AWS Glue Crawler e a publicação no Amazon SageMaker Catalog.
 
 ---
 

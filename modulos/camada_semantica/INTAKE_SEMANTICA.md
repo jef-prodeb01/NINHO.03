@@ -29,7 +29,6 @@ Preencha este formulário com as informações do projeto para a construção da
 > 🛑 **REGRA DE ESCOPO:** Marque com `[x]` as ferramentas que consumirão as views e metadados.
 
 - [ ] **Power BI:** Views analíticas otimizadas para Import Mode / DirectQuery, com nomes amigáveis e chaves dimensionais explícitas.
-- [ ] **Apache Superset:** Datasets relacionais com métricas SQL compiladas e filtros nativos.
 - [ ] **Modelos de IA / Agentes Text-to-SQL (LLMs):** Metadados ricos nas 8 tabelas `META_*` com regras de negócio, glossário e orientações de IA (`META_ORIENTACAO_IA`).
 - [ ] **Ferramentas SQL Ad-Hoc:** DBeaver, Metabase, Oracle SQL Developer.
 
@@ -114,7 +113,7 @@ Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
 - [x] **Documento de Entendimento Semântico (`DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`)**
 - [x] **DDLs das Views Analíticas (`saida/camada_semantica/vw_analiticas/`)**
 - [ ] **DDL de Criação das Tabelas `META_*` (`01_create_meta_tables.sql`)** *(apenas se não existirem)*
-- [ ] **Script de Segurança RLS / VPD (`02_rls_template.sql`)** *(se RLS selecionado na Seção 4.2)*
+- [ ] **Script de Segurança RLS / VPD (`02_rls.sql`)** *(se RLS selecionado na Seção 4.2)*
 - [x] **Carga do Glossário de Termos (`01_meta_glossario.sql`)**
 - [x] **Carga do Catálogo de Métricas (`02_meta_metrica.sql`)**
 - [x] **Carga do Dicionário de Objetos e Colunas (`03_meta_objeto.sql`)**

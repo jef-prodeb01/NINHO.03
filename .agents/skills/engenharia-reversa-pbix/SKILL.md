@@ -40,12 +40,12 @@ flowchart TD
 
 ### 3. Decomposição para Modelo Dimensional Star Schema
 - Separe os atributos repetitivos em **Dimensões Conformadas** (`DIM_UNIDADE`, `DIM_TAREFA`, `DIM_USUARIO`, `DIM_TEMPO`, `DIM_ORGAO`).
-- Defina as **Fatos Transacionais ou Periódicas** no grão correto (ex: `FATO_ANDAMENTO_PROCESSO`, `FATO_ATENDIMENTO`), mantendo apenas as chaves surrogate (`SK_...`), chaves naturais e métricas numéricas.
+- Defina as **Fatos Transacionais ou Periódicas** no grão correto (ex: `FATO_ANDAMENTO_PROCESSO`, `FATO_ATENDIMENTO`), mantendo as chaves surrogate (`DIMENSION_KEY` na dimensão e `DIM_<ENTIDADE>` na fato), chaves naturais degeneradas e métricas numéricas.
 
 ### 4. Geração do Guia de Implementação no Power BI
 - Produza o documento `GUIA_ANALISTA_BI_<PROJETO>.md` contendo:
   - Diagrama Mermaid do Star Schema.
-  - Mapeamento das views analíticas da Camada Semântica (`VW_<PROJETO>_DIM_*` e `VW_<PROJETO>_FATO_*`).
+  - Mapeamento das tabelas ou views analíticas da Camada Semântica (`VW_<PROJETO>_DIM_*`, `VW_<PROJETO>_EVENTO_*` e `VW_<PROJETO>_KPI_*`).
   - Configuração de cardinalidade **1 para Muitos (1:*)** com **Direção de filtro única (Single)**.
   - Catálogo completo de métricas DAX reescritas para consumir as novas views limpas do DW.
 

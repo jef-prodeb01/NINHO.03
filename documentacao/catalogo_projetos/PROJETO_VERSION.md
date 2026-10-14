@@ -9,12 +9,11 @@
 > **⚠️ PROJETO NÃO INICIALIZADO**
 >
 > Este arquivo será preenchido pela IA após validação do engenheiro.
-> O modelo base está em `exemplo_tabelas/PROJETO_VERSION_MODELO.md`.
 >
 > Para inicializar:
-> 1. Encaminhe os insumos (DDL, amostras, regras) ao agente
-> 2. O agente gera o conteúdo em `exemplo_tabelas/PROJETO_VERSION_MODELO.md`
-> 3. Após validação, o conteúdo é copiado para cá
+> 1. Preencha [`modulos/camada_semantica/INTAKE_SEMANTICA.md`](../../modulos/camada_semantica/INTAKE_SEMANTICA.md) e deposite os insumos em `entrega/camada_semantica/`
+> 2. O agente gera os artefatos em `saida/camada_semantica/`
+> 3. Após validação, o histórico de versão e contagens são consolidados aqui
 
 ---
 
@@ -22,5 +21,5 @@
 
 1. Leia [README.md](../../README.md) para entender o processo
 2. Encaminhe [GUIA_ENGENHEIRO_DW.md](../guias/GUIA_ENGENHEIRO_DW.md) ou [GUIA_ENGENHEIRO_SEMANTICA.md](../guias/GUIA_ENGENHEIRO_SEMANTICA.md) ao engenheiro
-3. Aguarde os insumos em `entrega/`
+3. Aguarde os insumos em `entrega/camada_semantica/`
 4. Confirme ao agente para gerar o documento de entendimento

@@ -94,7 +94,6 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 
 ### 2.3 Ferramenta de BI / Consumo Prevista
 - [ ] **Power BI:** Import Mode, modelo Star Schema puro, medidas DAX explícitas (gera guia em `08_datasets_bi/`).
-- [ ] **Apache Superset:** Datasets declarativos em YAML com métricas SQL compiladas (gera yaml em `08_datasets_bi/`).
 - [ ] **Camada Semântica Corporativa:** Views `EVENTO` e metadados nas 8 tabelas `META_*` para IA e Text-to-SQL.
 - [ ] **Outras Ferramentas SQL:** Metabase, Tableau, DBeaver.
 
@@ -200,7 +199,7 @@ Marque os artefatos que você deseja que a IA gere:
 - [ ] **Procedure Pós-Carga `PRC_POS_CARGA_FATO` (`05_procedimentos_manutencao/`)** *(apenas se Estratégia A)*
 - [ ] **Pipelines e Workflows do Apache Hop (`06_pipelines_hop/`)** *(apenas se Apache Hop selecionado)*
 - [ ] **Extratores Python de API (`07_extratores_python/`)** *(apenas se Python API selecionado)*
-- [x] **Guia de Consumo Power BI e Datasets Superset (`08_datasets_bi/`)**
+- [x] **Guia de Consumo e Handoff Power BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`)**
 - [x] **Relatório Técnico de Estratégias e Linhagem (`09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`)**
 - [x] **Suíte de Testes SQL de Integridade Analítica (`10_testes_integridade/13_testes_integridade.sql`)**
 - [x] **Dicionário Interativo de Dados HTML (`11_dicionario_dados/dicionario_dados.html`)**

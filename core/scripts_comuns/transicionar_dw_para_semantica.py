@@ -191,17 +191,12 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
     arquivos_copiados = []
     conteudos_sql = []
 
-    # Procura DDLs em 03_dimensoes, 04_fatos e na raiz do projeto DW
+    # Procura DDLs apenas em 03_dimensoes e 04_fatos do DW
     pastas_busca = [
         pasta_saida_dw / "03_dimensoes",
         pasta_saida_dw / "04_fatos",
-        pasta_saida_dw / "01_controle_carga",
-        pasta_saida_dw / "05_procedimentos_manutencao",
-        pasta_saida_dw,
         base_dir / "saida" / "planejador_dw" / "03_dimensoes",
         base_dir / "saida" / "planejador_dw" / "04_fatos",
-        base_dir / "saida" / "planejador_dw" / "01_controle_carga",
-        base_dir / "saida" / "planejador_dw",
     ]
 
     for p in pastas_busca:
@@ -211,24 +206,26 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
                 shutil.copy2(f, dest_file)
                 if dest_file.name not in arquivos_copiados:
                     arquivos_copiados.append(dest_file.name)
+                    try:
+                        sql_text = f.read_text(encoding="utf-8", errors="ignore")
+                        conteudos_sql.append((f.name, sql_text))
+                    except Exception:
+                        pass
+
+    # Se nenhum arquivo específico foi encontrado nas subpastas, busca apenas DIM/FATO recursivamente
+    if not arquivos_copiados and pasta_saida_dw.exists():
+        for f in sorted(pasta_saida_dw.rglob("*.sql")):
+            if any(part in f.parts for part in ("01_controle_carga", "02_staging", "05_procedimentos_manutencao", "10_testes_integridade")):
+                continue
+            dest_file = dest_ddl / f.name
+            shutil.copy2(f, dest_file)
+            if dest_file.name not in arquivos_copiados:
+                arquivos_copiados.append(dest_file.name)
                 try:
                     sql_text = f.read_text(encoding="utf-8", errors="ignore")
                     conteudos_sql.append((f.name, sql_text))
                 except Exception:
                     pass
-
-    # Se nenhum arquivo específico foi encontrado nas subpastas, busca recursivamente
-    if not arquivos_copiados:
-        for f in sorted(pasta_saida_dw.rglob("*.sql")):
-            dest_file = dest_ddl / f.name
-            shutil.copy2(f, dest_file)
-            if dest_file.name not in arquivos_copiados:
-                arquivos_copiados.append(dest_file.name)
-            try:
-                sql_text = f.read_text(encoding="utf-8", errors="ignore")
-                conteudos_sql.append((f.name, sql_text))
-            except Exception:
-                pass
 
     # Cria o DDL consolidado DDL_COMPLETO_DW_<PROJETO>.sql
     ddl_completo_nome = f"DDL_COMPLETO_DW_{projeto}.sql"
@@ -415,7 +412,6 @@ Preencha este formulário com as informações do projeto para a construção da
 > 🛑 **REGRA DE ESCOPO:** Marque com `[x]` as ferramentas que consumirão as views e metadados.
 
 - [x] **Power BI:** Views analíticas otimizadas para Import Mode / DirectQuery, com nomes amigáveis e chaves dimensionais explícitas.
-- [x] **Apache Superset:** Datasets relacionais com métricas SQL compiladas e filtros nativos.
 - [x] **Modelos de IA / Agentes Text-to-SQL (LLMs):** Metadados ricos nas 8 tabelas `META_*` com regras de negócio, glossário e orientações de IA (`META_ORIENTACAO_IA`).
 - [x] **Ferramentas SQL Ad-Hoc:** DBeaver, Metabase, Oracle SQL Developer.
 
@@ -497,7 +493,7 @@ Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
 - [x] **Documento de Entendimento Semântico (`DOCUMENTO_ENTENDIMENTO_{projeto}.md`)**
 - [x] **DDLs das Views Analíticas (`saida/camada_semantica/vw_analiticas/`)**
 - [x] **DDL de Criação das Tabelas `META_*` (`01_create_meta_tables.sql`)** *(apenas se não existirem)*
-- [ ] **Script de Segurança RLS / VPD (`02_rls_template.sql`)** *(se RLS selecionado na Seção 4.2)*
+- [ ] **Script de Segurança RLS / VPD (`02_rls.sql`)** *(se RLS selecionado na Seção 4.2)*
 - [x] **Carga do Glossário de Termos (`01_meta_glossario.sql`)**
 - [x] **Carga do Catálogo de Métricas (`02_meta_metrica.sql`)**
 - [x] **Carga do Dicionário de Objetos e Colunas (`03_meta_objeto.sql`)**
@@ -553,7 +549,7 @@ def atualizar_documentacao_central(base_dir: Path, projeto: str, schema: str, en
     if fato_pasta.exists():
         for sql_f in fato_pasta.glob("*.sql"):
             texto = sql_f.read_text(encoding="utf-8", errors="ignore")
-            fts = re.findall(r"CREATE\s+TABLE\s+(?:\"?[A-Z0-9_]+\"?\.)?\"?(FATO_[A-Z0-9_]+)\"?", texto, re.IGNORECASE)
+            fts = re.findall(r"CREATE\s+TABLE\s+(?:\"?[A-Z0-9_]+\"?\.)?\"?((?:FATO|FAT)_[A-Z0-9_]+)\"?", texto, re.IGNORECASE)
             for f in fts:
                 if f.upper() not in fatos:
                     fatos.append(f.upper())

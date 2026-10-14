@@ -72,7 +72,7 @@ As procedures do ODI executam comandos nativos no Oracle (DDL, PL/SQL e scripts 
 - **Código do Passo:**
   ```sql
   BEGIN
-      PRC_PRE_CARGA_FATOS('{SCHEMA_ALVO}', '{TABELA_FATO_FINAL}');
+      PRC_PRE_CARGA_FATO('{TABELA_FATO_FINAL}', '{SCHEMA_ALVO}');
   END;
   ```
 
@@ -84,7 +84,7 @@ As procedures do ODI executam comandos nativos no Oracle (DDL, PL/SQL e scripts 
 - **Código do Passo:**
   ```sql
   BEGIN
-      PRC_POS_CARGA_FATOS('{SCHEMA_ALVO}', '{TABELA_FATO_FINAL}');
+      PRC_POS_CARGA_FATO('{TABELA_FATO_FINAL}', '{SCHEMA_ALVO}');
   END;
   ```
 
@@ -288,7 +288,7 @@ Antes de promover a esteira de homologação para produção, confira rigorosame
 | :--- | :--- | :---: |
 | **1. CKM Desativado** | `FLOW_CONTROL = False` e `STATIC_CONTROL = False` em todos os IKMs. | [ ] |
 | **2. Direct-Path Insert** | `INSERT_HINT = /*+ APPEND PARALLEL(4) */` na carga da Fato. | [ ] |
-| **3. Índices Secundários** | `PRC_PRE_CARGA_FATOS` (UNUSABLE) e `PRC_POS_CARGA_FATOS` (REBUILD). | [ ] |
+| **3. Índices Secundários** | `PRC_PRE_CARGA_FATO` (UNUSABLE) e `PRC_POS_CARGA_FATO` (REBUILD). | [ ] |
 | **4. Proteção de Nulos (-1)** | `Lookup com Nulo Retornado = True` e `NVL(..., -1)` em 100% das FKs. | [ ] |
 | **5. Staging no Target** | A área de staging física está configurada na Unidade Lógica do DW. | [ ] |
 | **6. Índices na Staging** | Chaves naturais da Staging indexadas para acelerar os lookups da Fato. | [ ] |

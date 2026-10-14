@@ -20,8 +20,9 @@ SELECT
     END                                          AS DES_TIPO_<ENTIDADE>,
     -- Atributos de Controle SCD Tipo 2
     TRUNC(SYSDATE)                               AS DTC_EFETIVACAO,
-    TO_DATE('2999-12-31', 'YYYY-MM-DD')          AS DTC_EXPIRACAO,
-    'S'                                          AS DES_ATUALIZA
+    CAST(NULL AS DATE)                           AS DTC_EXPIRACAO,
+    'S'                                          AS DES_ATUALIZAR,
+    'S'                                          AS SIN_ATIVO
 FROM "<SCHEMA_ALVO>"."STG_<TABELA_ORIGEM>"
 WHERE COD_NATURAL_ORIGEM IS NOT NULL
 GROUP BY COD_NATURAL_ORIGEM;
@@ -56,11 +57,11 @@ SELECT
 
 FROM "<SCHEMA_ALVO>"."STG_<TABELA_ORIGEM>" stg
 
--- Lookups com dimensoes ativas (SCD Tipo 2)
+-- Lookups com dimensoes ativas (SCD Tipo 2: versao vigente com DTC_EXPIRACAO IS NULL)
 LEFT JOIN "<SCHEMA_ALVO>"."DIM_<ENTIDADE>" de
     ON stg.COD_NATURAL_ORIGEM = de.COD_<ENTIDADE>
-   AND de.DES_ATUALIZA = 'S'
+   AND de.DTC_EXPIRACAO IS NULL
 
 LEFT JOIN "<SCHEMA_ALVO>"."DIM_TEMPO" dt
-    ON TRUNC(stg.DTC_REGISTRO) = dt.DATA_COMPLETA;
+    ON TRUNC(stg.DTC_REGISTRO) = dt.DTC_COMPLETA;
 

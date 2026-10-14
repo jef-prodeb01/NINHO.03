@@ -4,7 +4,7 @@ Este guia orienta o **Engenheiro de Dados** a utilizar o **Planejador de DW** pa
 
 > **Público:** Engenheiro de dados responsável pela modelagem e esteiras de ETL/ELT.  
 > **Objetivo:** Fornecer insumos completos para que a IA gere a arquitetura dimensional, DDLs de alta performance, esteiras de ingestão (ODI, Hop, Python) e a estratégia de carga ideal (Dual Strategy).  
-> **Resultado:** DDLs prontos (`STG`, `ODI_DIM`, `DIM`, `FATO`, `TB_CONTROLE_CARGA`), procedure de manutenção (`PRC_POS_CARGA_FATO`), pipelines Hop (`.hpl`/`.hwf` - se solicitados), extratores Python (se solicitados), datasets Superset (`.yaml`) e relatório de linhagem (*"Como chegar em cada valor"*), salvos diretamente nas 11 pastas canônicas de `saida/planejador_dw/`.
+> **Resultado:** DDLs prontos (`STG`, `ODI_DIM`, `DIM`, `FATO`, `TB_CONTROLE_CARGA`), procedure de manutenção (`PRC_POS_CARGA_FATO`), pipelines Hop (`.hpl`/`.hwf` - se solicitados), extratores Python (se solicitados), guia de handoff Power BI (`GUIA_ANALISTA_BI_<PROJETO>.md`) e relatório de linhagem (*"Como chegar em cada valor"*), salvos diretamente nas 11 pastas canônicas de `saida/planejador_dw/`.
 
 ---
 
@@ -25,7 +25,7 @@ Este guia orienta o **Engenheiro de Dados** a utilizar o **Planejador de DW** pa
   - [5.2 Módulo Dimensões e Cubos (ODI_DIM_*)](#52-dimensoes-cubos)
   - [5.3 Carga da Fato e Lookup com Fallback para -1](#53-carga-fato-controle)
   - [5.4 Execução da Procedure PRC_POS_CARGA_FATO](#54-procedure-tuning)
-- [6. Consumo Analítico (Power BI & Superset)](#6-consumo-bi)
+- [6. Consumo Analítico (Power BI & Camada Semântica)](#6-consumo-bi)
 - [7. Biblioteca de Prompts Prontos (Copiar e Colar para a IA)](#7-prompts-prontos)
 - [8. Guia Anti-Erros do Engenheiro de Dados (Blindagem Operacional)](#8-anti-erros)
 
@@ -44,7 +44,7 @@ flowchart LR
 ```
 
 O processo é colaborativo e ágil:
-1. **Você entrega os insumos** (schemas, amostras, arquivos e perguntas de negócio em `modulos/planejador_dw/entrada/`).
+1. **Você entrega os insumos** (schemas, amostras, arquivos e perguntas de negócio em `entrega/planejador_dw/`).
 2. **A IA projeta o DW** (define grão, dimensões SCD2, esteira de ferramentas estritamente conforme o INTAKE, estratégia de carga e sizing).
 3. **Você valida a proposta técnica** através de checkpoints interativos (`/gerar-blueprint` com matriz De/Para 100% fiel).
 4. **A IA gera os scripts DDL, procedures, pipelines (se solicitados) e relatório técnico** diretamente nas pastas canônicas de `saida/planejador_dw/`.
@@ -57,11 +57,11 @@ O processo é colaborativo e ágil:
 <a id="2-o-que-entregar"></a>
 ## 2. O que Entregar (Preparação dos Insumos)
 
-Para que a IA gere a arquitetura sem inventar regras, você deve preparar a pasta `modulos/planejador_dw/entrada/`:
+Para que a IA gere a arquitetura sem inventar regras, você deve preparar a pasta `entrega/planejador_dw/`:
 
 <a id="21-fontes-banco"></a>
 ### 2.1 Fontes Banco de Dados (OLTP) e Queries Oracle de Extração
-Coloque em `modulos/planejador_dw/entrada/ddl/` o DDL das tabelas que contêm os dados na origem:
+Coloque em `entrega/planejador_dw/ddl/` o DDL das tabelas que contêm os dados na origem:
 - **1. Extração do DDL completo da tabela de origem:**
   ```sql
   SET LONG 200000 PAGESIZE 0 LINESIZE 200 FEEDBACK OFF;
@@ -74,7 +74,7 @@ Coloque em `modulos/planejador_dw/entrada/ddl/` o DDL das tabelas que contêm os
   WHERE owner = 'SCHEMA_ORIGEM' AND table_name = 'TAB_ORIGEM'
   ORDER BY column_id;
   ```
-- **3. Extração de amostra de dados reais (10 a 50 linhas em CSV ou formato tabular) para `modulos/planejador_dw/entrada/amostras/`:**
+- **3. Extração de amostra de dados reais (10 a 50 linhas em CSV ou formato tabular) para `entrega/planejador_dw/amostras/`:**
   ```sql
   SELECT * FROM SCHEMA_ORIGEM.TAB_ORIGEM WHERE ROWNUM <= 30;
   ```
@@ -94,13 +94,13 @@ Coloque em `modulos/planejador_dw/entrada/ddl/` o DDL das tabelas que contêm os
 
 <a id="22-fontes-arquivos"></a>
 ### 2.2 Fontes Arquivos e Planilhas em FTP/SFTP
-Coloque em `modulos/planejador_dw/entrada/arquivos_ftp/`:
+Coloque em `entrega/planejador_dw/arquivos_ftp/`:
 - Um arquivo de exemplo representativo (`.csv`, `.xlsx`, `.xls` ou `.txt`).
 - No `INTAKE_DW.md`, especifique: frequência de chegada, delimitador, encoding e se possui cabeçalho.
 
 <a id="23-fontes-apis"></a>
 ### 2.3 Fontes APIs Web e Serviços Externos
-Coloque em `modulos/planejador_dw/entrada/api_specs/`:
+Coloque em `entrega/planejador_dw/api_specs/`:
 - Um exemplo real de payload JSON/XML retornado pelo endpoint ou especificação OpenAPI/Swagger.
 - No `INTAKE_DW.md`, especifique: URL base, método de autenticação e tipo de paginação.
 
@@ -254,17 +254,14 @@ END;
 ---
 
 <a id="6-consumo-bi"></a>
-## 6. Consumo Analítico (Power BI & Superset)
+## 6. Consumo Analítico (Power BI & Camada Semântica)
 
 1. **Power BI:**
    - Modo de Conexão: **Import Mode**.
    - Cardinalidade: **1 para Muitos (1:*)** das Dimensões para a Fato.
    - Direção do Filtro Cruzado: **Única (Single)**.
    - Crie uma tabela dedicada `_Medidas` com cálculo explícito e tratamento via `DIVIDE()`.
-2. **Apache Superset:**
-   - Importe o arquivo YAML gerado em `saida/planejador_dw/08_datasets_bi/superset_dataset_<fato>.yaml`.
-   - O dataset já vem configurado com métricas `count`, `sum` e dimensões formatadas.
-3. **Módulo de Camada Semântica (Handoff Automático e Pipeline Contínuo):**
+2. **Módulo de Camada Semântica (Handoff Automático e Pipeline Contínuo):**
    - O trabalho de engenharia não para no DW! Para integrar diretamente com o módulo de Camada Semântica sem retrabalho manual de extração de DDLs ou preenchimento de formulários:
      - **No Chat com a IA:** Digite o comando `/concluir-dw` ou `/transicionar-semantica`.
      - **Ou via Terminal (CLI):** Execute:
@@ -288,7 +285,7 @@ Utilize os prompts abaixo para conduzir o agente durante o planejamento:
 
 ### Prompt 1 — Início do Planejamento do DW
 ```text
-Olá! Preenchi o formulário modulos/planejador_dw/INTAKE_DW.md e coloquei as amostras e DDLs das fontes na pasta modulos/planejador_dw/entrada/. 
+Olá! Preenchi o formulário modulos/planejador_dw/INTAKE_DW.md e coloquei as amostras e DDLs das fontes na pasta entrega/planejador_dw/. 
 
 Por favor, inspecione todos os insumos, analise as perguntas de negócio e apresente o Documento de Entendimento Dimensional contendo:
 1. Mapeamento da esteira híbrida estritamente com as tecnologias marcadas no INTAKE.
@@ -314,7 +311,7 @@ Por favor, gere todos os artefatos estruturados diretamente na pasta saida/plane
 6. 04_fatos/05_create_fato_tables.sql (conforme a estratégia aprovada)
 7. 05_procedimentos_manutencao/07_prc_pos_carga_fato.sql (se Estratégia A)
 8. Pipelines Hop (.hpl/.hwf) ou Extrator Python (.py) APENAS se tiverem sido marcados no INTAKE.
-9. Datasets para Superset (.yaml).
+9. Guia de Handoff para Power BI (08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md).
 
 Gere os arquivos com sintaxe Oracle validada, nomes fiéis à origem e comentários completos.
 ```

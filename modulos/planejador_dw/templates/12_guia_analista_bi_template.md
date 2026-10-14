@@ -107,7 +107,7 @@ erDiagram
 | **`<DIM_ENTIDADE_2>`** | Dimensão SCD Tipo 2 | 1 linha por versão de <ENTIDADE_2> | Estrutura organizacional, hierarquia ou classificação de negócio. |
 | **`<DIM_STATUS>`** | Dimensão Estática | 1 linha por código de status | Tabela pequena e estável contendo as situações e fases do ciclo de vida. |
 | **`<DIM_TEMPO>`** | Dimensão Calendário | 1 linha por dia contínuo | Calendário corporativo conformado padronizado com atributos civis, acadêmicos e fiscais. |
-| **`<VW_EVENTO>`** | View Semântica Unificada | Visão desnormalizada | View analítica amigável pronta para relatórios rápidos, autosserviço ou Apache Superset. |
+| **`<VW_EVENTO>`** | View Semântica Unificada | Visão desnormalizada | View analítica amigável pronta para relatórios rápidos e autosserviço no Power BI. |
 
 ---
 

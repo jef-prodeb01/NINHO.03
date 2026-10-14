@@ -14,7 +14,7 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
 
 1. **Star Schema Puro:**
    - Dimensões (`DIM_*`) desnormalizadas, sem joins em cascata (evite Snowflake a menos que estritamente justificável).
-   - Fatos (`FATO_*` ou `FAT_*`) conectadas às dimensões através de Surrogate Keys (`<NOME_DIM>_KEY`).
+   - Fatos (`FATO_*` ou `FAT_*`) conectadas às dimensões através de Surrogate Keys (`DIMENSION_KEY` na dimensão referenciada por `DIM_<ENTIDADE>` na fato).
 2. **Surrogate Keys e Sequences:**
    - Chave artificial `NUMBER(38,0)` gerada via Oracle Sequence (`SEQ_DIM_<NOME>`).
    - Nunca utilize a chave natural do sistema de origem como Primary Key no DW.
@@ -25,7 +25,8 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
    - Atributos padrão de versionamento histórico em todas as dimensões:
      - `DTC_EFETIVACAO DATE NOT NULL` (Data de início de vigência)
      - `DTC_EXPIRACAO DATE NULL` (Data fim; `NULL` indica registro vigente)
-     - `DES_ATUALIZAR VARCHAR2(1) DEFAULT 'N' NOT NULL` ('S' para atualizar, 'N' para inalterado)
+     - `DES_ATUALIZAR CHAR(1 CHAR) DEFAULT 'S' NOT NULL` ('S' para atualizar, 'N' para inalterado)
+     - `SIN_ATIVO CHAR(1 CHAR) DEFAULT 'S' NOT NULL` ('S' para ativo na origem, 'N' para inativo)
     - Se o ETL utilizar **Oracle Data Integrator (ODI)**, gere também a tabela auxiliar `ODI_DIM_<NOME>` com a coluna de controle `DES_STATUS_REGISTRO VARCHAR2(1)`.
 5. **Arquitetura Multi-Tenant e Prevenção de ORA-00001:**
    - Se o DW compartilhar schemas entre múltiplos órgãos/municípios, nunca crie constraint `UNIQUE` unicolunar na chave natural. Utilize chave composta `(ID_NATURAL, COD_TENANT)`. No ETL/ELT, componha `to_number(to_char(V_TENANT) || '000' || to_char(ORIGEM.ID_NATURAL))` para evitar colisões.
@@ -46,9 +47,9 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 ### Estratégia A: Truncate & Load Massivo (Carga Noturna / Batch)
 - **Quando usar:** Volumetria moderada a grande, carga diária noturna em lote fechado.
 - **Indexação:** **BITMAP INDEX** nas Foreign Keys das Dimensões para habilitar **Star Transformation** no otimizador Oracle.
-- **Rotinas de Manutenção Obrigatórias:**
-  1. `PRC_PRE_CARGA_FATOS`: Coloca índices não únicos da fato como `UNUSABLE` antes da carga massiva (`INSERT /*+ APPEND PARALLEL(4) */`), preservando a PK.
-  2. `PRC_POS_CARGA_FATOS`: Reconstrói os índices com `ALTER INDEX ... REBUILD PARALLEL 4 NOLOGGING;`, redefine para `NOPARALLEL LOGGING` e dispara coleta de estatísticas `DBMS_STATS.GATHER_TABLE_STATS(cascade => TRUE)`.
+- **Rotinas de Manutenção Obrigatórias (`07_prc_pos_carga_fato.sql`):**
+  1. `PRC_PRE_CARGA_FATO`: Coloca índices não únicos da fato como `UNUSABLE` antes da carga massiva (`INSERT /*+ APPEND PARALLEL(4) */`), preservando a PK.
+  2. `PRC_POS_CARGA_FATO`: Reconstrói os índices com `ALTER INDEX ... REBUILD PARALLEL 4 NOLOGGING;`, redefine para `NOPARALLEL LOGGING` e dispara coleta de estatísticas `DBMS_STATS.GATHER_TABLE_STATS(cascade => TRUE, degree => 4)`.
 
 ### Estratégia B: Incremental Idempotente via MERGE (Micro-lotes / Near Real-Time)
 - **Quando usar:** Cargas intra-dia, frequentes ou quando não é permitido truncar o histórico.
@@ -92,8 +93,8 @@ Gere os arquivos nas subpastas apropriadas de `saida/planejador_dw/`:
 4. `03_dimensoes/04_create_dim_tables.sql`
 5. `03_dimensoes/06_init_default_records.sql`
 6. `04_fatos/05_create_fato_tables.sql`
-7. `05_procedimentos_manutencao/07_prc_pre_carga_fato.sql` e `08_prc_pos_carga_fato.sql` (SE Estratégia A)
-8. `08_datasets_bi/superset_dataset_<fato>.yaml` e `GUIA_ANALISTA_BI_<PROJETO>.md`
+7. `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql` (contendo `PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO` SE Estratégia A)
+8. `08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`
 9. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`
 10. `10_testes_integridade/13_testes_integridade.sql`
 11. `11_dicionario_dados/dicionario_dados.html`

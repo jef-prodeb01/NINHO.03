@@ -2,7 +2,7 @@
 
 > *"Onde os dados brutos são acolhidos, cuidados e preparados para ganhar asas."*
 
-Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que automatiza o ciclo completo de dados: desde o planejamento dimensional de Data Warehouses no Oracle, passando pela geração de camadas semânticas ativas e governança em nuvem, até a entrega de diretrizes prontas para Power BI e Apache Superset.
+Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que automatiza o ciclo completo de dados: desde o planejamento dimensional de Data Warehouses no Oracle, passando pela geração de camadas semânticas ativas e governança em nuvem, até a entrega de diretrizes prontas para Power BI.
 
 ---
 
@@ -68,7 +68,7 @@ NINHO /
 │   ├── planejador_dw/                          # 🏛️ MÓDULO 1: Planejamento e Modelagem de DW
 │   │   ├── INTAKE_DW.md                        # 📋 Formulário de requisitos do novo DW
 │   │   ├── AGENTS.md                           # 🤖 Orquestrador do módulo (chama skills sob demanda)
-│   │   ├── templates/                          # 📄 15 templates (SQL, Hop, Py, YAML, BI, Testes, HTML)
+│   │   ├── templates/                          # 📄 14 templates (SQL, Hop, Py, BI, Testes, HTML)
 │   │   └── README.md                           # 📖 Manual completo do módulo Planejador de DW
 │   │
 │   ├── camada_semantica/                       # 🧠 MÓDULO 2: Camada Semântica & Metadados Ativos
@@ -93,7 +93,7 @@ NINHO /
 │   │   ├── GUIA_COMANDOS_RAPIDOS.md            # ⚡ Cheat sheet central (Python, Bash, Hop, SQL, DAX)
 │   │   ├── GUIA_ENGENHEIRO_DW.md               # Manual prático do Engenheiro de DW (ODI, Hop, SQL)
 │   │   ├── GUIA_ENGENHEIRO_SEMANTICA.md        # Manual prático de Camada Semântica
-│   │   └── GUIA_ANALISTA_BI.md                 # Manual corporativo de BI (Power BI, DAX, Superset)
+│   │   └── GUIA_ANALISTA_BI.md                 # Manual corporativo de BI (Power BI, DAX, Star Schema)
 │   ├── GLOSSARIO.md                            # 📖 Glossário analítico (SCD2, VertiPaq, Linha -1, Star Schema)
 │   ├── checklists/
 │   │   └── CHECKLIST_VALIDACAO.md              # ✅ Checklist de integridade e homologação pré-entrega
@@ -111,7 +111,7 @@ NINHO /
     │   ├── 05_procedimentos_manutencao/        # Procedure PRC_POS_CARGA_FATO
     │   ├── 06_pipelines_hop/                   # Pipelines Hop (.hpl / .hwf) (se solicitado)
     │   ├── 07_extratores_python/               # Extratores Python modulares (se solicitado)
-    │   ├── 08_datasets_bi/                     # Dataset Superset e Guia Power BI
+    │   ├── 08_datasets_bi/                     # Guia de Modelagem e Handoff Power BI
     │   ├── 09_relatorio_estrategias/           # Relatório executivo de arquitetura
     │   ├── 10_testes_integridade/              # Scripts de testes pós-carga
     │   └── 11_dicionario_dados/                # Dicionário de dados HTML
@@ -130,7 +130,7 @@ flowchart LR
     B --> C["3. ARTEFATOS DW<br/>(saida/planejador_dw/)"]
     C -->|"Handoff Contínuo<br/>(/concluir-dw)"| D["4. INSUMOS SEMÂNTICA<br/>(entrega/camada_semantica/)"]
     D --> E["5. CAMADA SEMÂNTICA<br/>(modulos/camada_semantica/)"]
-    E --> F["6. POWER BI & SUPERSET<br/>(Consumo Analítico)"]
+    E --> F["6. POWER BI & IA<br/>(Consumo Analítico)"]
 ```
 
 1. **Depósito de Insumos (`entrega/planejador_dw/`):** Você deposita DDLs de origem, amostras CSV/Excel ou especificações de APIs.
@@ -138,7 +138,7 @@ flowchart LR
 3. **Geração Automatizada de Código DW (`saida/planejador_dw/`):** A IA gera todos os DDLs (`STG_*`, `ODI_DIM_*`, `DIM_*`, `FATO_*`), procedures de manutenção, pipelines Hop, extratores Python e o `RELATORIO_ESTRATEGIAS.md`.
 4. **Handoff Automático & Documentação Central (`/concluir-dw`):** O pipeline **não para** no DW! Com o comando `/concluir-dw` ou via script CLI, a plataforma consolida os DDLs, transfere/gera amostras, move relatórios, preenche o `INTAKE_SEMANTICA.md` e atualiza o catálogo corporativo (`PROJETO_RESUMO.md` e `PROJETO_VERSION.md`).
 5. **Geração da Camada Semântica (`saida/camada_semantica/`):** A IA gera as views analíticas (`VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*`) e os scripts de carga para as 8 tabelas `META_*`.
-6. **Handoff para BI & Governança:** O Engenheiro de Dados exporta o `GUIA_ANALISTA_BI_<PROJETO>.md` (gerado na pasta `08_datasets_bi/`) e o entrega à equipe externa de BI para a construção autônoma dos painéis no Power BI. Paralelamente, o time de governança conecta o catálogo ao Lakehouse Mongo / AWS DataZone.
+6. **Handoff para BI & Governança:** O Engenheiro de Dados exporta o `GUIA_ANALISTA_BI_<PROJETO>.md` (gerado na pasta `08_datasets_bi/`) e o entrega à equipe externa de BI para a construção autônoma dos painéis no Power BI. Paralelamente, o time de governança conecta o catálogo ao Lakehouse Mongo / AWS SageMaker Catalog.
 
 ---
 

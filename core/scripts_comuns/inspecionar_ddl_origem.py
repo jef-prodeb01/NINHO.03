@@ -76,31 +76,120 @@ def mapear_tipo_oracle(tipo_origem: str) -> str:
     return t if t else "VARCHAR2(255 CHAR)"
 
 
+def _extrair_blocos_create_table(sql_text: str) -> list:
+    """Localiza instruções CREATE TABLE usando balanceamento de parênteses (suporta cláusulas TABLESPACE/STORAGE do Oracle)."""
+    padrao_inicio = re.compile(
+        r"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\(\s]+)\s*\(",
+        re.IGNORECASE,
+    )
+    blocos = []
+    pos = 0
+    n = len(sql_text)
+    while pos < n:
+        m = padrao_inicio.search(sql_text, pos)
+        if not m:
+            break
+        nome_bruto = m.group(1).strip()
+        idx_abre = m.end() - 1  # posição do '('
+        nivel = 0
+        em_aspas = False
+        idx_fecha = -1
+        i = idx_abre
+        while i < n:
+            ch = sql_text[i]
+            if ch == "'":
+                if em_aspas and i + 1 < n and sql_text[i + 1] == "'":
+                    i += 2
+                    continue
+                em_aspas = not em_aspas
+            elif not em_aspas:
+                if ch == "(":
+                    nivel += 1
+                elif ch == ")":
+                    nivel -= 1
+                    if nivel == 0:
+                        idx_fecha = i
+                        break
+            i += 1
+        if idx_fecha != -1:
+            corpo = sql_text[idx_abre + 1 : idx_fecha]
+            blocos.append((nome_bruto, corpo))
+            pos = idx_fecha + 1
+        else:
+            pos = m.end()
+    return blocos
+
+
+def _dividir_definicoes_colunas(corpo: str) -> list:
+    """Divide os itens internos do CREATE TABLE por vírgula no nível 0 de parênteses."""
+    # Remove comentários de linha antes de dividir
+    linhas_sem_coment = []
+    for ln in corpo.splitlines():
+        ln_s = ln.strip()
+        if ln_s.startswith("--"):
+            continue
+        # Remove comentário inline '-- ...' fora de aspas simples
+        idx_c = ln.find("--")
+        if idx_c != -1 and "'" not in ln[:idx_c]:
+            ln = ln[:idx_c]
+        linhas_sem_coment.append(ln)
+    texto = "\n".join(linhas_sem_coment)
+
+    itens = []
+    atual = []
+    nivel = 0
+    em_aspas = False
+    i = 0
+    n = len(texto)
+    while i < n:
+        ch = texto[i]
+        if ch == "'":
+            if em_aspas and i + 1 < n and texto[i + 1] == "'":
+                atual.append("''")
+                i += 2
+                continue
+            em_aspas = not em_aspas
+            atual.append(ch)
+        elif not em_aspas:
+            if ch == "(":
+                nivel += 1
+                atual.append(ch)
+            elif ch == ")":
+                nivel = max(0, nivel - 1)
+                atual.append(ch)
+            elif ch == "," and nivel == 0:
+                item_str = "".join(atual).strip()
+                if item_str:
+                    itens.append(item_str)
+                atual = []
+            else:
+                atual.append(ch)
+        else:
+            atual.append(ch)
+        i += 1
+
+    ultimo = "".join(atual).strip()
+    if ultimo:
+        itens.append(ultimo)
+    return itens
+
+
 def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
-    """Extrai definições de tabelas, colunas, PKs, FKs e índices de um texto SQL."""
+    """Extrai definições de tabelas, colunas, PKs, FKs, índices e comentários de um texto SQL."""
     tabelas = {}
 
-    # 1. Localizar blocos CREATE TABLE
-    padrao_create = re.compile(
-        r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\(\s]+)\s*\((.*?)\)\s*;",
-        re.IGNORECASE | re.DOTALL,
-    )
-
-    for m in padrao_create.finditer(sql_text):
-        nome_bruto = m.group(1).strip().strip('`"[]')
-        partes_nome = [p.strip('`"[]') for p in nome_bruto.split(".")]
+    # 1. Localizar blocos CREATE TABLE com balanceamento de parênteses
+    for nome_bruto_raw, corpo in _extrair_blocos_create_table(sql_text):
+        partes_nome = [p.strip('`"[]') for p in nome_bruto_raw.split(".")]
+        nome_bruto = ".".join(partes_nome)
         nome_curto = partes_nome[-1].upper()
-        corpo = m.group(2)
 
         colunas = []
         pks = []
         fks = []
 
-        # Divide linhas do corpo respeitando parênteses básicos
-        linhas = [ln.strip().rstrip(",") for ln in corpo.splitlines() if ln.strip() and not ln.strip().startswith("--")]
-
-        for ln in linhas:
-            ln_clean = re.sub(r",\s*$", "", ln).strip()
+        for ln_clean in _dividir_definicoes_colunas(corpo):
+            ln_clean = " ".join(ln_clean.split()).strip()
             if not ln_clean:
                 continue
 
@@ -108,7 +197,9 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
             m_pk = re.search(r"PRIMARY\s+KEY\s*(?:CLUSTERED|NONCLUSTERED)?\s*\(([^)]+)\)", ln_clean, re.IGNORECASE)
             if m_pk and ln_clean.upper().startswith(("CONSTRAINT", "PRIMARY KEY")):
                 cols_pk = [c.strip().strip('`"[]').split()[0].upper() for c in m_pk.group(1).split(",")]
-                pks.extend(cols_pk)
+                for c_pk in cols_pk:
+                    if c_pk not in pks:
+                        pks.append(c_pk)
                 continue
 
             # Constraint FK inline no CREATE TABLE
@@ -119,16 +210,16 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
             )
             if m_fk and ln_clean.upper().startswith(("CONSTRAINT", "FOREIGN KEY")):
                 col_fk = m_fk.group(1).strip().strip('`"[]').upper()
-                tab_ref = m_fk.group(2).strip().strip('`"[]').split(".")[-1].upper()
+                tab_ref = [p.strip('`"[]') for p in m_fk.group(2).strip().split(".")][-1].upper()
                 col_ref = m_fk.group(3).strip().strip('`"[]').upper()
                 fks.append({"coluna": col_fk, "tabela_ref": tab_ref, "coluna_ref": col_ref})
                 continue
 
-            if ln_clean.upper().startswith(("CONSTRAINT", "UNIQUE", "CHECK", "INDEX", "KEY")):
+            if ln_clean.upper().startswith(("CONSTRAINT", "UNIQUE", "CHECK", "INDEX", "KEY", "SUPPLEMENTAL")):
                 continue
 
             # Parse de coluna: nome + tipo + nulabilidade
-            m_col = re.match(r'^[\["`]?([A-Za-z0-9_]+)[\]"`]?\s+(.+)$', ln_clean)
+            m_col = re.match(r'^[\["`]?([A-Za-z0-9_#$]+)[\]"`]?\s+(.+)$', ln_clean)
             if m_col:
                 col_nome = m_col.group(1).upper()
                 resto = m_col.group(2)
@@ -137,9 +228,9 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
                 if re.search(r"\bPRIMARY\s+KEY\b", resto, re.IGNORECASE) and col_nome not in pks:
                     pks.append(col_nome)
 
-                # Extrair apenas a definição de tipo antes de COLLATE / NOT NULL / NULL / DEFAULT / CONSTRAINT
+                # Extrair apenas a definição de tipo antes de COLLATE / NOT NULL / NULL / DEFAULT / CONSTRAINT / GENERATED / ENABLE
                 tipo_raw = re.split(
-                    r"\b(?:COLLATE|NOT\s+NULL|NULL|DEFAULT|CONSTRAINT|PRIMARY\s+KEY|IDENTITY|AUTO_INCREMENT)\b",
+                    r"\b(?:COLLATE|NOT\s+NULL|NULL|DEFAULT|CONSTRAINT|PRIMARY\s+KEY|GENERATED|IDENTITY|AUTO_INCREMENT|ENABLE|DISABLE)\b",
                     resto,
                     maxsplit=1,
                     flags=re.IGNORECASE,
@@ -152,6 +243,7 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
                         "tipo_origem": tipo_raw,
                         "tipo_oracle": mapear_tipo_oracle(tipo_raw),
                         "obrigatorio": "NOT NULL" if not_null else "NULL",
+                        "comentario": "",
                     }
                 )
 
@@ -159,39 +251,78 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
             "arquivo": arquivo_origem,
             "nome_completo_origem": nome_bruto,
             "nome_tabela": nome_curto,
+            "comentario_tabela": "",
             "colunas": colunas,
             "pks": pks,
             "fks": fks,
             "indices": [],
         }
 
-    # 2. Localizar ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY
+    # 2. Localizar ALTER TABLE ... ADD CONSTRAINT ... PRIMARY KEY
+    padrao_alter_pk = re.compile(
+        r"ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+(?:CONSTRAINT\s+[^\s]+\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)",
+        re.IGNORECASE,
+    )
+    for m in padrao_alter_pk.finditer(sql_text):
+        tab = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
+        if tab in tabelas:
+            cols_pk = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(2).split(",")]
+            for c_pk in cols_pk:
+                if c_pk not in tabelas[tab]["pks"]:
+                    tabelas[tab]["pks"].append(c_pk)
+
+    # 3. Localizar ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY
     padrao_alter_fk = re.compile(
         r"ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+(?:CONSTRAINT\s+[^\s]+\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([^\(\s]+)\s*\(([^)]+)\)",
         re.IGNORECASE,
     )
     for m in padrao_alter_fk.finditer(sql_text):
-        tab = m.group(1).strip().strip('`"[]').split(".")[-1].upper()
+        tab = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
         col_fk = m.group(2).strip().strip('`"[]').upper()
-        tab_ref = m.group(3).strip().strip('`"[]').split(".")[-1].upper()
+        tab_ref = [p.strip('`"[]') for p in m.group(3).strip().split(".")][-1].upper()
         col_ref = m.group(4).strip().strip('`"[]').upper()
         if tab in tabelas:
             tabelas[tab]["fks"].append({"coluna": col_fk, "tabela_ref": tab_ref, "coluna_ref": col_ref})
 
-    # 3. Localizar CREATE INDEX
+    # 4. Localizar CREATE [BITMAP|UNIQUE] INDEX
     padrao_idx = re.compile(
-        r"CREATE\s+(?:UNIQUE\s+)?(?:CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\s+([^\s]+)\s+ON\s+([^\(\s]+)\s*\(([^)]+)\)(?:\s*INCLUDE\s*\(([^)]+)\))?",
+        r"CREATE\s+(?:UNIQUE\s+|BITMAP\s+)?(?:CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\s+([^\s]+)\s+ON\s+([^\(\s]+)\s*\(([^)]+)\)(?:\s*INCLUDE\s*\(([^)]+)\))?",
         re.IGNORECASE,
     )
     for m in padrao_idx.finditer(sql_text):
-        nome_idx = m.group(1).strip().strip('`"[]').upper()
-        tab = m.group(2).strip().strip('`"[]').split(".")[-1].upper()
+        nome_idx = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
+        tab = [p.strip('`"[]') for p in m.group(2).strip().split(".")][-1].upper()
         cols_idx = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(3).split(",")]
         cols_inc = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(4).split(",")] if m.group(4) else []
         if tab in tabelas:
             tabelas[tab]["indices"].append(
                 {"nome": nome_idx, "colunas": cols_idx, "include": cols_inc}
             )
+
+    # 5. Localizar COMMENT ON TABLE e COMMENT ON COLUMN (essencial para Camada Semântica)
+    padrao_comm_tab = re.compile(
+        r"COMMENT\s+ON\s+TABLE\s+([^\s]+)\s+IS\s+'((?:[^']|'')*)'",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for m in padrao_comm_tab.finditer(sql_text):
+        tab = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
+        if tab in tabelas:
+            tabelas[tab]["comentario_tabela"] = m.group(2).replace("''", "'").strip()
+
+    padrao_comm_col = re.compile(
+        r"COMMENT\s+ON\s+COLUMN\s+([^\s]+)\s+IS\s+'((?:[^']|'')*)'",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for m in padrao_comm_col.finditer(sql_text):
+        partes = [p.strip('`"[]').upper() for p in m.group(1).strip().split(".")]
+        if len(partes) >= 2:
+            tab = partes[-2]
+            col = partes[-1]
+            if tab in tabelas:
+                for c_obj in tabelas[tab]["colunas"]:
+                    if c_obj["nome_dw"] == col:
+                        c_obj["comentario"] = m.group(2).replace("''", "'").strip()
+                        break
 
     return list(tabelas.values())
 
@@ -472,6 +603,8 @@ def gerar_relatorio_markdown(tabelas: list) -> str:
         linhas.append(f"## Tabela de Origem: `{tab['nome_completo_origem']}` (`{tab['nome_tabela']}`)")
         linhas.append("")
         linhas.append(f"- **Arquivo Fonte:** `{tab['arquivo']}`")
+        if tab.get("comentario_tabela"):
+            linhas.append(f"- **Comentário da Tabela (`COMMENT ON TABLE`):** *{tab['comentario_tabela']}*")
         linhas.append(f"- **Total de Colunas:** `{len(tab['colunas'])}`")
         linhas.append(f"- **Chave Primária (PK):** `{', '.join(tab['pks']) if tab['pks'] else 'NÃO DECLARADA NO DDL'}`")
         linhas.append(f"- **Chaves Estrangeiras (FKs):** `{len(tab['fks'])}` relacionamento(s)")
@@ -485,27 +618,28 @@ def gerar_relatorio_markdown(tabelas: list) -> str:
         linhas.append("")
         linhas.append("### Matriz De/Para de Colunas (100% Fiel à Origem)")
         linhas.append("")
-        linhas.append("| # | Coluna na Origem | Coluna no DW (Oracle) | Tipo Origem | Tipo Oracle Sugerido | Nulabilidade | Papel Dimensional Sugerido |")
-        linhas.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
+        linhas.append("| # | Coluna na Origem | Coluna no DW / Semântica | Tipo Origem | Tipo Oracle Sugerido | Nulabilidade | Papel Dimensional / Semântico | Comentário (`COMMENT ON COLUMN`) |")
+        linhas.append("| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |")
 
         fks_map = {fk["coluna"]: fk["tabela_ref"] for fk in tab["fks"]}
         for idx, col in enumerate(tab["colunas"], 1):
             nm = col["nome_dw"]
             if nm in tab["pks"]:
-                papel = "🔑 Chave Natural (PK Origem)"
+                papel = "🔑 Chave Natural / Surrogate Key (PK)"
             elif nm in fks_map:
-                papel = f"🔗 FK para Dimensão (`DIM_{fks_map[nm]}`)"
+                papel = f"🔗 FK para Dimensão (`{fks_map[nm]}`)"
             elif nm in diag["colunas_data"]:
                 papel = "📅 Marco Temporal / FK `DIM_TEMPO`"
             elif nm.startswith(("SIN_", "IND_", "FLG_", "STA_", "TIPO_")):
-                papel = "🏷️ Flag / Atributo de Status ou Degenerado"
-            elif nm.startswith(("VAL_", "VLR_", "QTD_", "TOT_")):
+                papel = "🏷️ Flag / Atributo de Status ou Domínio"
+            elif nm.startswith(("VAL_", "VLR_", "QTD_", "TOT_", "MED_", "PCT_")):
                 papel = "📊 Métrica Quantitativa"
             else:
                 papel = "📝 Atributo Descritivo"
 
+            comm_col = col.get("comentario", "").replace("|", "/").replace("\n", " ") or "—"
             linhas.append(
-                f"| {idx} | `{col['nome_original']}` | `{nm}` | `{col['tipo_origem']}` | `{col['tipo_oracle']}` | `{col['obrigatorio']}` | {papel} |"
+                f"| {idx} | `{col['nome_original']}` | `{nm}` | `{col['tipo_origem']}` | `{col['tipo_oracle']}` | `{col['obrigatorio']}` | {papel} | {comm_col} |"
             )
 
         linhas.append("")
@@ -554,7 +688,7 @@ def main():
         dest="caminho",
         type=str,
         default="",
-        help="Pasta ou arquivo DDL (.sql) para inspecionar (padrão: entrega/planejador_dw/ddl/)",
+        help="Pasta ou arquivo DDL (.sql) para inspecionar (padrão: entrega/planejador_dw/ddl/ e entrega/camada_semantica/ddl/)",
     )
     parser.add_argument(
         "--saida",
@@ -579,6 +713,7 @@ def main():
         for d in [
             base_dir / "entrega" / "planejador_dw" / "ddl",
             base_dir / "entrega" / "planejador_dw" / "schemas_origem",
+            base_dir / "entrega" / "camada_semantica" / "ddl",
             base_dir / "modulos" / "planejador_dw" / "entrada" / "ddl",
         ]:
             if d.exists():
@@ -591,7 +726,7 @@ def main():
     print(f"{CIANO}{NEGRITO}{'=' * 75}{RESET}\n")
 
     if not alvos:
-        print(f"  {AMARELO}[AVISO]{RESET} Nenhum arquivo DDL (.sql/.txt) encontrado em 'entrega/planejador_dw/ddl/'.")
+        print(f"  {AMARELO}[AVISO]{RESET} Nenhum arquivo DDL (.sql/.txt) encontrado em 'entrega/planejador_dw/ddl/' ou 'entrega/camada_semantica/ddl/'.")
         print(f"  Deposite o DDL de origem ou informe '--caminho <arquivo.sql>'.\n")
         sys.exit(0)
 
@@ -608,8 +743,9 @@ def main():
     for tab in todas_tabelas:
         diag = diagnosticar_cdc_e_tuning(tab)
         radar = sugerir_oportunidades_analiticas(tab)
+        cols_com_comentario = sum(1 for c in tab["colunas"] if c.get("comentario"))
         print(f"  {VERDE}[TABELA]{RESET} {NEGRITO}{tab['nome_completo_origem']}{RESET} ({len(tab['colunas'])} colunas)")
-        print(f"    • PK: {', '.join(tab['pks']) if tab['pks'] else 'Nenhuma'} | FKs: {len(tab['fks'])} | Índices: {len(tab['indices'])}")
+        print(f"    • PK: {', '.join(tab['pks']) if tab['pks'] else 'Nenhuma'} | FKs: {len(tab['fks'])} | Índices: {len(tab['indices'])} | Comentários: {cols_com_comentario}/{len(tab['colunas'])}")
         print(f"    • Colunas de Data: {', '.join(diag['colunas_data']) if diag['colunas_data'] else 'Nenhuma'}")
         print(f"    • Diagnóstico CDC: {diag['estrategia_cdc']}")
         print(f"    • Filtro Sugerido: {diag['filtro_sugerido']}")

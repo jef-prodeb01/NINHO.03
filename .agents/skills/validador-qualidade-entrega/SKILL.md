@@ -40,7 +40,7 @@ python core/scripts_comuns/validar_entrega.py all
 
 ## 2. Inspetor Determinístico de DDLs de Origem (`inspecionar_ddl_origem.py`)
 
-Extrai de forma determinística 100% das colunas, PKs, FKs, índices e diagnostica colunas de CDC incremental dos arquivos `.sql` em `entrega/planejador_dw/schemas_origem/`:
+Extrai de forma determinística 100% das colunas, PKs, FKs, índices e diagnostica colunas de CDC incremental dos arquivos `.sql` em `entrega/planejador_dw/ddl/`:
 
 ```bash
 python core/scripts_comuns/inspecionar_ddl_origem.py

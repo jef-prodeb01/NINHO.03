@@ -62,8 +62,8 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
 
 1. **Fase 1 — Coleta, Inspeção e Radar de KPIs:** Valida `INTAKE_SEMANTICA.md`, inspeciona DDLs e amostras em `entrega/camada_semantica/` (executando `inspecionar_ddl_origem.py` sobre o DDL do DW).
 2. **Fase 2 — Documento de Entendimento & Expansão Consultiva:** Define grão, aditividade de medidas, hierarquias, joins, armadilhas e apresenta as sugestões do **Radar Consultivo da IA** (novos KPIs, regras e perguntas) separadas do escopo do cliente para aprovação do engenheiro antes de codificar.
-3. **Fase 3 — Geração dos Scripts SQL:**
+3. **Fase 3 — Geração dos Scripts SQL (com base em `.agents/skills/camada-semantica-oracle/templates/`):**
    - Views Analíticas em `saida/camada_semantica/vw_analiticas/` (Dimensões vigentes, Eventos, KPIs do cliente + KPIs sugeridos aprovados).
-   - Scripts META_ em `saida/camada_semantica/meta_projeto/` (do `01_meta_glossario.sql` ao `08_meta_valor_dominio.sql`).
-   - Script de validações cruzadas `09_validacoes.sql`.
-4. **Fase 4 — Catálogo e Documentação:** Preenche `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `PROJETO_VERSION.md` com base nos modelos de `templates/`.
+   - Scripts META_ em `saida/camada_semantica/meta_projeto/` (do `01_meta_glossario.sql` ao `08_meta_valor_dominio.sql`, além de `02_rls.sql` se aplicável).
+   - Script de validações cruzadas `saida/camada_semantica/meta_projeto/09_validacoes.sql`.
+4. **Fase 4 — Catálogo e Documentação:** Preenche `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `documentacao/catalogo_projetos/PROJETO_VERSION.md`.

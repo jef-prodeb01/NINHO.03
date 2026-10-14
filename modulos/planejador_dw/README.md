@@ -12,7 +12,7 @@ Módulo corporativo para **planejamento, arquitetura e modelagem dimensional aut
 > 4. Gera a orquestração centralizada no ODI via `OdiOSCommand` (SSH).
 > 5. Produz os DDLs otimizados para Oracle (B-Tree em dimensões, SCD2, Particionamento e linha `-1`).
 > 6. Entrega pipelines do Apache Hop (`.hpl` / `.hwf`) e extratores Python resilientes.
-> 7. Entrega datasets do Apache Superset (`.yaml`) e diretrizes de modelagem Power BI.
+> 7. Entrega diretrizes e guia completo de modelagem para Power BI (`GUIA_ANALISTA_BI_<PROJETO>.md`).
 > 8. Integra automaticamente com o **Módulo de Camada Semântica** (Views `VW_EVENTO`, `VW_KPI_*` e 8 tabelas `META_*`).
 
 ---
@@ -48,7 +48,6 @@ flowchart TD
 
     subgraph CONSUMO["5. Camada Analítica de Consumo"]
         FATO --> BI_PBI["Power BI (Import Mode / Star Schema)"]
-        FATO --> BI_SUP["Apache Superset (YAML Datasets)"]
         FATO --> SEM_MOD["Módulo Camada Semântica (8 Tabelas META_*)"]
     end
 
@@ -69,7 +68,7 @@ modulos/planejador_dw/
 ├── AGENTS.md                      # Protocolo de raciocínio e regras estritas para a IA
 ├── INTAKE_DW.md                   # Formulário de entrada (fontes, regras, perguntas do cliente)
 │
-├── entrada/                       # Insumos fornecidos pelo engenheiro de dados
+├── ../../entrega/planejador_dw/   # Pasta oficial de entrega dos insumos pelo engenheiro de dados
 │   ├── README.md                  # Guia de como fornecer os insumos
 │   ├── ddl/                       # DDLs das fontes relacionais (OLTP)
 │   ├── amostras/                  # Amostras reais de dados (10 a 50 linhas)
@@ -88,7 +87,6 @@ modulos/planejador_dw/
     ├── 08_apache_hop_pipeline_template.hpl # Pipeline XML do Apache Hop
     ├── 09_apache_hop_workflow_template.hwf # Workflow XML do Apache Hop
     ├── 10_python_api_extractor_template.py # Extrator Python com OAuth2, flatten e oracledb
-    ├── 11_superset_dataset_template.yaml   # Dataset declarativo YAML do Superset
     ├── 12_guia_analista_bi_template.md     # Template corporativo do guia entregável para Power BI
     ├── 13_testes_integridade_template.sql  # Template de validações pós-carga do DW
     ├── 14_dicionario_dados_template.html   # Template interativo do dicionário de dados
@@ -110,7 +108,7 @@ A estrutura gerada inclui:
 - `05_procedimentos_manutencao/`: Script da procedure `PRC_POS_CARGA_FATO` (se Estratégia A).
 - `06_pipelines_hop/`: Arquivos `.hpl` e `.hwf` para ingestão de arquivos (se Apache Hop habilitado).
 - `07_extratores_python/`: Scripts `.py` para ingestão de APIs (se Extratores Python habilitado).
-- `08_datasets_bi/`: Datasets YAML do Superset e o entregável `GUIA_ANALISTA_BI_<PROJETO>.md` para a equipe externa de BI.
+- `08_datasets_bi/`: Entregável `GUIA_ANALISTA_BI_<PROJETO>.md` para a equipe externa de BI.
 - `09_relatorio_estrategias/`: Relatório completo `RELATORIO_ESTRATEGIAS.md`.
 - `10_testes_integridade/`: Script de validação pós-carga `13_testes_integridade.sql`.
 - `11_dicionario_dados/`: Dicionário interativo `dicionario_dados.html`.

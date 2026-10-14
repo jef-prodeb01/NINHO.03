@@ -168,8 +168,7 @@ END;
 
 ---
 
-## 6. Consumo Analítico (Power BI & Superset)
+## 6. Consumo Analítico (Power BI & Camada Semântica)
 
 1. **Power BI:** Conectar em modo **Import**, estabelecer relacionamento 1:* da `DIM_*(DIMENSION_KEY)` para `FATO_*(DIM_*)` com direção de filtro cruzado **Single**, e criar tabela dedicada `_Medidas`.
-2. **Apache Superset:** Dataset declarative exportado em `11_superset_dataset_template.yaml` apontando para a view semântica ou tabela Fato.
-3. **Módulo Camada Semântica:** O projeto está 100% aderente para gerar as views `VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*` e as 8 tabelas `META_*`.
+2. **Módulo Camada Semântica:** O projeto está 100% aderente para gerar as views `VW_DIM_*_ATUAL`, `VW_EVENTO`, `VW_KPI_*` e as 8 tabelas `META_*`.

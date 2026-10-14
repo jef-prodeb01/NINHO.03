@@ -38,11 +38,11 @@ def gerar_dados_mock(num_linhas: int, caminho_saida: str):
 
     colunas = [
         "ID_TRANSACAO",
-        "DTC_EVENTO",
-        "COD_DATA_AAAAMMDD",
-        "SK_DEPARTAMENTO",
+        "DTC_COMPLETA",
+        "DIM_TEMPO",
+        "DIM_DEPARTAMENTO",
         "DES_DEPARTAMENTO",
-        "SK_CATEGORIA",
+        "DIM_CATEGORIA",
         "DES_CATEGORIA",
         "DES_STATUS",
         "IND_DEFERIDO",

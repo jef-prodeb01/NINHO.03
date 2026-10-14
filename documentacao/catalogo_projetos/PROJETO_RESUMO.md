@@ -14,12 +14,11 @@
 > **⚠️ PROJETO NÃO INICIALIZADO**
 >
 > Este arquivo será preenchido pela IA após validação do engenheiro.
-> O modelo base está em `exemplo_tabelas/PROJETO_RESUMO_MODELO.md`.
 >
 > Para inicializar:
-> 1. Encaminhe os insumos (DDL, amostras, regras) ao agente
-> 2. O agente gera o conteúdo em `exemplo_tabelas/PROJETO_RESUMO_MODELO.md`
-> 3. Após validação, o conteúdo é copiado para cá
+> 1. Preencha [`modulos/camada_semantica/INTAKE_SEMANTICA.md`](../../modulos/camada_semantica/INTAKE_SEMANTICA.md) e deposite os insumos em `entrega/camada_semantica/` (ou execute `/concluir-dw` se veio do Planejador de DW)
+> 2. O agente gera `saida/camada_semantica/DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` com o Radar Consultivo da IA
+> 3. Após validação e geração dos scripts SQL em `saida/camada_semantica/`, este arquivo é consolidado automaticamente
 
 ---
 
@@ -27,7 +26,7 @@
 
 1. Leia [README.md](../../README.md) para entender o processo
 2. Encaminhe [GUIA_ENGENHEIRO_DW.md](../guias/GUIA_ENGENHEIRO_DW.md) ou [GUIA_ENGENHEIRO_SEMANTICA.md](../guias/GUIA_ENGENHEIRO_SEMANTICA.md) ao engenheiro
-3. Aguarde os insumos em `entrega/`
+3. Aguarde os insumos em `entrega/camada_semantica/`
 4. Confirme ao agente para gerar o documento de entendimento
 
 ---
@@ -38,20 +37,20 @@
 
 | Arquivo | Finalidade |
 |---------|------------|
-| `inserts/vw_analiticas/VW_<PROJETO>_DIM_<NOME>.sql` | Views DIM (uma por dimensão) |
-| `inserts/vw_analiticas/VW_<PROJETO>_EVENTO.sql` | Views EVENTO (uma por fato) |
-| `inserts/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` | Views KPI (uma por pergunta) |
-| `inserts/meta_projeto/01_create_meta_tables.sql` | CREATE TABLE das 8 META_ |
-| `inserts/meta_projeto/01_meta_glossario.sql` | INSERTs META_GLOSSARIO |
-| `inserts/meta_projeto/02_meta_metrica.sql` | INSERTs META_METRICA |
-| `inserts/meta_projeto/03_meta_objeto.sql` | INSERTs META_OBJETO |
-| `inserts/meta_projeto/04_meta_relacionamento.sql` | INSERTs META_RELACIONAMENTO |
-| `inserts/meta_projeto/05_meta_regra_negocio.sql` | INSERTs META_REGRA_NEGOCIO |
-| `inserts/meta_projeto/06_meta_consulta_negocio.sql` | INSERTs META_CONSULTA_NEGOCIO |
-| `inserts/meta_projeto/07_meta_orientacao_ia.sql` | INSERTs META_ORIENTACAO_IA |
-| `inserts/meta_projeto/08_meta_valor_dominio.sql` | INSERTs META_VALOR_DOMINIO |
-| `inserts/meta_projeto/02_rls.sql` | RLS opcional (só se houver acesso restrito) |
-| `inserts/meta_projeto/09_validacoes.sql` | Checagens de integridade entre META_ e teste de execução |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_DIM_<NOME>_ATUAL.sql` | Views DIM vigentes (uma por dimensão) |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_EVENTO.sql` | Views EVENTO (uma por fato) |
+| `saida/camada_semantica/vw_analiticas/VW_<PROJETO>_KPI_<NOME>.sql` | Views KPI (consolidadas por indicador/recorte) |
+| `saida/camada_semantica/meta_projeto/01_create_meta_tables.sql` | CREATE TABLE das 8 META_ + constraints + triggers |
+| `saida/camada_semantica/meta_projeto/01_meta_glossario.sql` | MERGE/INSERTs META_GLOSSARIO |
+| `saida/camada_semantica/meta_projeto/02_meta_metrica.sql` | MERGE/INSERTs META_METRICA |
+| `saida/camada_semantica/meta_projeto/03_meta_objeto.sql` | MERGE/INSERTs META_OBJETO |
+| `saida/camada_semantica/meta_projeto/04_meta_relacionamento.sql` | MERGE/INSERTs META_RELACIONAMENTO |
+| `saida/camada_semantica/meta_projeto/05_meta_regra_negocio.sql` | MERGE/INSERTs META_REGRA_NEGOCIO |
+| `saida/camada_semantica/meta_projeto/06_meta_consulta_negocio.sql` | MERGE/INSERTs META_CONSULTA_NEGOCIO |
+| `saida/camada_semantica/meta_projeto/07_meta_orientacao_ia.sql` | MERGE/INSERTs META_ORIENTACAO_IA |
+| `saida/camada_semantica/meta_projeto/08_meta_valor_dominio.sql` | MERGE/INSERTs META_VALOR_DOMINIO |
+| `saida/camada_semantica/meta_projeto/02_rls.sql` | RLS opcional (só se houver acesso restrito) |
+| `saida/camada_semantica/meta_projeto/09_validacoes.sql` | Checagens de integridade entre META_ e teste de execução |
 
 ### 0.2 Arquitetura em 3 Camadas
 
