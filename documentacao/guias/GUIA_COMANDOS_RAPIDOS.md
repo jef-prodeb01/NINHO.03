@@ -15,8 +15,11 @@ Clique em qualquer tópico ou comando abaixo para navegar diretamente para a ins
   - [1.3 Execução e Teste de Extratores de APIs REST](#13-extratores-python-api)
   - [1.4 Transicionador Automatizado (Planejador DW -> Camada Semântica)](#14-transicionador-dw-semantica)
   - [1.5 Inspetor Determinístico de DDLs de Origem (`inspecionar_ddl_origem.py`)](#15-inspetor-ddl-origem)
-  - [1.6 Auditor Preditivo de Mapeamentos ODI 12c (`auditar_mapa_odi.py`)](#16-auditor-mapa-odi)
+  - [1.6 Auditor Preditivo de Projetos ODI 12c (`auditar_mapa_odi.py`)](#16-auditor-mapa-odi)
   - [1.7 Gerenciador de Ciclo de Vida do Projeto (`gerenciar_projeto.py`)](#17-gerenciador-ciclo-vida)
+  - [1.8 Auditor de Esteiras Apache Hop, FTPS e Python (`auditar_esteira_hop.py`)](#18-auditor-esteira-hop)
+  - [1.9 Inspetor e Engenharia Reversa de Power BI (`inspecionar_pbix.py`)](#19-inspetor-pbix)
+  - [1.10 Inspetor Gate 0.5 de Governança de Dados (`inspecionar_insumos_governanca.py`)](#110-inspetor-governanca)
 - [2. Comandos Operacionais do Planejador de DW (Oracle)](#2-comandos-planejador-dw)
   - [2.1 Ordem Canônica de Execução dos DDLs Físicos](#21-ordem-execucao-ddls)
   - [2.2 Gerenciamento de Sequences e Surrogate Keys](#22-sequences-surrogate-keys)
@@ -195,6 +198,45 @@ python core/scripts_comuns/gerenciar_projeto.py --resetar
 
 # 4. Executar a limpeza física preservando intactos os .gitkeep e README.md
 python core/scripts_comuns/gerenciar_projeto.py --resetar --confirmar
+```
+
+---
+
+<a id="18-auditor-esteira-hop"></a>
+### 1.8 Auditor de Esteiras Apache Hop, FTPS e Python (`auditar_esteira_hop.py`)
+> **Cenário:** Audita projetos completos do Apache Hop 2.x (`.hpl`, `.hwf`, `.json`), scripts Shell de FTPS (`.sh`) e extratores Python (`.py`). Detecta padrões corporativos (`ETA_ETAPAS_CARGA`, `CONTROLE_MODIFICACAO_ARQUIVOS`, `WorkflowLogging`, `HopPassword`, `TAB_*_ERRO`) e aplica as heurísticas `HOP-H1` a `HOP-H8` (senhas em texto aberto, contaminação de copy-paste entre projetos, hops invertidos, arquivos duplicados, caminhos sem barra `/` e `inherit_all_vars=N`).
+
+```bash
+# 1. Auditar uma pasta contendo um ou vários projetos Apache Hop
+python core/scripts_comuns/auditar_esteira_hop.py <caminho_da_pasta_hop>
+
+# 2. Auditar e salvar o diagnóstico completo em arquivo Markdown
+python core/scripts_comuns/auditar_esteira_hop.py <caminho_da_pasta_hop> --out saida/planejador_dw/09_relatorio_estrategias/RELATORIO_AUDITORIA_HOP.md
+```
+
+---
+
+<a id="19-inspetor-pbix"></a>
+### 1.9 Inspetor e Engenharia Reversa de Power BI (`inspecionar_pbix.py`)
+> **Cenário:** Descompacta em memória arquivos `.pbix` nativos do Power BI (`Report/Layout`, `DiagramLayout`, `Connections`, `DataModelSchema`), extrai tabelas, medidas DAX, relacionamentos, traduz filtros visuais/páginas ocultos em árvore AST e executa as heurísticas `PBIX-H1` a `PBIX-H5`.
+
+```bash
+# 1. Inspecionar um arquivo .pbix específico ou pasta com vários relatórios .pbix
+python core/scripts_comuns/inspecionar_pbix.py entrega/planejador_dw/
+
+# 2. Salvar o inventário e diagnóstico reverso em Markdown
+python core/scripts_comuns/inspecionar_pbix.py <caminho_pbix> --out saida/planejador_dw/09_relatorio_estrategias/ENGENHARIA_REVERSA_PBIX.md
+```
+
+---
+
+<a id="110-inspetor-governanca"></a>
+### 1.10 Inspetor Gate 0.5 de Governança de Dados (`inspecionar_insumos_governanca.py`)
+> **Cenário:** Audita planilhas `.xlsx` (`Dados - Insumos` / `Dicionário de Dados`) e amostras `.csv` enviadas pelo cliente em `entrega/governanca_dados/`. Se houver campos ou classificações LGPD em branco ou CSVs com colunas fantasmas (`;;;`), bloqueia o processo (Gate 0.5) e gera o **Relatório Formal de Devolução ao Cliente**. Se aprovado, gera a Matriz DE/PARA MongoDB PRODEB.
+
+```bash
+# Auditar insumos depositados em entrega/governanca_dados/
+python core/scripts_comuns/inspecionar_insumos_governanca.py
 ```
 
 ---

@@ -7,6 +7,7 @@ Este diretório reúne todos os manuais, checklists de qualidade e a documentaç
 ## 📁 Estrutura do Diretório
 
 - **`guias/`**
+  - 👋 [**`GUIA_INICIAL_ENGENHEIRO.md`**](guias/GUIA_INICIAL_ENGENHEIRO.md): **Guia de Boas-Vindas & Onboarding para Iniciantes**. Explica de forma acessível como o projeto funciona, os 6 cenários práticos de uso (DW, ODI, Hop, PBIX, Semântica e Governança), o que cada pasta/script/skill faz e como executar a primeira tarefa em 5 passos.
   - ⚡ [**`GUIA_COMANDOS_RAPIDOS.md`**](guias/GUIA_COMANDOS_RAPIDOS.md): **Central Oficial de Comandos Rápidos & Cheat Sheet**. Possui sumário interativo 100% ancorado cobrindo scripts Python, DDLs/DMLs do DW, Views e Catálogo das 8 tabelas `META_*`, Apache Hop CLI, Shell/ODI, diagnósticos de DBA no Oracle, fórmulas DAX e Prompts para a IA.
   - 📘 [**`GUIA_ENGENHEIRO_DW.md`**](guias/GUIA_ENGENHEIRO_DW.md): Manual operacional passo a passo para o engenheiro utilizar o módulo Planejador de DW, incluindo comandos ODI, Hop, Python e queries de validação.
   - 🧠 [**`GUIA_ENGENHEIRO_SEMANTICA.md`**](guias/GUIA_ENGENHEIRO_SEMANTICA.md): Manual operacional para o módulo Camada Semântica e Metadados Ativos.

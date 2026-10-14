@@ -89,9 +89,16 @@ A skill `gerador-consultas-odi` não atua apenas como geradora passiva de SQL, m
 - **Anti-Padrão Previsto:** Bloqueio serializado na JVM do ODI Agent — cadastros leves de 500 linhas ficam travados esperando tabelas pesadas de milhões de linhas terminarem.
 - **Prescrição Preditiva:** Desacoplamento em mapeamentos atômicos e orquestração via Pacote com chamadas assíncronas paralelas (`OdiStartScen -ASYNC=YES`).
 
-### 3. Detecção de Funil de I/O no Driver JDBC
-- **Gatilho de Inspeção:** Transferência Oracle-para-Oracle configurada com `LKM SQL to Oracle (Built-In)`.
-- **Anti-Padrão Previsto:** Trafegar milhões de registros como objetos Java na memória heap do ODI Agent, gravando em tabelas intermediárias `C$_`.
+### 3. Detecção de Funil de I/O no Driver JDBC e Loops Multi-Tenant Intra-Oracle (H5 / H9)
+- **Gatilho de Inspeção:** Transferência Oracle-para-Oracle configurada com `LKM SQL to Oracle (Built-In)` ou loop de schemas (`#V_SCHEMA` / `ODI_SCHEMA_CTRL` descobertos na mesma instância via `all_users`) recriando tabelas `C$_` a cada iteração.
+- **Anti-Padrão Previsto:** Trafegar milhões de registros como objetos Java na memória heap do ODI Agent, executando `CREATE TABLE C$_` + bind row-by-row + `DROP TABLE C$_` para cada município/órgão.
+- **Prescrição Preditiva:** Eliminar o `LKM SQL to Oracle` quando os schemas residirem no mesmo Oracle, realizando `INSERT /*+ APPEND */ INTO STG_... SELECT ... FROM #V_SCHEMA.TABELA` direto no banco (ou via `LKM Oracle to Oracle Pull (DB Link)` entre instâncias distintas).
+
+### 4. Qualidade Dimensional em Cargas de Dimensões SCD2 e Tabelas Fato (H6 / H7 / H8)
+- **H6 — Prevenção de Fan Trap em Lookups de Fato:** Todo join/lookup de Fato (`FATO_*` / `FAT_*`) contra dimensões SCD Tipo 2 (`DIM_*`) deve filtrar obrigatoriamente o registro ativo (`AND DIM.DTC_EXPIRACAO IS NULL`), evitando multiplicação de linhas quando houver histórico.
+- **H7 — Integridade do Hash de Mudança SCD Tipo 2 (`DES_ATUALIZAR`):** Proibido fixar literal constante (`'X'`) na coluna `DES_ATUALIZAR` das tabelas `ODI_DIM_*`, pois isso torna a condição `STG.DES_ATUALIZAR <> DIM.DES_ATUALIZAR` sempre falsa e desativa o histórico SCD2. Utilizar sempre `STANDARD_HASH(col1 || '|' || col2, 'MD5')`.
+- **H8 — Joins Temporais com `TRUNC()` e Agregação Estrita no `GROUP BY`:** Todo join de coluna `DATE`/`TIMESTAMP` com `DIM_TEMPO.DTC_COMPLETA` deve aplicar `TRUNC(coluna_data)`, e fórmulas de tempo/duração (`(DT_FIM - DT_INI) * 86400`) devem estar envolvidas em `SUM(...)` ou `AVG(...)`, nunca soltas na cláusula `GROUP BY`.
+
 ---
 
 ## 🤝 Protocolo de Alinhamento e Copiloto com o Engenheiro (Anti-Caixa-Preta)
@@ -112,13 +119,13 @@ O agente atua como um **Copiloto Consultivo**:
 
 ## 🛠️ Frente de Consultoria e Tuning de Projetos ODI Existentes
 
-Quando o engenheiro fornecer um objeto de um projeto legado para análise de lentidão (XML de Mapa, Pacote, Procedure ou SQL do Operador):
-1. **Auditoria Estática Automatizada via CLI:**
-   - Execute o script oficial do NINHO:
+Quando o engenheiro fornecer um objeto ou diretório completo de um projeto legado para análise (XML de Mapa `MAP_*`, Cenário compilado `SCEN_*`, Pacote `PACK_*`, Procedure `TRT_*` ou Variável `VAR_*`):
+1. **Auditoria Estática Automatizada via CLI (Arquivo Único ou Diretório Completo):**
+   - Execute o script oficial v2.0 do NINHO:
      ```bash
-     python core/scripts_comuns/auditar_mapa_odi.py <caminho_mapa.xml> --output <relatorio.md>
+     python core/scripts_comuns/auditar_mapa_odi.py <caminho_xml_ou_pasta_odi> --output <relatorio.md>
      ```
-   - O auditor varre o XML, identifica tabelas, colunas de update, KMs, opções físicas e constraints faltantes.
+   - O auditor varre mapas, cenários compilados (`SnpScenTask`), pacotes, procedures e variáveis, aplicando as **9 Heurísticas Preditivas (`H1` a `H9`)**.
 2. **Auditar o Objeto Manualmente (se fornecido via texto/SQL):**
    - Inspecione KMs e opções (`FLOW_CONTROL`, `INSERT_HINT`, `COMMIT`, `TRUNCATE`).
    - Avalie se há joins cartesianos ou falta de predicados sargáveis.
