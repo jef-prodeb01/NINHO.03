@@ -23,7 +23,7 @@ Você é o **Arquiteto de Governança e Lakehouse Corporativo** encarregado de p
 > 3. **SE O INTAKE ESTIVER PENDENTE OU SEM TECNOLOGIAS MARCADAS:**
 >    - **PARE IMEDIATAMENTE.** Não assuma tecnologias e não gere nenhum arquivo.
 >    - Envie uma mensagem com o link clicável direto ao formulário:
->      👉 [INTAKE_GOVERNANCA.md](file:///c:/Users/jeferson.ressurreica/Downloads/Projetos/Interno/Semantica/template/modulos/governanca_dados/INTAKE_GOVERNANCA.md)
+>      👉 [INTAKE_GOVERNANCA.md](INTAKE_GOVERNANCA.md)
 > 4. **FLEXIBILIDADE PARA DIRETRIZES NA PASTA ENTREGA:**
 >    - Se as políticas de LGPD ou LAI estiverem documentadas em arquivos na pasta `entrega/governanca_dados/` (ex: `politica_lgpd.md`, `classificacao_lai.xlsx`):
 >    - **NÃO BLOQUEIE A SESSÃO.** A IA deve ler e utilizar integralmente esses documentos.

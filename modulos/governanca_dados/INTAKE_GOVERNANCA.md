@@ -64,3 +64,21 @@ Marque os artefatos que devem ser gerados em `saida/governanca_dados/`:
 - [x] **Formulários de Metadados e Mapeamentos AWS DataZone (`aws_datazone/`)**
 - [x] **Relatório de Conformidade e Classificação LGPD/LAI**
 
+---
+
+## Seção 4 — Informações Complementares, Regras Específicas e Observações Livres do Engenheiro
+
+> 📝 **ESPAÇO ABERTO DO ENGENHEIRO DE DADOS:**  
+> Utilize esta seção para registrar **qualquer regra específica de governança, decreto estadual/municipal de sigilo, política de retenção customizada, exceção de mascaramento ou orientação técnica** que não esteja contemplada nos campos acima.
+
+- **Regras Específicas de Mascaramento / Anonimização ou Retenção:**
+  - `[Ex: O campo NUM_PROCESSO_JUDICIAL deve ser mascarado apenas quando IND_SEGREDO_JUSTICA = 'S']`
+- **Políticas Internas ou Decretos Específicos do Órgão/Cliente:**
+  - `[Ex: Portaria Interna nº 123/2025 exige retenção mínima de 10 anos para logs de auditoria financeira]`
+- **Contexto Adicional ou Instruções Livres para a IA:**
+```text
+[Escreva ou cole aqui livremente qualquer informação complementar, regra específica do projeto
+ou instrução direta para o Agente considerar na Governança de Dados...]
+```
+
+

@@ -41,9 +41,9 @@ CREATE TABLE USUARIO_SEGMENTOS (
 
 ## 📂 Destino Canônico de Saída
 
-Quando acionada, os artefatos de segurança devem ser gerados em:
-- `saida/camada_semantica/seguranca/02_rls_politicas.sql` (Criação de contextos, funções de predicado e políticas VPD).
-- `saida/camada_semantica/seguranca/01_usuario_segmentos.sql` (DDL da tabela de permissões e inserts de carga inicial).
+Quando acionada, os artefatos de segurança devem ser gerados no arquivo canônico da Camada Semântica:
+- `saida/camada_semantica/meta_projeto/02_rls.sql` (DDL da tabela `USUARIO_SEGMENTOS`, inserts de carga inicial, criação de contextos, funções de predicado e políticas VPD).
 
 Consulte o template completo em [template_rls_vpd.sql](./templates/template_rls_vpd.sql).
+
 

@@ -79,3 +79,33 @@ Todas as 8 tabelas `META_*` possuem a coluna:
 Nunca deixe um placeholder `<...>` sem substituir em scripts entregues
 — é o primeiro item do checklist final em
 [CHECKLIST_VALIDACAO.md](../../documentacao/checklists/CHECKLIST_VALIDACAO.md).
+
+---
+
+## Padrões de Qualidade de Código SQL nas Views e Catálogo
+
+1. **Grão Canônico Obrigatório em `COMMENT ON TABLE`:**
+   - Toda view analítica deve iniciar seu comentário com a declaração explícita do grão:
+     `COMMENT ON TABLE VW_<PROJETO>_EVENTO IS 'Uma linha representa...';`
+2. **Decodificação de Domínios com Fallback Seguro:**
+   - Substituir siglas ou códigos obscuros da origem por `CASE WHEN ... ELSE 'NÃO IDENTIFICADO' END`, registrando também o mapeamento em `META_VALOR_DOMINIO`.
+3. **Correção Semântica de Nomes Físicos Legados:**
+   - Quando a tabela física contiver abreviações truncadas ou erros de grafia herdados da fonte (ex: `STA_DOCUMETO`, `DS_PROCEDIMETO`), a view deve expor o alias corporativo corrigido (`SITUACAO_DOCUMENTO`, `DS_PROCEDIMENTO`).
+4. **Biblioteca Pergunta-SQL (`META_CONSULTA_NEGOCIO`):**
+   - Utilizar bind variables tipadas (`:P_DT_INICIO`, `:P_DT_FIM`, `:P_COD_ORGAO`) com `CAST` explícito em CTE de entrada (`SELECT CAST(:P_DT_INICIO AS DATE) FROM DUAL`) para prevenir `ORA-00932`.
+   - Preencher sempre `PAINEL_RELACIONADO` e `OBJETOS_CHAVE`.
+5. **Proibição de Prefixos Banidos:**
+   - Nunca utilizar prefixos `SEM_VW_`, `SEC_` ou `TST_` nos objetos entregues. As views seguem estritamente `VW_<PROJETO>_*` e `MV_<PROJETO>_*`.
+
+---
+
+## As 5 Dimensões de Validação para IA (Quality Gates Text-to-SQL)
+
+| Dimensão | O que Avaliar | Critério de Aceite |
+| :--- | :--- | :--- |
+| **1. Sintaxe** | Compatibilidade Oracle 12c+ | Uso de `FETCH FIRST n ROWS ONLY` (sem `LIMIT`), maiúsculas, binds tipados e sem erros de parse. |
+| **2. Semântica** | Consistência com o Negócio | Uso de fórmulas exatas de `META_METRICA`, respeito à aditividade (nunca somar taxa ou média) e joins de `META_RELACIONAMENTO`. |
+| **3. Resultado** | Fidedignidade Numérica | Tratamento de nulos com `NVL`, sem divisões por zero (`NULLIF`), sem duplicações por joins em leque. |
+| **4. Segurança** | Isolamento e Permissões | Isolamento estrito por tenant/órgão (RLS), proibição categórica de DDL/DML destrutivos (deny-by-default). |
+| **5. Explicação** | Clareza para o Usuário | Justificativa em português claro explicando quais métricas, filtros e recortes foram aplicados. |
+

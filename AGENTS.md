@@ -28,20 +28,24 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 ## 🛑 As 4 Regras de Ouro Invioláveis
 
 1. **Gate 0 Mandatório:** Antes de qualquer ação técnica, certifique-se de que o INTAKE do módulo correspondente (`INTAKE_DW.md`, `INTAKE_SEMANTICA.md` ou `INTAKE_GOVERNANCA.md`) foi preenchido com as tecnologias marcadas. Se pendente, envie o link direto ao engenheiro e interrompa a execução.
-   - *Nota de Flexibilidade:* Se regras de negócio ou perguntas estiverem documentadas em arquivos na pasta `entrega/<modulo>/`, utilize-as sem bloquear o Gate 0.
+   - *Nota de Flexibilidade:* Se regras de negócio ou perguntas estiverem documentadas em arquivos na pasta `entrega/<modulo>/` ou se a **Opção 3 / Radar Consultivo da IA** estiver assinalada, utilize-as sem bloquear o Gate 0.
 2. **Geração Estritamente Condicional:** NUNCA gere scripts para ferramentas desmarcadas (ex: nunca crie Apache Hop se o engenheiro não assinalou Hop).
 3. **Destino Canônico de Saída:** Grave arquivos estritamente nas pastas oficiais de `saida/` (ex: `saida/planejador_dw/01_...` a `11_...` ou `saida/camada_semantica/`). **NUNCA crie subpastas com o nome do projeto dentro de `saida/`.**
-4. **Alinhamento Técnico Mandatório (Copiloto Consultivo — Não Gere no Escuro):** Como os projetos de dados são altamente diversos e possuem particularidades de negócio que nenhuma ferramenta estática quantifica sozinha, o agente NUNCA deve tomar decisões arquiteturais críticas ou gerar artefatos finais de forma isolada. Se faltar informação crítica, se houver ambiguidade de domínio ou se existirem múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga), o agente DEVE pausar a geração física, apresentar o diagnóstico e abrir um espaço de discussão técnica com o Engenheiro de Dados para construir o modelo final a quatro mãos antes de codificar.
+4. **Alinhamento Técnico Mandatório & Radar Consultivo da IA (Copiloto Consultivo — Não Gere no Escuro):** Como os projetos de dados são altamente diversos e muitas vezes o cliente não percebe de imediato todo o potencial analítico da sua base, o agente NUNCA deve tomar decisões arquiteturais críticas no escuro e DEVE atuar proativamente:
+   - Se faltar informação crítica, se houver ambiguidade de domínio ou múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga), pause a geração física e abra discussão técnica com o Engenheiro de Dados.
+   - Tanto no **Planejador de DW** quanto na **Camada Semântica**, apresente sempre o **💡 Radar Consultivo da IA** separado do escopo original do cliente, sugerindo novos KPIs de alto valor, regras implícitas de sanitização/qualidade e novas perguntas de negócio (Executivas, Táticas e Auditoria) para o engenheiro aprovar antes da codificação.
 
 ---
 
 ## 🚀 Comandos Rápidos de Orquestração
 
-- `/inspecionar-fontes`: Audita arquivos depositados nas pastas de entrega.
-- `/gerar-blueprint`: Compila o Blueprint técnico com a Matriz De/Para de colunas 100% fiel à origem.
+- `/inspecionar-fontes`: Audita arquivos depositados nas pastas de entrega e executa o extrator determinístico de DDLs e Radar Consultivo de KPIs (`python core/scripts_comuns/inspecionar_ddl_origem.py`).
+- `/gerar-blueprint`: Compila o Blueprint técnico com a Matriz De/Para de colunas 100% fiel à origem e o Radar Consultivo da IA (Novos KPIs, Regras e Perguntas Sugeridas).
 - `/aprovar-blueprint`: Autoriza o início da geração física dos scripts DDL e de esteira.
 - `/auditar-mapa-odi`: Executa o motor preditivo de tuning em XML de mappings ODI (`python core/scripts_comuns/auditar_mapa_odi.py`).
-- `/validar-entrega`: Executa o checklist pré-voo automatizado (`python core/scripts_comuns/validar_entrega.py all`).
-- `/concluir-dw`: Realiza o handoff e a transição contínua para a Camada Semântica.
+- `/validar-entrega`: Executa o checklist pré-voo e a auditoria pós-geração da pasta `saida/` (`python core/scripts_comuns/validar_entrega.py all` ou `python core/scripts_comuns/validar_entrega.py saida`).
+- `/concluir-dw`: Realiza o handoff e a transição contínua para a Camada Semântica (`python core/scripts_comuns/transicionar_dw_para_semantica.py`).
+- `/empacotar-projeto`: Exporta a entrega completa em `.zip` ou limpa o workspace para um novo projeto (`python core/scripts_comuns/gerenciar_projeto.py --status`).
+
 
 

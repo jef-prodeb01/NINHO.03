@@ -64,18 +64,25 @@ Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw
 
 ---
 
-## Seção 4 — Regras de Negócio e Segurança de Acesso (RLS)
+## Seção 4 — Regras de Negócio, Expansão Consultiva da IA e Segurança (RLS)
 
-### 4.0 Origem das Regras de Negócio
+### 4.0 Origem e Expansão das Regras de Negócio
 - [ ] **Opção 1: Digitadas diretamente na lista 4.1 abaixo**
 - [ ] **Opção 2: Documentadas em arquivos na pasta `entrega/camada_semantica/` ou derivados do DW**
   - **Arquivo(s) de referência:** `[Ex: entrega/camada_semantica/relatorios_etl/RELATORIO_ESTRATEGIAS.md, regras_negocio.md]`
   - *(A IA extrairá as regras diretamente desses arquivos).*
+- [ ] **Opção 3: Descoberta Consultiva pela IA a partir do DDL/Amostras do DW**
+  - Marque esta opção quando o cliente não definiu todas as regras de negócio de antemão e deseja que a IA proponha as regras de integridade, filtros e métricas a partir do modelo físico do DW.
+- [x] **💡 Habilitar Radar Consultivo da IA para Regras e KPIs (Recomendado — Ativo por Padrão):**
+  - Além das regras informadas pelo cliente, a IA analisará as Fatos e Dimensões do DW para sugerir proativamente no `DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`:
+    - **Novas Métricas e Views `VW_<PROJETO>_KPI_*`** (ex: Lead Time, Backlog Ativo, Aging de Fila, Taxa de Vazão/Throughput, Cumprimento de SLA, Variação Mensal MoM e Curva ABC/Pareto).
+    - **Novas Regras para `META_REGRA_NEGOCIO` e `META_ORIENTACAO_IA`** (ex: tratamento de datas invertidas, segregação entre estoque aberto e fluxo concluído, proteção contra divisão por zero e mapeamento da linha `-1`).
 
-### 4.1 Regras de Negócio do Negócio
+### 4.1 Regras de Negócio e Exceções Específicas do Projeto
 1. `[Ex: Medida VAL_GLOSA só pode ser apurada após fechamento formal do ciclo mensal]`
 2. `[Ex: Chamados cancelados não devem ser contabilizados no tempo médio de atendimento]`
-3. `...`
+3. `[Ex: Ignorar registros de homologação ou unidades de teste nas Views EVENTO e KPI]`
+4. `...`
 
 ### 4.2 Segurança por Linha (Row-Level Security - RLS)
 - [ ] **Sem RLS (Acesso Total):** Todos os usuários autorizados no banco enxergam a base integral.
@@ -84,14 +91,17 @@ Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw
 
 ---
 
-## Seção 5 — Perguntas de Negócio para o Catálogo (`META_CONSULTA_NEGOCIO`)
+## Seção 5 — Perguntas de Negócio & Sugestões da IA (`META_CONSULTA_NEGOCIO`)
 
-### 5.0 Origem das Perguntas de Negócio
+### 5.0 Origem e Expansão das Perguntas de Negócio
 - [ ] **Opção 1: Listadas diretamente na lista 5.1 abaixo**
 - [ ] **Opção 2: Extraídas de documentos na pasta de entrega ou guias do DW**
   - **Arquivo(s) de referência:** `[Ex: entrega/camada_semantica/relatorios_etl/GUIA_ANALISTA_BI.md, perguntas.md]`
+- [ ] **Opção 3: Geradas integralmente pelo Radar Consultivo da IA a partir do DW**
+- [x] **💡 Expandir Catálogo com Novas Perguntas Sugeridas pela IA (Recomendado — Ativo por Padrão):**
+  - Mesmo quando o cliente fornece uma lista inicial de perguntas, a IA proporá perguntas adicionais de alto valor divididas em 3 horizontes (**Executivas/Estratégicas**, **Táticas/Operacionais** e **Auditoria/Qualidade**) para enriquecer a tabela `META_CONSULTA_NEGOCIO` e o treinamento de agentes Text-to-SQL.
 
-### 5.1 Lista de Perguntas
+### 5.1 Lista de Perguntas Solicitadas pelo Cliente
 1. `[Ex: Qual o percentual de cumprimento de SLA por módulo no último ciclo?]`
 2. `[Ex: Quais são os 10 chamados mais ofensores do tempo de atendimento?]`
 3. `...`
@@ -114,3 +124,23 @@ Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
 - [x] **Carga das Orientações e Guardrails de IA (`07_meta_orientacao_ia.sql`)**
 - [x] **Carga dos Valores de Domínio (`08_meta_valor_dominio.sql`)**
 - [x] **Suíte de Testes e Validações SQL (`09_validacoes.sql`)**
+
+---
+
+## Seção 7 — Informações Complementares, Particularidades e Observações Livres do Engenheiro
+
+> 📝 **ESPAÇO ABERTO DO ENGENHEIRO DE DADOS:**  
+> Utilize esta seção para registrar **qualquer regra específica do projeto, sinônimo/jargão de negócio do cliente, guardrail extra para o Agente Text-to-SQL, filtro especial de view ou restrição técnica** que não esteja contemplada nos campos acima.
+
+- **Sinônimos, Siglas ou Jargões Específicos do Cliente (para `META_GLOSSARIO`):**
+  - `[Ex: O cliente chama 'Unidade Geradora' de 'Setor Protocolizante' e 'Processo Sobrestado' de 'Processo Suspenso']`
+- **Guardrails ou Restrições Específicas para Text-to-SQL (`META_ORIENTACAO_IA`):**
+  - `[Ex: Nunca cruzar FATO_TRAMITACAO com FATO_DOCUMENTO diretamente sem usar CTE por protocolo; sempre filtrar ANO >= 2022 por padrão]`
+- **Padrões de Nomenclatura de Views ou Exigências do Time de BI:**
+  - `[Ex: O time de Power BI pediu que as colunas de data nas views tenham sufixo _DT e valores monetários _VLR]`
+- **Contexto Adicional, Regras Específicas ou Instruções Livres para a IA:**
+```text
+[Escreva ou cole aqui livremente qualquer informação complementar, regra específica do projeto,
+exceção de cálculo ou instrução direta para o Agente considerar na Camada Semântica...]
+```
+

@@ -1,6 +1,6 @@
 # Padrão Corporativo de Handoff para Business Intelligence — Especificação de Entrega para Power BI
 
-Este guia estabelece os padrões corporativos de Business Intelligence que o **Engenheiro de Dados** e a IA do **NINHO** devem aplicar na geração do artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (armazenado em `saida/planejador_dw/<PROJETO>/08_datasets_bi/`), entregável essencial para que a equipe externa de **Analistas de BI** e **Desenvolvedores de Painéis** construa relatórios no **Microsoft Power BI** e **Apache Superset** com autonomia e conformidade.
+Este guia estabelece os padrões corporativos de Business Intelligence que o **Engenheiro de Dados** e a IA do **NINHO** devem aplicar na geração do artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** (armazenado em `saida/planejador_dw/08_datasets_bi/`), entregável essencial para que a equipe externa de **Analistas de BI** e **Desenvolvedores de Painéis** construa relatórios no **Microsoft Power BI** e **Apache Superset** com autonomia e conformidade.
 
 > 🛡️ **Aviso de Arquitetura & Governança da Plataforma:**  
 > O **NINHO** é uma plataforma de engenharia analítica de uso **100% exclusivo para Engenheiros de Dados**. O Analista de BI **não acessa o repositório NINHO nem possui módulos de execução no sistema**.  
@@ -322,7 +322,7 @@ CALCULATE(
 <a id="7-apache-superset"></a>
 ## 7. Consumo via Apache Superset (Modern Data Stack)
 
-Para dashboards construídos no **Apache Superset**, os datasets são versionados no Git através de especificações declarativas em formato YAML, geradas automaticamente na pasta `saida/planejador_dw/<NOME_PROJETO>/08_datasets_bi/`.
+Para dashboards construídos no **Apache Superset**, os datasets são versionados no Git através de especificações declarativas em formato YAML, geradas automaticamente na pasta `saida/planejador_dw/08_datasets_bi/`.
 
 <a id="71-datasets-yaml"></a>
 ### 7.1 Estrutura dos Datasets Declarativos (`.yaml`)

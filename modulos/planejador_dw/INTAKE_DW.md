@@ -65,10 +65,10 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 
 ---
 
-## Seção 2 — O que o Cliente Quer (Perguntas & Casos de Uso)
+## Seção 2 — O que o Cliente Quer (Perguntas, Casos de Uso & Radar Consultivo da IA)
 
-> 💡 **LOCALIZAÇÃO DAS PERGUNTAS DE NEGÓCIO:**  
-> As perguntas e casos de uso podem ser preenchidos diretamente aqui OU sinalizados em arquivos na pasta `entrega/planejador_dw/`.
+> 💡 **LOCALIZAÇÃO E EXPANSÃO DAS PERGUNTAS DE NEGÓCIO:**  
+> As perguntas e regras podem ser preenchidas diretamente aqui, depositadas em arquivos na pasta `entrega/planejador_dw/` **E/OU expandidas proativamente pela IA** (quando o cliente ainda não mapeou todos os indicadores possíveis da base).
 
 ### 2.0 Origem das Perguntas e Regras de Negócio
 - [ ] **Opção 1: Perguntas listadas diretamente neste formulário** (preencha a lista 2.1 abaixo).
@@ -76,8 +76,12 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
   - Marque esta opção caso tenha depositado documentos como editais, regras ou perguntas avulsas.
   - **Arquivo(s) de referência na pasta entrega:** `[Ex: 05_perguntas_negocio.md, 04_regras_negocio.md, edital.md, documentacao.md]`
   - *(A IA inspecionará esses arquivos automaticamente para extrair as necessidades e regras de negócio).*
+- [ ] **Opção 3: Descoberta Consultiva pela IA a partir dos DDLs/Amostras**
+  - Marque esta opção quando o cliente não trouxe perguntas fechadas ou enviou um escopo inicial enxuto e deseja que a IA proponha as perguntas e KPIs do domínio.
+- [x] **💡 Habilitar Radar Consultivo da IA (Recomendado — Ativo por Padrão):**
+  - Além de atender 100% do que o cliente pediu, a IA analisará todas as colunas do DDL/amostras e sugerirá no Blueprint **Novos KPIs de Alto Valor**, **Regras de Negócio/Sanitização Implícitas** e **Novas Perguntas Executivas, Táticas e de Auditoria** que o cliente não percebeu na hora, permitindo que o engenheiro escolha quais incorporar ao DW.
 
-### 2.1 Perguntas de Negócio (Se Opção 1 selecionada)
+### 2.1 Perguntas de Negócio Solicitadas pelo Cliente (Se Opção 1 selecionada)
 1. `[Ex: Qual o percentual de cumprimento de SLA por indicador em cada ciclo mensal?]`
 2. `[Ex: Quais chamados violaram o SLA de atendimento com horas excedidas?]`
 3. `[Ex: Qual o valor total de glosa contratual apurado por ciclo de faturamento?]`
@@ -98,12 +102,14 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 
 ## Seção 3 — Regras de Negócio e Estratégia de Carga (Dual Strategy)
 
-### 3.1 Grão e Métricas da Fato
+### 3.1 Grão, Métricas do Cliente e Expansão Analítica da IA
 - [ ] **Extrair grão e fórmulas dos arquivos de entrega:** `[Ex: 04_regras_negocio.md, edital.md]`
-- **Ou especificar manualmente abaixo:**
+- [x] **Permitir que a IA sugira novas medidas derivadas e regras de qualidade (Radar Consultivo):**
+  - *(Ex: Lead Time/Tempo de Ciclo, Backlog Ativo, Faixas de Envelhecimento/Aging, Flags de cumprimento de SLA, Taxa de Retrabalho/Auto-tramitação e Sanitização de datas invertidas).*
+- **Especificação manual pelo cliente/engenheiro (se aplicável):**
   - **Grão esperado da Fato principal:**  
     *Ex: "Uma linha para cada chamado atendido x ciclo de medição", "Uma linha por item faturado".*
-  - **Medidas e Fórmulas de Cálculo:**
+  - **Medidas e Fórmulas Solicitadas pelo Cliente:**
     - Medida 1: `[Ex: QTD_CHAMADO - Contagem unitária (valor 1)]`
     - Medida 2: `[Ex: VAL_GLOSA_TOTAL - Soma monetária das penalidades aplicadas]`
     - Medida 3: `[Ex: TEMPO_ATENDIMENTO_HORAS - Horas líquidas despendidas]`
@@ -129,6 +135,13 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 - [ ] **SCD Tipo 2 Corporativo:** Versionamento histórico obrigatório com `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR` e tabela auxiliar `ODI_DIM_*`.
 - [ ] **Dimensões Degeneradas:** Chaves transacionais mantidas diretamente na Fato (ex: `NUM_PROTOCOLO`, `NUM_CHAMADO`).
 - [ ] **Dimensões Conformes:** Reutilização de dimensões globais corporativas (ex: `DIM_TEMPO`, `DIM_ORGAO`, `DIM_LOCALIDADE`).
+
+### 3.5 Regras Específicas do Projeto, Exceções e Filtros Customizados
+*Caso o projeto possua regras particulares de negócio, filtros de expurgo, traduções DE-PARA ou exceções contratuais não cobertas acima, descreva abaixo:*
+- **Filtros de Exclusão / Expurgo na Origem:** `[Ex: Ignorar registros com STA_REGISTRO = 'TESTE' ou unidades de homologação ID_UNIDADE IN (999, 998)]`
+- **Regras de Cálculo / Calendário Específicas:** `[Ex: Contagem de prazo considera apenas dias úteis; chamados reabertos somam ao tempo original]`
+- **Mapeamentos / DE-PARA Customizados:** `[Ex: Converter códigos legados 'A', 'B', 'C' para 'ATIVO', 'BLOQUEADO', 'CANCELADO']`
+- **Outras Regras Particulares do Domínio:** `[Descreva livremente qualquer regra específica]`
 
 ---
 
@@ -191,3 +204,21 @@ Marque os artefatos que você deseja que a IA gere:
 - [x] **Relatório Técnico de Estratégias e Linhagem (`09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`)**
 - [x] **Suíte de Testes SQL de Integridade Analítica (`10_testes_integridade/13_testes_integridade.sql`)**
 - [x] **Dicionário Interativo de Dados HTML (`11_dicionario_dados/dicionario_dados.html`)**
+
+---
+
+## Seção 8 — Informações Complementares, Particularidades e Observações Livres do Engenheiro
+
+> 📝 **ESPAÇO ABERTO DO ENGENHEIRO DE DADOS:**  
+> Utilize esta seção para registrar **qualquer informação, restrição, regra específica de projeto, acordo de reunião ou orientação técnica** que não tenha sido contemplada nos campos padronizados acima. O Agente lerá este bloco com prioridade máxima durante o planejamento do Blueprint (Gate 1) e a geração dos scripts físicos.
+
+- **Particularidades de Infraestrutura / Banco / Janela de Carga:**
+  - `[Ex: O banco de origem sofre lock às 02h da manhã; a janela do ODI deve rodar entre 03h30 e 05h00; não usar hint PARALLEL acima de 4]`
+- **Padrões de Nomenclatura ou Exigências Específicas do Cliente/DBA:**
+  - `[Ex: O DBA exige que todas as sequences comecem com SQ_ em vez de SEQ_; incluir coluna COD_SISTEMA_ORIGEM em todas as fatos]`
+- **Contexto Adicional, Anotações de Reunião ou Instruções Livres para a IA:**
+```text
+[Escreva ou cole aqui livremente qualquer observação extra, regra de negócio específica,
+exceção de domínio, trecho de ata de reunião ou instrução direta para o Agente...]
+```
+

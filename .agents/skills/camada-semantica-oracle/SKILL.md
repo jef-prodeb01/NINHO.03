@@ -46,6 +46,24 @@ O schema semântico padronizado baseia-se em 8 tabelas centrais:
 
 ---
 
+## 2.1 💡 Radar Consultivo da IA: Expansão de KPIs, Regras de Negócio e Perguntas
+
+Muitas vezes o cliente solicita um escopo inicial fechado ou enxuto sem perceber todo o potencial analítico das tabelas Fato e Dimensão do DW. Antes de gerar os scripts SQL finais, apresente no `DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` dois blocos claramente separados:
+
+1. **🎯 Escopo Solicitado pelo Cliente (Mandatório):**
+   - Views `KPI`, métricas (`META_METRICA`), regras (`META_REGRA_NEGOCIO`) e perguntas (`META_CONSULTA_NEGOCIO`) explicitamente pedidas no `INTAKE_SEMANTICA.md` ou nos documentos da pasta `entrega/camada_semantica/`.
+2. **💡 Radar Consultivo da IA (Sugestões Proativas para Aprovação):**
+   - Inspecione todas as colunas de datas, prazos, status, unidades de origem/destino, responsáveis e valores das Fatos/Dimensões (utilizando `python core/scripts_comuns/inspecionar_ddl_origem.py --caminho entrega/camada_semantica/ddl/` quando houver DDLs) e proponha ao Engenheiro/Analista:
+     - **Novos KPIs e Views `VW_<PROJETO>_KPI_*`:** Ex: *Lead Time / Tempo Médio de Ciclo*, *Estoque/Backlog em Aberto (`DTC_CONCLUSAO IS NULL`)*, *Faixas de Envelhecimento de Fila (Aging 0-15, 16-30, 31-60, >60 dias)*, *Taxa de Vazão (Throughput)*, *Cumprimento de SLA (%)*, *Taxa de Auto-Tramitação/Retrabalho* e *Variação Mensal (MoM) / Curva ABC (Pareto)*.
+     - **Regras de Negócio e Qualidade Implícitas (`META_REGRA_NEGOCIO` / `META_ORIENTACAO_IA`):** Ex: *Sanitização de datas invertidas (`DTC_CONCLUSAO < DTC_ABERTURA`)*, *Segregação estrita entre consultas de fluxo concluído (`IS NOT NULL`) e passivo aberto (`IS NULL`)*, *Preservação de demandas sem responsável (`DIMENSION_KEY = -1`)* e *Proteção contra divisão por zero (`NULLIF`)*.
+     - **Novas Perguntas de Negócio (`META_CONSULTA_NEGOCIO`) em 3 Horizontes:**
+       1. *Horizonte Executivo/Estratégico:* Tendências mensais, cumprimento de metas/SLA e concentração de Pareto (80/20).
+       2. *Horizonte Tático/Operacional:* Gestão de fila ativa, envelhecimento de passivo (Aging), demandas em risco de vencer e produtividade por equipe/colaborador.
+       3. *Horizonte de Auditoria/Qualidade:* Detecção de anomalias cronológicas, gargalos de rota (Origem -> Destino) e demandas órfãs.
+   - **Alinhamento antes do Código:** Pergunte ao Engenheiro quais itens do Radar Consultivo ele deseja aprovar para serem incluídos nas views `VW_*_KPI_*` e nos scripts `02_meta_metrica.sql`, `05_meta_regra_negocio.sql` e `06_meta_consulta_negocio.sql`.
+
+---
+
 ## 3. Gestão de Carga: Schema Novo vs Schema Existente
 
 Antes de gerar os scripts, verifique o estado do schema (Seção 0.2 do `INTAKE_SEMANTICA.md`):

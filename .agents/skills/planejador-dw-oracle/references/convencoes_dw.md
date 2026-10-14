@@ -1,26 +1,38 @@
 # Convenções Técnicas e Nomenclaturas de DW (Oracle)
 
-## 1. Padrões de Nomes de Objetos
+> **Fonte Única da Verdade:** Este arquivo é sincronizado com [`core/convencoes/CONVENCOES_DW.md`](../../../../core/convencoes/CONVENCOES_DW.md).
 
-1. **Staging:**
-   - Tabelas: `STG_<FONTE>_<ENTIDADE>` (ex: `STG_ORACLE_PROCESSO`, `STG_API_DOCUMENTO`).
-   - Colunas: idênticas à origem, preferencialmente `VARCHAR2` amplo para evitar truncamentos na aterrissagem.
+## 1. Padrões de Nomes de Objetos e Fidelidade à Origem
 
-2. **Dimensões:**
-   - Tabelas: `DIM_<ENTIDADE>` (ex: `DIM_UNIDADE`, `DIM_TIPO_PROCESSO`).
-   - Surrogate Key: `<NOME_DIM>_KEY NUMBER(38,0) NOT NULL`.
-   - Sequence: `SEQ_DIM_<ENTIDADE> START WITH 1 INCREMENT BY 1 NOCACHE NOCYCLE`.
+1. **Fidelidade 100% às Colunas de Origem:**
+   - Preserve ipsis litteris (em MAIÚSCULAS) os nomes das colunas vindas do DDL de origem. NUNCA invente ou abrevie colunas existentes.
+   - Apresente a Matriz De/Para completa no Blueprint (`/gerar-blueprint`) antes de gerar os scripts físicos.
+
+2. **Staging:**
+   - Tabelas: `STG_<SISTEMA>_<DOMINIO>_<ENTIDADE>` ou `STG_<FONTE>_<ENTIDADE>`.
+   - Colunas: idênticas à origem + metadados `DTC_EXTRACAO` e `ID_LOTE`.
+   - **PK na Staging:** Sempre declarar `PRIMARY KEY` ou índice único nas colunas da chave de negócio da `STG_*` quando usada em cargas incrementais/MERGE no ODI.
+
+3. **Dimensões:**
+   - Tabelas: `DIM_<SISTEMA>_<DOMINIO>_<ENTIDADE>` ou `DIM_<ENTIDADE>`.
+   - Surrogate Key: `DIMENSION_KEY NUMBER(38,0) NOT NULL` (ou `<NOME_DIM>_KEY`).
+   - Sequence: `SEQ_DIM_<ENTIDADE> START WITH 1 INCREMENT BY 1 CACHE 50 NOCYCLE NOORDER`.
    - Chave Natural: `ID_<ENTIDADE>` (preservando o nome e tipo original).
-   - Tabela auxiliar ODI (se habilitado): `ODI_DIM_<ENTIDADE>`.
+   - Colunas SCD2: `SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`.
+   - **Linha `-1` Obrigatória:** Registro inicial `-1` (`NAO INFORMADO`) em todas as dimensões.
+   - **Índices:** Exclusivamente **B-Tree** (proibido `BITMAP INDEX` em dimensões para evitar deadlock `ORA-00060`).
+   - Tabela auxiliar ODI (se `[x] ODI` habilitado): `ODI_DIM_<ENTIDADE>` com `DES_STATUS_REGISTRO`.
 
-3. **Fatos:**
-   - Tabelas: `FATO_<PROCESSO_NEGOCIO>` ou `FAT_<PROCESSO_NEGOCIO>` (ex: `FATO_TRAMITACAO`, `FATO_FATURAMENTO`).
-   - Chaves Estrangeiras (FKs): `<NOME_DIM>_KEY NUMBER(38,0) NOT NULL` com valor padrão `-1` para ausentes.
-   - Chaves Primárias Compostas: `PK_FAT_<PROCESSO>` composta pela data do fato + SKs das dimensões.
+4. **Fatos:**
+   - Tabelas: `FATO_<SISTEMA>_<DOMINIO>_<PROCESSO>` ou `FATO_<PROCESSO_NEGOCIO>`.
+   - Chaves Estrangeiras (FKs): `NOT NULL` com fallback `NVL(LOOKUP.DIMENSION_KEY, -1)`.
+   - Estratégia A (Truncate & Load): `BITMAP INDEX` nas FKs da Fato + `PRC_POS_CARGA_FATO`.
+   - Estratégia B (Incremental MERGE): `B-TREE INDEX` nas chaves de merge.
+   - Estratégia Híbrida: Janela móvel diária (ex: últimos 5-15 dias) combinada com recarga de consolidação no fim de semana/mês.
 
-4. **Identificadores e Sintaxe:**
-   - **TUDO EM MAIÚSCULAS:** NUNCA gere identificadores com aspas e letras minúsculas (ex: `"id_processo"`). O Oracle trata como case-sensitive e gera problemas de consulta.
-   - Use sempre nomes em maiúsculas sem aspas: `ID_PROCESSO`, `DIM_UNIDADE`.
+5. **Identificadores e Destino de Saída:**
+   - **TUDO EM MAIÚSCULAS:** NUNCA gere identificadores com aspas e letras minúsculas (ex: `"id_processo"`).
+   - **Saída Canônica:** Grave diretamente nas 11 pastas numeradas de `saida/planejador_dw/` (`01_controle_carga` a `11_dicionario_dados`), sem criar subpasta com o nome do projeto.
 
 ---
 
@@ -35,7 +47,7 @@
 | Textos Longos e Descrições | `VARCHAR2(4000 CHAR)` | Se exceder 4000, avaliar `CLOB` |
 | Datas | `DATE` | Inclui ano, mês, dia, hora, minuto e segundo |
 | Timestamps com Fração | `TIMESTAMP(6)` | Usar se frações de segundo forem cruciais |
-| Flags / Indicadores | `VARCHAR2(1 CHAR)` | 'S' / 'N' ou 'A' / 'I' |
+| Flags / Indicadores | `CHAR(1 CHAR)` ou `VARCHAR2(1 CHAR)` | 'S' / 'N' ou 'A' / 'I' |
 
 ---
 
@@ -61,5 +73,6 @@ Em ambientes analíticos consolidados onde múltiplos órgãos, secretarias ou p
   to_number(to_char(V_TENANT) || '000' || to_char(ORIGEM.ID_NATURAL))
   ```
 - Isso garante chaves unívocas na esteira de integração, preservando a rastreabilidade original.
+
 
 

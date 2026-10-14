@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Validador Pré-Voo de Insumos da Plataforma NINHO
-Executa a verificação dos arquivos de entrada antes de acionar a IA.
+Validador Pré-Voo de Insumos e Auditor Pós-Geração da Plataforma NINHO
+Executa a verificação dos arquivos de entrada (Gate 0) e audita a conformidade
+dos artefatos gerados em 'saida/' contra as 4 Regras de Ouro.
 
 Uso:
     python core/scripts_comuns/validar_entrega.py dw
     python core/scripts_comuns/validar_entrega.py semantica
+    python core/scripts_comuns/validar_entrega.py governanca
+    python core/scripts_comuns/validar_entrega.py saida
     python core/scripts_comuns/validar_entrega.py all
 """
 
@@ -74,13 +77,19 @@ def validar_intake_dw(base_dir: Path) -> dict:
         if docs:
             tem_docs_entrega = True
 
-    opcao2_marcada = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Detalhadas em arquivos", content, re.IGNORECASE))
+    opcao2_marcada = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:", content, re.IGNORECASE))
+    opcao3_marcada = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 3:", content, re.IGNORECASE))
+    radar_ia_dw = bool(re.search(r"-\s*\[x\]\s*\*\*💡\s*Habilitar Radar Consultivo da IA", content, re.IGNORECASE))
+
+    if radar_ia_dw or opcao3_marcada:
+        print_ok("💡 Radar Consultivo da IA habilitado: a IA sugerirá novos KPIs, regras implícitas e perguntas de negócio.")
+        results["sucessos"] += 1
 
     # Checar se campos chave ainda contêm [Ex: ...]
     placeholders = re.findall(r"(\[Ex:.*?\])", content)
     if placeholders:
-        if tem_docs_entrega or opcao2_marcada:
-            print_ok("Perguntas e regras de negócio fornecidas via arquivos na pasta 'entrega/planejador_dw/'.")
+        if tem_docs_entrega or opcao2_marcada or opcao3_marcada:
+            print_ok("Perguntas e regras de negócio fornecidas via arquivos na pasta 'entrega/planejador_dw/' ou descoberta consultiva da IA.")
             results["sucessos"] += 1
         else:
             print_warn(f"Existem {len(placeholders)} campos de exemplo ainda nao preenchidos no formulario.")
@@ -232,13 +241,19 @@ def validar_intake_semantica(base_dir: Path) -> dict:
         if docs_sem or rel_etl:
             tem_docs_sem = True
 
-    opcao2_sem = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:\s*Documentadas em arquivos", content, re.IGNORECASE))
+    opcao2_sem = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 2:", content, re.IGNORECASE))
+    opcao3_sem = bool(re.search(r"-\s*\[x\]\s*\*\*Opção 3:", content, re.IGNORECASE))
+    radar_ia_sem = bool(re.search(r"-\s*\[x\]\s*\*\*💡\s*(?:Habilitar Radar Consultivo|Expandir Catálogo)", content, re.IGNORECASE))
+
+    if radar_ia_sem or opcao3_sem:
+        print_ok("💡 Radar Consultivo da IA habilitado: a IA sugerirá novos KPIs, regras semânticas e perguntas executivas/táticas.")
+        results["sucessos"] += 1
 
     # Checar placeholders não preenchidos
-    placeholders = re.findall(r"(<informe.*?>|<cole.*?>|<descreva.*?>)", content, re.IGNORECASE)
+    placeholders = re.findall(r"(\[Ex:.*?\]|<informe.*?>|<cole.*?>|<descreva.*?>)", content, re.IGNORECASE)
     if placeholders:
-        if tem_docs_sem or opcao2_sem:
-            print_ok("Regras/perguntas de negócio fornecidas via arquivos na pasta 'entrega/camada_semantica/'.")
+        if tem_docs_sem or opcao2_sem or opcao3_sem:
+            print_ok("Regras/perguntas de negócio fornecidas via arquivos na pasta 'entrega/camada_semantica/' ou descoberta consultiva da IA.")
             results["sucessos"] += 1
         else:
             print_warn(f"Existem {len(placeholders)} marcadores ainda nao preenchidos no formulario.")
@@ -250,8 +265,10 @@ def validar_intake_semantica(base_dir: Path) -> dict:
         results["sucessos"] += 1
 
     # Checar projeto
-    proj_match = re.search(r"\|\s*\*\*Nome do Projeto\*\*.*?\|\s*`?(.*?)`?\s*\|", content, re.MULTILINE)
-    if proj_match and proj_match.group(1).strip() and not proj_match.group(1).strip().startswith("<"):
+    proj_match = re.search(r"\*\*Nome do Projeto.*?:\*\*\s*`?(.*?)`?$", content, re.MULTILINE) or re.search(
+        r"\|\s*\*\*Nome do Projeto\*\*.*?\|\s*`?(.*?)`?\s*\|", content, re.MULTILINE
+    )
+    if proj_match and proj_match.group(1).strip() and not proj_match.group(1).strip().startswith(("<", "[Ex:")):
         print_ok(f"Projeto identificado: {proj_match.group(1).strip()}")
         results["sucessos"] += 1
     else:
@@ -259,8 +276,10 @@ def validar_intake_semantica(base_dir: Path) -> dict:
         results["avisos"] += 1
 
     # Checar schema
-    schema_match = re.search(r"\|\s*\*\*Schema Alvo no Oracle\*\*.*?\|\s*`?(.*?)`?\s*\|", content, re.MULTILINE)
-    if schema_match and schema_match.group(1).strip() and not schema_match.group(1).strip().startswith("<"):
+    schema_match = re.search(r"\*\*Schema Alvo no Oracle:\*\*\s*`?(.*?)`?$", content, re.MULTILINE) or re.search(
+        r"\|\s*\*\*Schema Alvo no Oracle\*\*.*?\|\s*`?(.*?)`?\s*\|", content, re.MULTILINE
+    )
+    if schema_match and schema_match.group(1).strip() and not schema_match.group(1).strip().startswith(("<", "[Ex:")):
         print_ok(f"Schema Oracle configurado: {schema_match.group(1).strip()}")
         results["sucessos"] += 1
     else:
@@ -453,11 +472,173 @@ def validar_arquivos_governanca(base_dir: Path) -> dict:
     return results
 
 
+PASTAS_CANONICAS_SAIDA_DW = {
+    "01_controle_carga",
+    "02_staging",
+    "03_dimensoes",
+    "04_fatos",
+    "05_procedimentos_manutencao",
+    "06_pipelines_hop",
+    "07_extratores_python",
+    "08_datasets_bi",
+    "09_relatorio_estrategias",
+    "10_testes_integridade",
+    "11_dicionario_dados",
+}
+
+PASTAS_CANONICAS_SAIDA_SEMANTICA = {
+    "vw_analiticas",
+    "meta_projeto",
+    "seguranca",
+}
+
+PASTAS_CANONICAS_SAIDA_GOVERNANCA = {
+    "schemas_mongo",
+    "aws_datazone",
+}
+
+
+def validar_saida_gerada(base_dir: Path) -> dict:
+    """Audita os artefatos gerados em 'saida/' contra as Regras de Ouro e Convenções."""
+    results = {"erros": 0, "avisos": 0, "sucessos": 0}
+    print(f"\n{NEGRITO}Auditoria Pos-Geracao de Artefatos em 'saida/':{RESET}")
+
+    saida_dw = base_dir / "saida" / "planejador_dw"
+    saida_sem = base_dir / "saida" / "camada_semantica"
+    saida_gov = base_dir / "saida" / "governanca_dados"
+
+    # 1. Regra de Ouro 3: Proibição de subpastas com nome de projeto
+    for pasta_mod, permitidas in [
+        (saida_dw, PASTAS_CANONICAS_SAIDA_DW),
+        (saida_sem, PASTAS_CANONICAS_SAIDA_SEMANTICA),
+        (saida_gov, PASTAS_CANONICAS_SAIDA_GOVERNANCA),
+    ]:
+        if pasta_mod.exists():
+            subpastas_invalidas = [
+                d.name for d in pasta_mod.iterdir()
+                if d.is_dir() and d.name.lower() not in permitidas
+            ]
+            if subpastas_invalidas:
+                print_err(
+                    f"VIOLACAO DA REGRA DE OURO 3 em 'saida/{pasta_mod.name}/': "
+                    f"Subpasta(s) nao canonica(s) detectada(s): {', '.join(subpastas_invalidas)}"
+                )
+                results["erros"] += 1
+            else:
+                print_ok(f"Estrutura de diretorios canonica respeitada em 'saida/{pasta_mod.name}/'.")
+                results["sucessos"] += 1
+
+    # 2. Regra de Ouro 2: Geração condicional de tecnologias (Hop e Python)
+    intake_dw = base_dir / "modulos" / "planejador_dw" / "INTAKE_DW.md"
+    if intake_dw.exists() and saida_dw.exists():
+        intake_txt = intake_dw.read_text(encoding="utf-8", errors="ignore")
+        hop_marcado = bool(re.search(r"-\s*\[x\]\s*\*\*Apache Hop", intake_txt, re.IGNORECASE))
+        py_marcado = bool(re.search(r"-\s*\[x\]\s*\*\*Extratores Python", intake_txt, re.IGNORECASE))
+
+        pasta_hop = saida_dw / "06_pipelines_hop"
+        if pasta_hop.exists():
+            arqs_hop = [f for f in pasta_hop.iterdir() if f.is_file() and f.suffix.lower() in [".hpl", ".hwf"]]
+            if arqs_hop and not hop_marcado:
+                print_err(
+                    f"VIOLACAO DA REGRA DE OURO 2: {len(arqs_hop)} arquivo(s) Apache Hop gerado(s) "
+                    f"em '06_pipelines_hop/', mas Apache Hop NAO esta marcado no INTAKE_DW.md!"
+                )
+                results["erros"] += 1
+
+        pasta_py = saida_dw / "07_extratores_python"
+        if pasta_py.exists():
+            arqs_py = [f for f in pasta_py.iterdir() if f.is_file() and f.suffix.lower() == ".py"]
+            if arqs_py and not py_marcado:
+                print_err(
+                    f"VIOLACAO DA REGRA DE OURO 2: {len(arqs_py)} script(s) Python gerado(s) "
+                    f"em '07_extratores_python/', mas Extratores Python NAO esta marcado no INTAKE_DW.md!"
+                )
+                results["erros"] += 1
+
+    # 3. Auditoria de SQLs gerados no Planejador de DW
+    sqls_dw = [f for f in saida_dw.rglob("*.sql")] if saida_dw.exists() else []
+    if sqls_dw:
+        print_ok(f"Auditando {len(sqls_dw)} script(s) SQL gerados em 'saida/planejador_dw/'...")
+        tem_menos_um = False
+        for f_sql in sqls_dw:
+            txt = f_sql.read_text(encoding="utf-8", errors="ignore")
+
+            # Identificadores minúsculos entre aspas
+            min_q = re.findall(r'"([a-z][a-z0-9_]*)"', txt)
+            if min_q:
+                print_err(f"[{f_sql.name}] Contem identificador(es) em minusculas entre aspas: \"{min_q[0]}\"")
+                results["erros"] += 1
+
+            # Placeholders esquecidos
+            ph = re.findall(r"<(PROJETO|SCHEMA|SCHEMA_ALVO|ENTIDADE|TABELA|DIMENSAO|FATO)>", txt, re.IGNORECASE)
+            if ph:
+                print_err(f"[{f_sql.name}] Contem placeholder nao substituido: <{ph[0]}>")
+                results["erros"] += 1
+
+            # Proibição de BITMAP INDEX em Dimensões
+            if "03_dimensoes" in f_sql.parts or f_sql.name.upper().startswith("DIM_"):
+                if re.search(r"CREATE\s+BITMAP\s+INDEX", txt, re.IGNORECASE):
+                    print_err(
+                        f"[{f_sql.name}] PROIBIDO criar BITMAP INDEX em tabelas de Dimensao (risco de deadlock ORA-00060)!"
+                    )
+                    results["erros"] += 1
+
+            if re.search(r"VALUES\s*\(\s*-1\b|'NAO INFORMADO'", txt, re.IGNORECASE):
+                tem_menos_um = True
+
+        pasta_dim = saida_dw / "03_dimensoes"
+        if pasta_dim.exists() and list(pasta_dim.glob("*.sql")) and not tem_menos_um:
+            print_warn("Dimensoes geradas em '03_dimensoes/', mas nenhum INSERT da linha tecnica -1 ('NAO INFORMADO') foi detectado.")
+            results["avisos"] += 1
+        elif tem_menos_um:
+            print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
+            results["sucessos"] += 1
+
+    # 4. Auditoria de SQLs gerados na Camada Semântica
+    sqls_sem = [f for f in saida_sem.rglob("*.sql")] if saida_sem.exists() else []
+    if sqls_sem:
+        print_ok(f"Auditando {len(sqls_sem)} script(s) SQL gerados em 'saida/camada_semantica/'...")
+        for f_sql in sqls_sem:
+            txt = f_sql.read_text(encoding="utf-8", errors="ignore")
+
+            # Prefixos banidos
+            banidos = re.findall(r"\b(SEM_VW_[A-Z0-9_]+|TST_[A-Z0-9_]+)\b", txt, re.IGNORECASE)
+            if banidos:
+                print_err(f"[{f_sql.name}] Contem prefixo banido pelas convencoes: {banidos[0]}")
+                results["erros"] += 1
+
+            # Placeholders esquecidos
+            ph = re.findall(r"<(PROJETO|SCHEMA_ALVO|DIMENSAO|FATO|MEDIDA)>", txt, re.IGNORECASE)
+            if ph:
+                print_err(f"[{f_sql.name}] Contem placeholder nao substituido: <{ph[0]}>")
+                results["erros"] += 1
+
+            # COMMENT ON TABLE com "Uma linha representa" nas views analíticas
+            if "vw_analiticas" in f_sql.parts and re.search(r"CREATE\s+(?:OR\s+REPLACE\s+)?(?:FORCE\s+)?VIEW", txt, re.IGNORECASE):
+                if not re.search(r"COMMENT\s+ON\s+TABLE.*Uma linha representa", txt, re.IGNORECASE | re.DOTALL):
+                    print_warn(
+                        f"[{f_sql.name}] View analitica sem declaracao explicita de grao ('COMMENT ON TABLE ... IS ''Uma linha representa...''')!"
+                    )
+                    results["avisos"] += 1
+                else:
+                    results["sucessos"] += 1
+
+    if not sqls_dw and not sqls_sem:
+        print_ok("Nenhum script SQL gerado em 'saida/' no momento (diretorio limpo para novo projeto).")
+        results["sucessos"] += 1
+
+    return results
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] in ["-h", "--help", "help"]:
+        print(__doc__)
+        sys.exit(0)
+
     base_dir = get_base_dir()
     modulo = sys.argv[1].lower() if len(sys.argv) > 1 else "dw"
 
-    print_header(f"NINHO - Verificador Pre-Voo de Insumos (Modulo: {modulo.upper()})")
+    print_header(f"NINHO - Verificador de Qualidade e Insumos (Modo: {modulo.upper()})")
 
     total_erros = 0
     total_avisos = 0
@@ -484,21 +665,28 @@ def main():
         total_avisos += r5["avisos"] + r6["avisos"]
         total_sucessos += r5["sucessos"] + r6["sucessos"]
 
+    if modulo in ["saida", "all"]:
+        r7 = validar_saida_gerada(base_dir)
+        total_erros += r7["erros"]
+        total_avisos += r7["avisos"]
+        total_sucessos += r7["sucessos"]
+
     print(f"\n{AZUL}{'=' * 70}{RESET}")
-    print(f"{NEGRITO}Resultado da Auditoria Pre-Voo:{RESET}")
+    print(f"{NEGRITO}Resultado da Auditoria ({modulo.upper()}):{RESET}")
     print(f"  {VERDE}Itens Validados com Sucesso:{RESET} {total_sucessos}")
     print(f"  {AMARELO}Avisos / Recomendacoes:{RESET}      {total_avisos}")
     print(f"  {VERMELHO}Erros Criticos Bloqueantes:{RESET}   {total_erros}")
 
     if total_erros == 0 and total_avisos == 0:
-        print(f"\n{VERDE}{NEGRITO}[PRONTO] EXCELENTE! Tudo pronto para acionar a IA no chat.{RESET}\n")
+        print(f"\n{VERDE}{NEGRITO}[PRONTO] EXCELENTE! Validacao concluida com 100% de conformidade.{RESET}\n")
     elif total_erros == 0:
-        print(f"\n{VERDE}{NEGRITO}[PRONTO COM OBSERVACOES] Voce pode chamar a IA, mas revise os avisos acima.{RESET}\n")
+        print(f"\n{VERDE}{NEGRITO}[PRONTO COM OBSERVACOES] Validacao aprovada, mas revise os avisos acima.{RESET}\n")
     else:
-        print(f"\n{VERMELHO}{NEGRITO}[PENDENTE] Deposite os insumos ou preencha o INTAKE antes de acionar a IA.{RESET}\n")
+        print(f"\n{VERMELHO}{NEGRITO}[PENDENTE] Corrija os erros bloqueantes listados acima antes de prosseguir.{RESET}\n")
 
 
 if __name__ == "__main__":
     main()
+
 
 

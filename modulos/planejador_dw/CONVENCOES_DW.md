@@ -1,6 +1,6 @@
 # CONVENCOES_DW.md — Padrões e Convenções de Modelagem Dimensional
 
-> **Documento Oficial Central:** Consulte o documento normativo completo em [`../../core/convencoes/CONVENCOES_DW.md`](file:///c:/Users/jeferson.ressurreica/Downloads/Projetos/Interno/Semantica/template/core/convencoes/CONVENCOES_DW.md).
+> **Documento Oficial Central:** Consulte o documento normativo completo em [`../../core/convencoes/CONVENCOES_DW.md`](../../core/convencoes/CONVENCOES_DW.md).
 
 Este documento resume as regras inegociáveis do **Planejador de DW** para o Engenheiro de Dados e a IA:
 
@@ -58,4 +58,14 @@ Este documento resume as regras inegociáveis do **Planejador de DW** para o Eng
 - **Tablespace Única:** Em schemas com tablespace única (ex: `SEIMUNICIPIO_DATA`), limitar índices aos estritamente necessários para não esgotar a cota.
 - **Estratégia A (Truncate & Load):** Índices BITMAP apenas nas FKs e colunas de baixa cardinalidade da Fato. Executar `PRC_POS_CARGA_FATO` com rebuild `NOLOGGING` e `DBMS_STATS(CASCADE => TRUE)`.
 - **Estratégia B (MERGE Incremental):** Índices B-Tree compostos nas chaves do `ON (...)`. Índices Bitmap proibidos.
+
+---
+
+## 4. Multi-Tenancy, CDC por Ciclo de Vida e Estratégia Híbrida
+
+- **Prevenção de `ORA-00001` em Multi-Tenant:** Constraints `UNIQUE` em dimensões compartilhadas por múltiplos órgãos/tenants devem incluir a coluna do tenant (`ID_<ENTIDADE>`, `COD_TENANT`, `DTC_EXPIRACAO`).
+- **CDC sem Coluna `UPDATED_AT`:** Quando a tabela de origem possui apenas datas de ciclo de vida (ex: `DTH_ABERTURA` e `DTH_CONCLUSAO`), utilizar filtro composto `(DTH_ABERTURA >= :V_DATA_CORTE OR DTH_CONCLUSAO >= :V_DATA_CORTE)` ou snapshot de abertos (`DTH_CONCLUSAO IS NULL OR DTH_CONCLUSAO >= :V_DATA_CORTE`).
+- **PK na Staging para IKM Merge:** Sempre declarar chave primária ou índice único na `STG_*` para evitar Full Table Scan na etapa de integração (`I$_`) do ODI.
+- **Alinhamento Consultivo (Regra de Ouro 4):** Nunca decidir grão, janela de corte ou estratégia híbrida no escuro; apresentar diagnóstico e alinhar a quatro mãos com o Engenheiro de Dados antes de gerar os scripts finais.
+
 

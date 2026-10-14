@@ -54,8 +54,8 @@ flowchart TD
 ## 📂 Artefatos e Modelos de Saída
 
 Os artefatos gerados por esta skill devem ser gravados em:
-- `saida/planejador_dw/00_documentacao/regras_visuais_origem.md` (resumo de visuais e filtros de origem)
-- `saida/camada_semantica/GUIA_ANALISTA_BI_<PROJETO>.md` (guia para o time de Power BI reconectar o modelo)
+- `saida/planejador_dw/09_relatorio_estrategias/regras_visuais_origem.md` (resumo de visuais e filtros de origem)
+- `saida/planejador_dw/08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md` (guia para o time de Power BI reconectar o modelo)
 
 Consulte os modelos de referência em:
 - [templates/template_guia_analista_bi.md](./templates/template_guia_analista_bi.md)

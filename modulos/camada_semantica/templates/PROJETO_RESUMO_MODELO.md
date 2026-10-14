@@ -324,37 +324,43 @@ COMMENT ON COLUMN VW_<PROJETO>_EVENTO.ID_FATO IS '...';
 
 ---
 
-## 7. Regras de Negócio
+## 7. Regras de Negócio & Catálogo de KPIs (`META_METRICA` / `META_REGRA_NEGOCIO`)
 
-### 7.1 Regras de Aditividade
+### 7.1 Regras de Aditividade e KPIs (Solicitados pelo Cliente vs. Sugeridos pela IA)
 
-| Medida | Aditividade | Restrição |
-|--------|-------------|-----------|
-| VL_VALOR | ADITIVA | — |
-| VL_DESCONTO | SEMI-ADITIVA | Somar apenas se CD_STATUS = 'APROVADO' |
-| NM_STATUS | NÃO-ADITIVA | — |
+| Medida / KPI | Origem | Aditividade | Fórmula / Restrição |
+|--------|--------|-------------|-----------|
+| `VL_VALOR` | 🎯 Cliente | ADITIVA | `SUM(NVL(VL_VALOR, 0))` |
+| `VL_DESCONTO` | 🎯 Cliente | SEMI-ADITIVA | Somar apenas se `CD_STATUS = 'APROVADO'` |
+| `TEMPO_CICLO_DIAS` | 💡 Sugestão IA | NÃO-ADITIVA | `AVG(ROUND(DTC_CONCLUSAO - DTC_ABERTURA, 2))` apenas para `DTC_CONCLUSAO IS NOT NULL` |
+| `QTD_ESTOQUE_ABERTO` | 💡 Sugestão IA | SEMI-ADITIVA | `SUM(CASE WHEN DTC_CONCLUSAO IS NULL THEN 1 ELSE 0 END)` (Backlog ativo) |
+| `PCT_CUMPRIMENTO_SLA` | 💡 Sugestão IA | NÃO-ADITIVA | `ROUND(SUM(IND_NO_PRAZO) * 100.0 / NULLIF(COUNT(*), 0), 2)` |
 
-### 7.2 Regras de Negócio Específicas
+### 7.2 Regras de Negócio Específicas (Cliente + Sanitização Proativa da IA)
 
-1. **Regra 1:** Não incluir processos cancelados no total anual
-2. **Regra 2:** Valores sintéticos não devem ser somados
-3. **Regra 3:** ...
+1. **[🎯 Regra do Cliente]:** Não incluir processos cancelados no total anual.
+2. **[🎯 Regra do Cliente]:** Valores sintéticos não devem ser somados.
+3. **[💡 Sugestão da IA — Sanitização Cronológica]:** Registros com `DTC_CONCLUSAO < DTC_ABERTURA` são sinalizados com `FLG_ERRO_CRONOLOGICO = 'S'` e expurgados das médias de SLA/Lead Time.
+4. **[💡 Sugestão da IA — Preservação de Fila Órfã]:** Chaves nulas de responsável/atribuição são convertidas para `DIMENSION_KEY = -1` (`'NÃO ATRIBUÍDO / FILA GERAL'`) para viabilizar auditoria de fila sem dono.
 
 ---
 
-## 8. Perguntas dos Usuários
+## 8. Catálogo de Perguntas de Negócio (`META_CONSULTA_NEGOCIO`)
 
-### 8.1 Perguntas Geradas Automaticamente
+### 8.1 Perguntas Solicitadas pelo Cliente (Escopo Inicial)
 
-| ID | Pergunta | Painel | SQL Base |
+| ID | Pergunta | Painel / Domínio | SQL Homologado |
 |----|----------|--------|----------|
-| Q001 | Qual foi o total? | VISAO_GERAL | SELECT SUM(...) |
+| Q001 | Qual foi o total no período? | VISAO_GERAL | `SELECT SUM(...) FROM VW_<PROJETO>_KPI_...` |
+| Q002 | Pergunta específica do cliente | OPERACIONAL | `SELECT ...` |
 
-### 8.2 Perguntas Específicas do Domínio
+### 8.2 💡 Novas Perguntas Sugeridas pelo Radar Consultivo da IA (Aprovadas)
 
-| ID | Pergunta | Painel | SQL Base |
-|----|----------|--------|----------|
-| Q999 | Pergunta específica | PAINEL_ESPECIFICO | SELECT ... |
+| ID | Horizonte | Pergunta Sugerida pela IA | Painel / Domínio | SQL Homologado |
+|----|-----------|---------------------------|------------------|----------------|
+| Q101 | **Executiva** | Qual é a evolução mensal do Lead Time médio e da Taxa de Vazão (Throughput) por unidade? | GESTAO_EXECUTIVA | `SELECT ...` |
+| Q102 | **Tática/Operacional** | Qual é o tamanho atual do Backlog em aberto estratificado por faixa de envelhecimento (Aging: 0-15, 16-30, 31-60, >60 dias)? | GESTAO_FILA | `SELECT ...` |
+| Q103 | **Auditoria/Qualidade** | Quais rotas ou unidades concentram o maior índice de retrabalho/auto-tramitação ou inconsistência de datas? | AUDITORIA | `SELECT ...` |
 
 ---
 

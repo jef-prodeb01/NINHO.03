@@ -24,11 +24,11 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
 > 1. **Verificação do INTAKE:**
 >    - Inspecione imediatamente [`INTAKE_SEMANTICA.md`](INTAKE_SEMANTICA.md) em `modulos/camada_semantica/INTAKE_SEMANTICA.md`.
 >    - Se estiver em branco ou contiver placeholders (`<...>` ou `[Ex: ...]`), **PARE IMEDIATAMENTE** e envie o link direto ao engenheiro:
->      👉 [INTAKE_SEMANTICA.md](file:///c:/Users/jeferson.ressurreica/Downloads/Projetos/Interno/Semantica/template/modulos/camada_semantica/INTAKE_SEMANTICA.md)
+>      👉 [INTAKE_SEMANTICA.md](INTAKE_SEMANTICA.md)
 > 
-> 2. **Flexibilidade para Regras e Perguntas na Pasta Entrega:**
->    - Se as regras de negócio ou perguntas não estiverem preenchidas no `INTAKE_SEMANTICA.md`, mas o engenheiro indicou arquivos ou depositou documentos na pasta `entrega/camada_semantica/` (ex: `relatorios_etl/RELATORIO_ESTRATEGIAS.md`, `GUIA_ANALISTA_BI.md`, `regras_negocio.md`):
->    - **NÃO BLOQUEIE A SESSÃO.** A IA deve ler e utilizar integralmente esses arquivos sem travar no Gate 0.
+> 2. **Flexibilidade para Regras, Perguntas e Radar Consultivo da IA:**
+>    - Se as regras de negócio ou perguntas não estiverem preenchidas no `INTAKE_SEMANTICA.md`, mas o engenheiro indicou a **Opção 2 ou Opção 3** OU depositou documentos na pasta `entrega/camada_semantica/` (ex: `relatorios_etl/RELATORIO_ESTRATEGIAS.md`, `GUIA_ANALISTA_BI.md`, `regras_negocio.md`):
+>    - **NÃO BLOQUEIE A SESSÃO.** A IA deve ler e utilizar integralmente esses arquivos e/ou acionar o **Radar Consultivo da IA** sobre o DDL do DW sem travar no Gate 0.
 > 
 > 3. **Identificação e Estado do Schema:**
 >    - Valide se as tabelas `META_*` já existem no schema alvo (Seção 0.2 do Intake):
@@ -52,17 +52,18 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
    - Toda métrica cadastrada em `META_METRICA` e calculada nas views deve ter sua aditividade declarada (`ADITIVA`, `SEMI_ADITIVA` com restrição, ou `NAO_ADITIVA`). Nunca assuma aditividade sem validação.
 5. **Comentários em Tudo (`COMMENT ON`):**
    - Toda view e tabela gerada deve conter comando `COMMENT ON TABLE` e comentários nas colunas calculadas.
-6. **Alinhamento Técnico Mandatório (Copiloto Consultivo — Não Gere no Escuro):**
-   - O agente NUNCA deve tomar decisões analíticas ou semânticas críticas de forma isolada. Se houver ambiguidade de regras, filtros ocultos de relatórios legados ou grão não explícito, pause a geração e alinhe a quatro mãos com o Engenheiro/Analista de Dados antes de codificar.
+6. **Alinhamento Técnico Mandatório & Radar Consultivo da IA (Copiloto Consultivo — Não Gere no Escuro):**
+   - O agente NUNCA deve tomar decisões analíticas ou semânticas críticas de forma isolada. Se houver ambiguidade de regras, filtros ocultos de relatórios legados ou grão não explícito, pause a geração e alinhe a quatro mãos com o Engenheiro/Analista de Dados.
+   - Em todo projeto, além de atender ao escopo solicitado pelo cliente, a IA DEVE apresentar no `DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` o **💡 Radar Consultivo da IA**, sugerindo novos KPIs (`VW_*_KPI_*` / `META_METRICA`), regras de negócio e sanitização (`META_REGRA_NEGOCIO`) e novas perguntas estratégicas, táticas e de auditoria (`META_CONSULTA_NEGOCIO`) que o cliente não percebeu inicialmente.
 
 ---
 
 ## 🚀 Fases de Execução
 
-1. **Fase 1 — Coleta e Inspeção:** Valida `INTAKE_SEMANTICA.md`, inspeciona DDLs e amostras em `entrega/camada_semantica/`.
-2. **Fase 2 — Documento de Entendimento:** Define grão, aditividade de medidas, hierarquias, joins e armadilhas. Valida com o engenheiro antes de codificar.
+1. **Fase 1 — Coleta, Inspeção e Radar de KPIs:** Valida `INTAKE_SEMANTICA.md`, inspeciona DDLs e amostras em `entrega/camada_semantica/` (executando `inspecionar_ddl_origem.py` sobre o DDL do DW).
+2. **Fase 2 — Documento de Entendimento & Expansão Consultiva:** Define grão, aditividade de medidas, hierarquias, joins, armadilhas e apresenta as sugestões do **Radar Consultivo da IA** (novos KPIs, regras e perguntas) separadas do escopo do cliente para aprovação do engenheiro antes de codificar.
 3. **Fase 3 — Geração dos Scripts SQL:**
-   - Views Analíticas em `saida/camada_semantica/vw_analiticas/` (Dimensões vigentes, Eventos, KPIs).
+   - Views Analíticas em `saida/camada_semantica/vw_analiticas/` (Dimensões vigentes, Eventos, KPIs do cliente + KPIs sugeridos aprovados).
    - Scripts META_ em `saida/camada_semantica/meta_projeto/` (do `01_meta_glossario.sql` ao `08_meta_valor_dominio.sql`).
    - Script de validações cruzadas `09_validacoes.sql`.
 4. **Fase 4 — Catálogo e Documentação:** Preenche `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `PROJETO_VERSION.md` com base nos modelos de `templates/`.

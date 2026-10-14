@@ -6,7 +6,7 @@ Plataforma NINHO — Pipeline Contínuo de Dados
 
 Este script realiza a ponte de integração automática entre a saída do Planejador de DW
 e a entrada da Camada Semântica, garantindo que o trabalho não pare em um único módulo:
-  1. Coleta os DDLs de Fatos e Dimensões gerados em 'saida/planejador_dw/<PROJETO>/'
+  1. Coleta os DDLs de Fatos e Dimensões gerados em 'saida/planejador_dw/'
      e os deposita em 'entrega/camada_semantica/ddl/'.
   2. Gera um DDL consolidado ('DDL_COMPLETO_DW_<PROJETO>.sql') com ordem de dependência.
   3. Coleta ou gera amostras de dados sintéticos (mock) em 'entrega/camada_semantica/amostras/'.
@@ -96,7 +96,7 @@ def extrair_metadados_intake_dw(base_dir: Path) -> dict:
         dados["projeto"] = m_proj.group(1).strip()
 
     # Engenheiro
-    m_eng = re.search(r"\*\*Engenheiro Responsável:\*\*\s*`?(.*?)`?$", texto, re.MULTILINE)
+    m_eng = re.search(r"\*\*Engenheiro(?: de Dados)? Responsável:\*\*\s*`?(.*?)`?$", texto, re.MULTILINE)
     if m_eng and m_eng.group(1).strip() and not m_eng.group(1).strip().startswith("[Nome"):
         dados["engenheiro"] = m_eng.group(1).strip()
 
@@ -122,6 +122,18 @@ def extrair_metadados_intake_dw(base_dir: Path) -> dict:
         dados["estrategia_carga"] = "Estratégia A (Truncate & Load Massivo com BITMAP INDEX e PRC_POS_CARGA_FATO)"
     elif "[x] **Estratégia B: Incremental Idempotente" in texto:
         dados["estrategia_carga"] = "Estratégia B (Incremental Idempotente via MERGE com B-TREE INDEX)"
+
+    # Observações livres da Seção 8 (se preenchidas pelo engenheiro)
+    dados["observacoes_livres"] = ""
+    m_obs = re.search(
+        r"## Seção 8 — Informações Complementares.*?\n```text\n(.*?)\n```",
+        texto,
+        re.DOTALL,
+    )
+    if m_obs:
+        bloco_obs = m_obs.group(1).strip()
+        if bloco_obs and not bloco_obs.startswith("[Escreva ou cole aqui"):
+            dados["observacoes_livres"] = bloco_obs
 
     return dados
 
@@ -350,106 +362,169 @@ def preencher_intake_semantica(base_dir: Path, projeto: str, schema: str, engenh
     hoje = datetime.now().strftime("%Y-%m-%d")
     ddl_principal = f"entrega/camada_semantica/ddl/DDL_COMPLETO_DW_{projeto}.sql"
     pasta_amostras = "entrega/camada_semantica/amostras/"
-    relatorio_principal = f"entrega/camada_semantica/relatorios_etl/RELATORIO_ESTRATEGIAS_{projeto}.md"
+    relatorio_principal = (
+        f"entrega/camada_semantica/relatorios_etl/{relatorios_list[0]}"
+        if relatorios_list
+        else f"entrega/camada_semantica/relatorios_etl/RELATORIO_ESTRATEGIAS_{projeto}.md"
+    )
 
     # Monta lista de perguntas de negócio
     perguntas_str = ""
     if meta_dw.get("perguntas"):
         for i, p in enumerate(meta_dw["perguntas"], 1):
-            perguntas_str += f"{i}. {p}\n"
+            perguntas_str += f"{i}. `{p}`\n"
     else:
-        perguntas_str = "1. Qual a volumetria e métricas totais por dimensão e período?\n2. Qual o ranking e distribuição dos indicadores consolidados?\n"
+        perguntas_str = (
+            "1. `Qual a volumetria e métricas totais por dimensão e período?`\n"
+            "2. `Qual o ranking e distribuição dos indicadores consolidados?`\n"
+        )
 
-    # Monta regras de negócio
-    regras_str = f"- Grão da Fato Principal: {meta_dw.get('grao_fato', 'Uma linha para cada evento transacional')}\n"
-    regras_str += f"- Estratégia de Carga DW: {meta_dw.get('estrategia_carga', 'Truncate & Load / MERGE conforme especificação')}\n"
-    regras_str += f"- Padrão SCD: {meta_dw.get('scd_tipo', 'SCD Tipo 2 com vigência por DTC_EFETIVACAO e DTC_EXPIRACAO')}\n"
-    regras_str += f"- Retenção Histórica: {meta_dw.get('retencao', 'Histórico completo mantido')}\n"
-    regras_str += "- Chave Técnica Kimball: Registro -1 obrigatório em todas as dimensões ('NAO INFORMADO')\n"
-    regras_str += "- Padrão de Nomenclatura: Todas as tabelas, colunas e identificadores rigorosamente em MAIÚSCULAS no Oracle\n"
+    obs_livres = meta_dw.get("observacoes_livres") or (
+        "[Escreva ou cole aqui livremente qualquer informação complementar, regra específica do projeto,\n"
+        "exceção de cálculo ou instrução direta para o Agente considerar na Camada Semântica...]"
+    )
 
-    conteudo_intake = f"""# INTAKE — Formulário de coleta para construção da camada semântica
+    conteudo_intake = f"""# INTAKE_SEMANTICA.md — Formulário de Entrada da Camada Semântica
 
-> **Transicionado Automaticamente do Planejador de DW** em {hoje}
+Preencha este formulário com as informações do projeto para a construção da **Camada Semântica Corporativa** sobre um Data Warehouse Oracle existente.
+
+> ✅ **TRANSICIONADO AUTOMATICAMENTE DO PLANEJADOR DE DW EM {hoje}**  
 > Todos os insumos obrigatórios foram depositados na pasta `entrega/camada_semantica/`.
 
 ---
 
-## 0. Identificação do Projeto ☐ (obrigatório)
+## Seção 0 — Identificação do Projeto & Ambiente
 
-| Campo | Valor |
-|---|---|
-| **Nome do Projeto** (sigla curta em maiúsculas, ex: SEI, SIPAR) | `{projeto}` |
-| **Engenheiro de Dados Responsável** | `{engenheiro or 'Engenheiro de Dados'}` |
-| **Schema Alvo no Oracle** | `{schema}` |
-| **Primeira execução neste schema?** | `[x] Sim  [ ] Não` |
-| **Tabelas META_* já existem no schema?** | `[ ] Sim  [x] Não` |
-| **Se já existem, projetos já cadastrados:** | `Nenhum (projeto inaugural)` |
-| **Data de Início** | `{hoje}` |
+- **Nome do Projeto (Sigla em maiúsculas):** `{projeto}`
+- **Engenheiro de Dados Responsável:** `{engenheiro or 'Engenheiro de Dados'}`
+- **Schema Alvo no Oracle:** `{schema}`
+- **Data de Início:** `{hoje}`
 
----
+### 0.1 Estado do Schema Alvo
+- [x] **Primeira execução neste schema** (schema novo, sem objetos semânticos prévios).
+- [ ] **Schema já contém execuções de outros projetos** (compartilhamento de schema multi-projeto).
 
-## 1. DDL das fatos e dimensões ☐ (obrigatório)
-
-Arquivo consolidado gerado pelo Planejador de DW:
-
-```text
-{ddl_principal}
-```
-
-Arquivos individuais disponíveis em `entrega/camada_semantica/ddl/`:
-{chr(10).join(f"- entrega/camada_semantica/ddl/{a}" for a in ddl_list if a != f"DDL_COMPLETO_DW_{projeto}.sql")}
-
-## 2. Amostras dos dados ☐ (obrigatório)
-
-Pasta de amostras gerada pelo pipeline:
-
-```text
-{pasta_amostras}
-```
-
-Arquivos de amostras identificados:
-{chr(10).join(f"- entrega/camada_semantica/amostras/{a}" for a in amostras_list) if amostras_list else "- Amostra sintética gerada em entrega/camada_semantica/amostras/"}
-
-## 3. Relatório / documentação do ETL ☐ (recomendado)
-
-```text
-{relatorio_principal}
-```
-
-Insumos complementares do ETL e BI:
-{chr(10).join(f"- entrega/camada_semantica/relatorios_etl/{r}" for r in relatorios_list)}
-
-## 4. Regras de negócio do cliente ☐ (obrigatório)
-
-```text
-{regras_str.strip()}
-```
-
-## 4.1 Regras de RLS (Row Level Security) ☐ (se aplicável)
-
-### 4.1.1 Visão geral
-- [x] **Acesso total:** Usuários veem TODOS os dados (padrão inicial)
-- [ ] **Acesso restrito:** Usuários veem APENAS parte dos dados
+### 0.2 Estado das 8 Tabelas `META_*`
+- [x] **Tabelas `META_*` NÃO existem** (a IA gerará o DDL de criação `01_create_meta_tables.sql` + inserts completos).
+- [ ] **Tabelas `META_*` JÁ existem** (a IA NÃO recriará as tabelas; utilizará `MERGE INTO` para acrescentar apenas os novos metadados do projeto).
 
 ---
 
-## 5. Perguntas que os usuários querem responder ☐ (recomendado)
+## Seção 1 — Seleção de Tecnologias e Ferramentas de Consumo (MANDATÓRIO)
 
-Perguntas trazidas diretamente do Planejador de DW para virarem `META_CONSULTA_NEGOCIO` e `VW_KPI_*`:
+> 🛑 **REGRA DE ESCOPO:** Marque com `[x]` as ferramentas que consumirão as views e metadados.
 
-```text
+- [x] **Power BI:** Views analíticas otimizadas para Import Mode / DirectQuery, com nomes amigáveis e chaves dimensionais explícitas.
+- [x] **Apache Superset:** Datasets relacionais com métricas SQL compiladas e filtros nativos.
+- [x] **Modelos de IA / Agentes Text-to-SQL (LLMs):** Metadados ricos nas 8 tabelas `META_*` com regras de negócio, glossário e orientações de IA (`META_ORIENTACAO_IA`).
+- [x] **Ferramentas SQL Ad-Hoc:** DBeaver, Metabase, Oracle SQL Developer.
+
+---
+
+## Seção 2 — Arquitetura de Views Analíticas Desejada
+
+Marque o padrão arquitetural de entrega das views em `saida/camada_semantica/vw_analiticas/`:
+- [x] **Arquitetura Canônica em 3 Camadas (Padrão Corporativo):**
+  - **Camada 1 (DIM):** Views `VW_{projeto}_DIM_*` filtrando apenas registros vigentes (`DTC_EXPIRACAO IS NULL`).
+  - **Camada 2 (EVENTO):** Views `VW_{projeto}_<EVENTO>` desnormalizando fatos atômicas com suas dimensões correspondentes.
+  - **Camada 3 (KPI):** Views `VW_{projeto}_KPI_*` agregando métricas por período (mês, ciclo, unidade).
+- [ ] **Materialized Views com Refresh Programado:**
+  - Criação de MVs com `BUILD IMMEDIATE REFRESH COMPLETE ON DEMAND` para queries analíticas pesadas.
+- [x] **Tratamento de Nulos com Coalesce / Fallback:**
+  - `COALESCE` em campos textuais para 'NÃO INFORMADO' e valores numéricos para `0`.
+
+---
+
+## Seção 3 — DDL e Amostras de Dados das Fatos e Dimensões
+
+*Deposite os DDLs do DW em `entrega/camada_semantica/ddl/` e amostras em `entrega/camada_semantica/amostras/`.*
+
+- **Caminho do DDL Consolidado:** `{ddl_principal}`
+- **Caminho das Amostras de Dados:** `{pasta_amostras}`
+
+### 3.1 Características dos Dados Identificadas nas Amostras
+- [ ] Existem linhas de total/subtotal misturadas ao detalhe (ex: "Total Geral").
+- [ ] Existem códigos hierárquicos (ex: código `2110.01` filho de `2110`).
+- [x] Existem colunas de vigência temporal (`DTC_EFETIVACAO` e `DTC_EXPIRACAO`).
+- [x] Existem flags de exclusão lógica (`SIN_ATIVO = 'S'/'N'`).
+
+---
+
+## Seção 4 — Regras de Negócio, Expansão Consultiva da IA e Segurança (RLS)
+
+### 4.0 Origem e Expansão das Regras de Negócio
+- [x] **Opção 1: Digitadas diretamente na lista 4.1 abaixo**
+- [x] **Opção 2: Documentadas em arquivos na pasta `entrega/camada_semantica/` ou derivados do DW**
+  - **Arquivo(s) de referência:** `{relatorio_principal}`
+  - *(A IA extrairá as regras diretamente desses arquivos).*
+- [ ] **Opção 3: Descoberta Consultiva pela IA a partir do DDL/Amostras do DW**
+- [x] **💡 Habilitar Radar Consultivo da IA para Regras e KPIs (Recomendado — Ativo por Padrão):**
+  - Além das regras informadas pelo cliente, a IA analisará as Fatos e Dimensões do DW para sugerir proativamente no `DOCUMENTO_ENTENDIMENTO_{projeto}.md`:
+    - **Novas Métricas e Views `VW_{projeto}_KPI_*`** (ex: Lead Time, Backlog Ativo, Aging de Fila, Taxa de Vazão/Throughput, Cumprimento de SLA, Variação Mensal MoM e Curva ABC/Pareto).
+    - **Novas Regras para `META_REGRA_NEGOCIO` e `META_ORIENTACAO_IA`** (ex: tratamento de datas invertidas, segregação entre estoque aberto e fluxo concluído, proteção contra divisão por zero e mapeamento da linha `-1`).
+
+### 4.1 Regras de Negócio e Exceções Específicas do Projeto
+1. `Grão da Fato Principal: {meta_dw.get('grao_fato', 'Uma linha para cada evento transacional')}`
+2. `Estratégia de Carga DW: {meta_dw.get('estrategia_carga', 'Truncate & Load / MERGE conforme especificação')}`
+3. `Padrão SCD: {meta_dw.get('scd_tipo', 'SCD Tipo 2 com vigência por DTC_EFETIVACAO e DTC_EXPIRACAO')}`
+4. `Chave Técnica Kimball: Registro -1 obrigatório em todas as dimensões ('NAO INFORMADO')`
+
+### 4.2 Segurança por Linha (Row-Level Security - RLS)
+- [x] **Sem RLS (Acesso Total):** Todos os usuários autorizados no banco enxergam a base integral.
+- [ ] **RLS Baseado em Views com Filtro:** Views analíticas segregadas por segmento ou órgão.
+- [ ] **RLS Baseado em VPD (Virtual Private Database / SYS_CONTEXT):** Filtro dinâmico via contexto de sessão Oracle.
+
+---
+
+## Seção 5 — Perguntas de Negócio & Sugestões da IA (`META_CONSULTA_NEGOCIO`)
+
+### 5.0 Origem e Expansão das Perguntas de Negócio
+- [x] **Opção 1: Listadas diretamente na lista 5.1 abaixo**
+- [x] **Opção 2: Extraídas de documentos na pasta de entrega ou guias do DW**
+  - **Arquivo(s) de referência:** `{relatorio_principal}`
+- [ ] **Opção 3: Geradas integralmente pelo Radar Consultivo da IA a partir do DW**
+- [x] **💡 Expandir Catálogo com Novas Perguntas Sugeridas pela IA (Recomendado — Ativo por Padrão):**
+  - Mesmo quando o cliente fornece uma lista inicial de perguntas, a IA proporá perguntas adicionais de alto valor divididas em 3 horizontes (**Executivas/Estratégicas**, **Táticas/Operacionais** e **Auditoria/Qualidade**) para enriquecer a tabela `META_CONSULTA_NEGOCIO` e o treinamento de agentes Text-to-SQL.
+
+### 5.1 Lista de Perguntas Solicitadas pelo Cliente
 {perguntas_str.strip()}
-```
 
 ---
 
-## O que eu devolvo após receber os insumos
+## Seção 6 — Entregáveis da Camada Semântica
 
-1. **Documento de entendimento** — grão, aditividade, hierarquias, relacionamentos e armadilhas identificadas.
-2. **saida/camada_semantica/vw_analiticas/** — views `VW_*` prontas para o seu modelo (DIM → EVENTO → KPI).
-3. **saida/camada_semantica/meta_projeto/01_create_meta_tables.sql** — CREATE TABLE das 8 META_.
-4. **saida/camada_semantica/meta_projeto/01_meta_glossario.sql** a **08_meta_valor_dominio.sql** — INSERTs das META_.
+Marque os artefatos que devem ser gerados em `saida/camada_semantica/`:
+- [x] **Documento de Entendimento Semântico (`DOCUMENTO_ENTENDIMENTO_{projeto}.md`)**
+- [x] **DDLs das Views Analíticas (`saida/camada_semantica/vw_analiticas/`)**
+- [x] **DDL de Criação das Tabelas `META_*` (`01_create_meta_tables.sql`)** *(apenas se não existirem)*
+- [ ] **Script de Segurança RLS / VPD (`02_rls_template.sql`)** *(se RLS selecionado na Seção 4.2)*
+- [x] **Carga do Glossário de Termos (`01_meta_glossario.sql`)**
+- [x] **Carga do Catálogo de Métricas (`02_meta_metrica.sql`)**
+- [x] **Carga do Dicionário de Objetos e Colunas (`03_meta_objeto.sql`)**
+- [x] **Carga da Matriz de Relacionamentos (`04_meta_relacionamento.sql`)**
+- [x] **Carga das Regras de Negócio (`05_meta_regra_negocio.sql`)**
+- [x] **Carga das Consultas Prontas de Negócio (`06_meta_consulta_negocio.sql`)**
+- [x] **Carga das Orientações e Guardrails de IA (`07_meta_orientacao_ia.sql`)**
+- [x] **Carga dos Valores de Domínio (`08_meta_valor_dominio.sql`)**
+- [x] **Suíte de Testes e Validações SQL (`09_validacoes.sql`)**
+
+---
+
+## Seção 7 — Informações Complementares, Particularidades e Observações Livres do Engenheiro
+
+> 📝 **ESPAÇO ABERTO DO ENGENHEIRO DE DADOS:**  
+> Utilize esta seção para registrar **qualquer regra específica do projeto, sinônimo/jargão de negócio do cliente, guardrail extra para o Agente Text-to-SQL, filtro especial de view ou restrição técnica** que não esteja contemplada nos campos acima.
+
+- **Sinônimos, Siglas ou Jargões Específicos do Cliente (para `META_GLOSSARIO`):**
+  - `[Ex: O cliente chama 'Unidade Geradora' de 'Setor Protocolizante' e 'Processo Sobrestado' de 'Processo Suspenso']`
+- **Guardrails ou Restrições Específicas para Text-to-SQL (`META_ORIENTACAO_IA`):**
+  - `[Ex: Nunca cruzar FATO_TRAMITACAO com FATO_DOCUMENTO diretamente sem usar CTE por protocolo; sempre filtrar ANO >= 2022 por padrão]`
+- **Padrões de Nomenclatura de Views ou Exigências do Time de BI:**
+  - `[Ex: O time de Power BI pediu que as colunas de data nas views tenham sufixo _DT e valores monetários _VLR]`
+- **Contexto Adicional, Regras Específicas ou Instruções Livres para a IA:**
+```text
+{obs_livres}
+```
 """
 
     intake_sem_path.write_text(conteudo_intake, encoding="utf-8")

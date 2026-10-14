@@ -10,10 +10,13 @@
 Clique em qualquer tópico ou comando abaixo para navegar diretamente para a instrução correspondente:
 
 - [1. Utilitários & Scripts Python da Plataforma](#1-utilitarios-python)
-  - [1.1 Validador Pré-Voo de Insumos (Auditoria de Arquivos)](#11-validador-pre-voo)
+  - [1.1 Validador Pré-Voo de Insumos e Auditor Pós-Geração (`validar_entrega.py`)](#11-validador-pre-voo)
   - [1.2 Gerador de Dados Sintéticos / Mock para Teste de BI](#12-gerador-mock-dados)
   - [1.3 Execução e Teste de Extratores de APIs REST](#13-extratores-python-api)
   - [1.4 Transicionador Automatizado (Planejador DW -> Camada Semântica)](#14-transicionador-dw-semantica)
+  - [1.5 Inspetor Determinístico de DDLs de Origem (`inspecionar_ddl_origem.py`)](#15-inspetor-ddl-origem)
+  - [1.6 Auditor Preditivo de Mapeamentos ODI 12c (`auditar_mapa_odi.py`)](#16-auditor-mapa-odi)
+  - [1.7 Gerenciador de Ciclo de Vida do Projeto (`gerenciar_projeto.py`)](#17-gerenciador-ciclo-vida)
 - [2. Comandos Operacionais do Planejador de DW (Oracle)](#2-comandos-planejador-dw)
   - [2.1 Ordem Canônica de Execução dos DDLs Físicos](#21-ordem-execucao-ddls)
   - [2.2 Gerenciamento de Sequences e Surrogate Keys](#22-sequences-surrogate-keys)
@@ -73,8 +76,8 @@ Clique em qualquer tópico ou comando abaixo para navegar diretamente para a ins
 ## 1. Utilitários & Scripts Python da Plataforma
 
 <a id="11-validador-pre-voo"></a>
-### 1.1 Validador Pré-Voo de Insumos (Auditoria de Arquivos)
-> **Cenário:** Execute sempre antes de solicitar à IA a geração de um DW ou Camada Semântica. O validador checa integridade de pastas, formulários de intake preenchidos, encoding e presença de schemas fonte.
+### 1.1 Validador Pré-Voo de Insumos e Auditor Pós-Geração (`validar_entrega.py`)
+> **Cenário:** Execute antes de solicitar à IA a geração de um DW/Camada Semântica (pré-voo) e imediatamente após a geração dos artefatos físicos (`saida`) para auditar as Regras de Ouro (ausência de subpastas ilegais em `saida/`, proibição de `BITMAP INDEX` em dimensões, presença de linha sentinela `-1`, geração condicional de ferramentas ETL e comentários `-- Grão:` nas views semânticas).
 
 ```bash
 # Validar apenas os insumos do Planejador de DW
@@ -83,11 +86,14 @@ python core/scripts_comuns/validar_entrega.py dw
 # Validar apenas os insumos da Camada Semântica
 python core/scripts_comuns/validar_entrega.py semantica
 
-# Validar TODOS os módulos da plataforma simultaneamente
+# Auditar pós-geração todos os artefatos criados na pasta saida/ contra as Regras de Ouro
+python core/scripts_comuns/validar_entrega.py saida
+
+# Validar TODOS os módulos e a pasta saida/ simultaneamente
 python core/scripts_comuns/validar_entrega.py all
 ```
 *Saída esperada:* `[SUCESSO] Auditoria concluida com 0 erros.`  
-*Se houver erro:* O script aponta a linha e o arquivo exato que precisa de correção antes de rodar os modelos de IA.
+*Se houver erro:* O script aponta o arquivo e a regra violada que precisa de correção.
 
 ---
 
@@ -96,11 +102,11 @@ python core/scripts_comuns/validar_entrega.py all
 > **Cenário:** O analista de BI precisa homologar o painel Power BI antes do término da implementação do ETL no banco. Gere dados aderentes ao Star Schema com distribuição de datas e chaves válidas.
 
 ```bash
-# Gerar 100 linhas padrão com colunas canônicas
-python core/scripts_comuns/gerar_mock_dados.py --linhas 100 --saida saida/mock_teste_bi.csv
+# Gerar 100 linhas padrão com colunas canônicas na pasta oficial de datasets de BI
+python core/scripts_comuns/gerar_mock_dados.py --linhas 100 --saida saida/planejador_dw/08_datasets_bi/mock_teste_bi.csv
 
-# Gerar 5.000 linhas diretamente no diretório do projeto
-python core/scripts_comuns/gerar_mock_dados.py --linhas 5000 --saida saida/planejador_dw/MEU_PROJETO/mock_fato_grande.csv
+# Gerar 5.000 linhas diretamente na pasta de amostras da Camada Semântica
+python core/scripts_comuns/gerar_mock_dados.py --linhas 5000 --saida entrega/camada_semantica/amostras/mock_fato_grande.csv
 
 # Exibir ajuda e parâmetros disponíveis
 python core/scripts_comuns/gerar_mock_dados.py --help
@@ -122,10 +128,10 @@ source .venv/bin/activate
 .venv\Scripts\activate.bat
 
 # 2. Executar o extrator de teste com dry-run (sem gravar no banco)
-python saida/planejador_dw/<PROJETO>/07_extratores_python/extract_api_<entidade>.py --dry-run
+python saida/planejador_dw/07_extratores_python/extract_api_<entidade>.py --dry-run
 
 # 3. Executar a extração real carregando na Staging
-python saida/planejador_dw/<PROJETO>/07_extratores_python/extract_api_<entidade>.py --lote 20261001 --limite 10000
+python saida/planejador_dw/07_extratores_python/extract_api_<entidade>.py --lote 20261001 --limite 10000
 ```
 
 ---
@@ -148,6 +154,51 @@ python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto COAPS_FIN
 
 ---
 
+<a id="15-inspetor-ddl-origem"></a>
+### 1.5 Inspetor Determinístico de DDLs de Origem (`inspecionar_ddl_origem.py`)
+> **Cenário:** Antes de gerar o Blueprint Técnico (Etapa 1), execute o inspetor determinístico sobre os arquivos `.sql` depositados em `entrega/planejador_dw/schemas_origem/`. Ele extrai 100% das colunas, chaves primárias, chaves estrangeiras, índices originais e diagnostica automaticamente as colunas temporais para CDC incremental (incluindo detecção de **CDC por Ciclo de Vida / Eventos** quando a tabela não possui coluna `updated_at`).
+
+```bash
+# Inspecionar todos os DDLs depositados na pasta padrão de entrega
+python core/scripts_comuns/inspecionar_ddl_origem.py
+
+# Inspecionar uma pasta específica e salvar o inventário Markdown completo
+python core/scripts_comuns/inspecionar_ddl_origem.py --pasta entrega/planejador_dw/schemas_origem --saida saida/planejador_dw/09_relatorio_estrategias/inventario_ddl_origem.md
+```
+
+---
+
+<a id="16-auditor-mapa-odi"></a>
+### 1.6 Auditor Preditivo de Mapeamentos ODI 12c (`auditar_mapa_odi.py`)
+> **Cenário:** Inspecione arquivos XML exportados do ODI 12c (`MAP_*.xml`) depositados em `entrega/planejador_dw/mapas_odi/` para detectar gargalos severos de performance antes do deploy (joins pesados sem pushdown, ausência de PK na Staging para IKM Merge, falta de CDC incremental ou look-ups mal indexados).
+
+```bash
+# Auditar um XML de Mapping ODI específico ou pasta de mapas
+python core/scripts_comuns/auditar_mapa_odi.py entrega/planejador_dw/mapas_odi/
+```
+
+---
+
+<a id="17-gerenciador-ciclo-vida"></a>
+### 1.7 Gerenciador de Ciclo de Vida do Projeto (`gerenciar_projeto.py`)
+> **Cenário:** Como a plataforma NINHO opera sobre pastas canônicas fixas (`saida/planejador_dw/`, `saida/camada_semantica/`, `saida/governanca_dados/`), utilize este utilitário ao finalizar um projeto para empacotar toda a entrega do cliente em um `.zip` isolado e, em seguida, limpar o workspace para iniciar o próximo projeto.
+
+```bash
+# 1. Verificar quantos arquivos gerados existem atualmente em saida/ e entrega/
+python core/scripts_comuns/gerenciar_projeto.py --status
+
+# 2. Exportar todos os artefatos gerados e formulários para uma pasta e arquivo .zip
+python core/scripts_comuns/gerenciar_projeto.py --exportar ../entregas_clientes --projeto SEIBAHIA
+
+# 3. Simular a limpeza do workspace (Dry-Run)
+python core/scripts_comuns/gerenciar_projeto.py --resetar
+
+# 4. Executar a limpeza física preservando intactos os .gitkeep e README.md
+python core/scripts_comuns/gerenciar_projeto.py --resetar --confirmar
+```
+
+---
+
 <a id="2-comandos-planejador-dw"></a>
 ## 2. Comandos Operacionais do Planejador de DW (Oracle)
 
@@ -157,14 +208,13 @@ python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto COAPS_FIN
 
 ```text
 Ordem Obrigatória:
-1. TABELA DE CONTROLE: 00_tb_controle_carga.sql
-2. TABELAS DE STAGING: 01_stg_<tabelas>.sql
-3. SEQUENCES E TRIGGERS: 02_seq_<tabelas>.sql
-4. DIMENSÃO TEMPO:     03_dim_tempo.sql
-5. DEMAIS DIMENSÕES:   03_dim_<entidades>.sql
-6. REGISTROS -1:       04_insert_menos_um.sql
-7. TABELAS FATOS:      05_fato_<processos>.sql
-8. PROCEDURES PÓS-ETL: 08_procedures/prc_pos_carga_fato.sql
+1. TABELA DE CONTROLE: 01_controle_carga/01_tb_controle_carga.sql
+2. TABELAS DE STAGING: 02_staging/02_stg_<tabelas>.sql
+3. DIMENSÃO TEMPO:     03_dimensoes/03_dim_tempo.sql
+4. DEMAIS DIMENSÕES:   03_dimensoes/03_dim_<entidades>.sql (inclui Sequences e linha -1)
+5. TABELAS FATOS:      04_fatos/04_fat_<processos>.sql
+6. PROCEDURES PÓS-ETL: 05_procedimentos_manutencao/prc_pos_carga_fato.sql
+7. SMOKE TESTS:        10_testes_integridade/13_testes_integridade.sql
 ```
 
 No **Oracle SQL*Plus** ou **SQLcl**, execute em lote:
@@ -172,14 +222,14 @@ No **Oracle SQL*Plus** ou **SQLcl**, execute em lote:
 -- Conectar no schema do DW
 CONNECT usuario_dw/senha@ORCL_PROD;
 
--- Executar os scripts gerados
-@saida/planejador_dw/<PROJETO>/00_tb_controle_carga.sql;
-@saida/planejador_dw/<PROJETO>/01_stg_tabelas.sql;
-@saida/planejador_dw/<PROJETO>/02_sequences.sql;
-@saida/planejador_dw/<PROJETO>/03_dimensoes.sql;
-@saida/planejador_dw/<PROJETO>/04_insert_menos_um.sql;
-@saida/planejador_dw/<PROJETO>/05_fatos.sql;
-@saida/planejador_dw/<PROJETO>/08_procedures/prc_pos_carga_fato.sql;
+-- Executar os scripts gerados nas pastas canônicas de saida/planejador_dw/
+@saida/planejador_dw/01_controle_carga/01_tb_controle_carga.sql;
+@saida/planejador_dw/02_staging/02_stg_tabelas.sql;
+@saida/planejador_dw/03_dimensoes/03_dim_tempo.sql;
+@saida/planejador_dw/03_dimensoes/03_dim_entidades.sql;
+@saida/planejador_dw/04_fatos/04_fat_processos.sql;
+@saida/planejador_dw/05_procedimentos_manutencao/prc_pos_carga_fato.sql;
+@saida/planejador_dw/10_testes_integridade/13_testes_integridade.sql;
 ```
 
 ---
@@ -551,13 +601,13 @@ SET SERVEROUTPUT ON SIZE UNLIMITED;
 # Execução simples com log básico
 sh /opt/hop/hop-run.sh \
   -r local \
-  -p /opt/etl/saida/planejador_dw/<PROJETO>/06_pipelines_hop/pipe_stg_<entidade>.hpl \
+  -p /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
   -l Basic
 
 # Execução com passagem de parâmetros dinâmicos e log detalhado
 sh /opt/hop/hop-run.sh \
   -r local \
-  -p /opt/etl/saida/planejador_dw/<PROJETO>/06_pipelines_hop/pipe_stg_<entidade>.hpl \
+  -p /opt/etl/saida/planejador_dw/06_pipelines_hop/pipe_stg_<entidade>.hpl \
   -l Detailed \
   -o "PARAM_DATA_CORTE=2026-10-01,PARAM_LOTE_ID=554"
 ```
@@ -571,7 +621,7 @@ sh /opt/hop/hop-run.sh \
 ```bash
 #!/bin/bash
 # Script de execução com checagem de status
-WORKFLOW="/opt/etl/saida/planejador_dw/<PROJETO>/06_pipelines_hop/wf_carga_mestre.hwf"
+WORKFLOW="/opt/etl/saida/planejador_dw/06_pipelines_hop/wf_carga_mestre.hwf"
 
 sh /opt/hop/hop-run.sh -r local -p "$WORKFLOW" -l Basic
 EXIT_CODE=$?
@@ -980,10 +1030,14 @@ CALCULATE(
   /auditar-ddl
   ```
 * **O que a IA analisa e devolve:** Relatório de auditoria de conformidade sintática, verificação de índices e conferência de todos os nomes em MAIÚSCULAS.
-* **Comando Técnico de Apoio (Engenheiro executa no Oracle):**
+* **Comando Técnico de Apoio (Engenheiro executa no Oracle ou via CLI):**
   ```sql
   -- Executar a bateria de smoke tests pré-voo gerada pela plataforma
-  @saida/planejador_dw/<PROJETO>/10_testes_integridade/13_testes_integridade.sql;
+  @saida/planejador_dw/10_testes_integridade/13_testes_integridade.sql;
+  ```
+  ```bash
+  # Validar automaticamente a pasta saida/ contra as Regras de Ouro
+  python core/scripts_comuns/validar_entrega.py saida
   ```
 * 🚪 **Quality Gate 6:** Bateria de testes de integridade executada com zero erros reportados no terminal.
 
@@ -1070,10 +1124,10 @@ Por favor, analise as fontes, identifique os processos de negócio, determine o 
 ### 💬 8.2 Aprovar Blueprint e Gerar Artefatos Físicos do DW (Passo 2)
 ```text
 O Blueprint técnico apresentado está 100% aprovado! 
-Pode prosseguir com a geração de todos os artefatos físicos do projeto na pasta `saida/planejador_dw/<NOME_DO_PROJETO>/`:
+Pode prosseguir com a geração de todos os artefatos físicos do projeto nas subpastas oficiais de `saida/planejador_dw/` (01_controle_carga a 11_dicionario_dados):
 - DDLs completos (Staging, Dimensões com Sequence e linha -1, Fatos particionadas);
 - Procedure de pós-carga e manutenção (PRC_POS_CARGA_FATO);
-- Pipelines Hop (.hpl/.hwf) ou Extratores Python;
+- Pipelines Hop (.hpl/.hwf), Consultas/Mappings ODI ou Extratores Python (conforme marcado no INTAKE_DW.md);
 - Datasets de teste e o Relatório Executivo de Entrega.
 ```
 
@@ -1095,9 +1149,9 @@ Por favor, gere:
 <a id="84-prompt-guia-bi-dicionario"></a>
 ### 💬 8.4 Gerar Guia Customizado de BI e Dicionário de Dados HTML
 ```text
-Com base no modelo dimensional homologado em `saida/planejador_dw/<NOME_DO_PROJETO>/`, por favor gere:
-1. O Guia de Modelagem do Analista de BI (`GUIA_ANALISTA_BI_<NOME_DO_PROJETO>.md`), detalhando relacionamentos 1:N, tabela técnica `_Medidas`, métricas canônicas DAX e regras para evitar bi-direcionalidade;
-2. O Dicionário de Dados Interativo em HTML (`dicionario_dados.html`), contendo barra de busca instantânea, tipagem, indicação de chaves (PK/FK/SK) e grão de cada tabela.
+Com base no modelo dimensional homologado em `saida/planejador_dw/`, por favor gere:
+1. O Guia de Modelagem do Analista de BI (`saida/planejador_dw/08_datasets_bi/GUIA_ANALISTA_BI_<NOME_DO_PROJETO>.md`), detalhando relacionamentos 1:N, tabela técnica `_Medidas`, métricas canônicas DAX e regras para evitar bi-direcionalidade;
+2. O Dicionário de Dados Interativo em HTML (`saida/planejador_dw/11_dicionario_dados/dicionario_dados.html`), contendo barra de busca instantânea, tipagem, indicação de chaves (PK/FK/SK) e grão de cada tabela.
 ```
 
 ---

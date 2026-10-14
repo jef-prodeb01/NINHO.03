@@ -70,12 +70,16 @@ Consulte os guias detalhados em:
 
 ---
 
-## 🤝 Quality Gate 1: Blueprint & Alinhamento Mandatório com o Engenheiro (Anti-Caixa-Preta)
+## 🤝 Quality Gate 1: Blueprint, Radar Consultivo da IA & Alinhamento com o Engenheiro (Anti-Caixa-Preta)
 
 Nenhum DDL físico deve ser gerado no escuro. Diante de tabelas volumosas, regras não documentadas ou fontes heterogêneas:
-1. **Compilação do Blueprint (`/gerar-blueprint`):** O agente estrutura a proposta de Star Schema, o grão da Fato, as dimensões conformadas e as estratégias de carga.
-2. **Pausa para Discussão Técnica:** O agente expõe dúvidas, trade-offs e escolhas arquiteturais para a avaliação do Engenheiro de Dados.
+0. **Inspeção Determinística da Origem & Radar de KPIs (`/inspecionar-fontes`):** Sempre que houver scripts `.sql` em `entrega/planejador_dw/ddl/` (ou `schemas_origem/`), execute `python core/scripts_comuns/inspecionar_ddl_origem.py` para extrair 100% das colunas, PKs, FKs, índices, o diagnóstico automático de CDC e o **Radar Consultivo de Oportunidades Analíticas**.
+1. **Compilação do Blueprint com Expansão Analítica (`/gerar-blueprint`):** O agente estrutura a proposta de Star Schema, o grão da Fato, a Matriz De/Para de Colunas 100% fiel à origem, as dimensões conformadas e divide os indicadores/regras em dois blocos claros:
+   - **🎯 Escopo Solicitado pelo Cliente (Mandatório):** Todas as regras de negócio, métricas e perguntas pedidas originalmente pelo cliente no `INTAKE_DW.md` ou nos documentos da pasta `entrega/planejador_dw/`.
+   - **💡 Radar Consultivo da IA (Sugestões Proativas para Aprovação):** Novos KPIs de alto valor (ex: *Lead Time/Tempo de Ciclo*, *Backlog Ativo*, *Faixas de Envelhecimento/Aging*, *Cumprimento de SLA*, *Taxa de Auto-Tramitação/Retrabalho*, *Variação Mensal MoM*), Regras de Sanitização/Qualidade (ex: *tratamento de datas invertidas `CONCLUSAO < ABERTURA`*, *fila órfã sem responsável mapeada para `-1`*) e Novas Perguntas Executivas/Táticas/Auditoria que o cliente não percebeu na hora.
+2. **Pausa para Discussão Técnica e Seleção:** O agente expõe os trade-offs arquiteturais e pergunta ao Engenheiro de Dados quais sugestões do **Radar Consultivo da IA** devem ser incorporadas fisicamente na Fato, nas Views e no Guia de BI.
 3. **Aprovação Explícita (`/aprovar-blueprint`):** A geração física nas 11 pastas canônicas só é liberada após o aval conjunto com o Engenheiro.
+4. **Auditoria Pós-Geração (`/validar-entrega`):** Após gerar os artefatos, execute `python core/scripts_comuns/validar_entrega.py saida` para certificar que nenhuma Regra de Ouro foi violada.
 
 ---
 

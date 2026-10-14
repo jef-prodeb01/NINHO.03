@@ -1,8 +1,10 @@
 # Convenções Técnicas da Camada Semântica (Oracle)
 
+> **Fonte Única da Verdade:** Este arquivo é sincronizado com [`core/convencoes/CONVENCOES_SEMANTICA.md`](../../../../core/convencoes/CONVENCOES_SEMANTICA.md).
+
 ## 1. Nomenclatura Padronizada das Views Analíticas
 
-Todas as views devem ser criadas com nomes em **MAIÚSCULAS** seguindo os prefixos corporativos:
+Todas as views devem ser criadas com nomes em **MAIÚSCULAS** seguindo os prefixos corporativos (nunca use `SEM_VW_`, `SEC_` ou `TST_`):
 
 1. **Views de Dimensão Vigente (Camada 1):**
    - Padrão: `VW_<PROJETO>_DIM_<ENTIDADE>_ATUAL`

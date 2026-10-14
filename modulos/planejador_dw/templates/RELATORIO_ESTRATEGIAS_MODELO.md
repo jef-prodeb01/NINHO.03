@@ -114,6 +114,31 @@ flowchart TD
 
 ---
 
+### 3.3 💡 Radar Consultivo da IA: Expansão de KPIs, Regras e Perguntas de Negócio
+
+> *Além do escopo estrito solicitado pelo cliente, a análise estrutural das colunas de origem identificou as seguintes oportunidades analíticas de alto valor:*
+
+#### A. Novos KPIs e Medidas Derivadas Incorporadas / Sugeridas
+| KPI / Medida | Origem do Requisito | Fórmula / Regra de Cálculo | Valor de Negócio | Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **`<KPI_CLIENTE_1>`** | 🎯 Solicitado pelo Cliente | `<FORMULA_SQL>` | Atende requisito direto do escopo inicial | `[x] Implementado` |
+| **`<KPI_IA_LEAD_TIME>`** | 💡 Sugerido pela IA | `ROUND(DTC_CONCLUSAO - DTC_ABERTURA, 2)` | Mede o tempo de ciclo ponta a ponta (Lead Time) | `[x] Aprovado / [ ] Opcional` |
+| **`<KPI_IA_BACKLOG>`** | 💡 Sugerido pela IA | `CASE WHEN DTC_CONCLUSAO IS NULL THEN 1 ELSE 0 END` | Permite monitorar o passivo/estoque aberto em tempo real | `[x] Aprovado / [ ] Opcional` |
+| **`<KPI_IA_SLA>`** | 💡 Sugerido pela IA | `CASE WHEN NVL(DTC_CONCLUSAO, SYSDATE) <= DTC_PRAZO THEN 1 ELSE 0 END` | Apura o índice de cumprimento de SLA e atrasos | `[x] Aprovado / [ ] Opcional` |
+
+#### B. Regras de Negócio e Qualidade de Dados Adicionais (Sanitização)
+- **Regra do Cliente:** `<DESCRICAO_REGRA_SOLICITADA>`
+- **💡 Sugestão da IA (Sanitização Cronológica):** Registros com data de conclusão menor que data de abertura (`DTC_CONCLUSAO < DTC_ABERTURA`) recebem flag de inconsistência e são isolados da média de SLA para evitar tempos negativos.
+- **💡 Sugestão da IA (Preservação de Fila Órfã):** Chaves nulas de atribuição/responsável são convertidas para `DIMENSION_KEY = -1` (`'NÃO ATRIBUÍDO / FILA GERAL'`), permitindo auditar demandas sem dono.
+
+#### C. Novas Perguntas Estratégicas de Negócio (`META_CONSULTA_NEGOCIO`)
+1. **[Solicitada pelo Cliente]** `<PERGUNTA_1_DO_CLIENTE>`
+2. **[💡 Sugerida pela IA — Executiva]** *Qual é a evolução mensal do Lead Time médio e da taxa de vazão (Throughput) por unidade?*
+3. **[💡 Sugerida pela IA — Tática/Operacional]** *Qual é o volume atual do Backlog em aberto estratificado por faixa de envelhecimento (Aging: 0-15, 16-30, 31-60, >60 dias)?*
+4. **[💡 Sugerida pela IA — Auditoria]** *Quais rotas ou unidades concentram o maior índice de retrabalho/auto-tramitação ou registros com inconsistência de datas?*
+
+---
+
 ## 4. Rotina Pós-Carga (`PRC_POS_CARGA_FATO`)
 
 Se a **Estratégia A** foi adotada, incluir a chamada da procedure no pacote do ODI após a carga da fato:

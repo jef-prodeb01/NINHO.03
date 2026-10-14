@@ -281,3 +281,40 @@ Para cenários onde os dados processados transitam para um Lakehouse documental 
   - Segregação por Banco de Dados: `lakehouse_<orgao>` (ex: `lakehouse_sec`, `lakehouse_saeb`, `lakehouse_prodeb`).
   - Coleções Particionadas por Domínio: `<dominio>_<evento>` (ex: `sei_andamentos`, `finops_custos_diarios`).
 - **Padrão de Documento:** Cada documento armazena o evento em JSON flat com metadados de governança obrigatórios (`orgao`, `unidade_origem`, `extraido_em`, `batch_id`, `schema_version`) facilitando o catálogo automático pelo AWS Glue Crawler.
+
+---
+
+## 11. Arquitetura Multi-Tenant, CDC por Ciclo de Vida e Tuning Preditivo (ODI / Banco)
+
+### 11.1 Prevenção de Colisão de Chaves em Ambientes Multi-Tenant (`ORA-00001`)
+- Em schemas compartilhados por múltiplos órgãos ou prefeituras (tenants), identificadores transacionais (`ID_USUARIO`, `ID_UNIDADE`, `ID_PROTOCOLO`) colidem entre bases.
+- **Proibição de UK Simples:** NUNCA crie constraint `UNIQUE` apenas sobre a chave natural. Compô-la obrigatoriamente com a coluna identificadora do tenant e expiração:
+  ```sql
+  ALTER TABLE "<SCHEMA>"."DIM_USUARIO"
+    ADD CONSTRAINT "UK_DIM_USUARIO" UNIQUE ("ID_USUARIO", "COD_TENANT", "DTC_EXPIRACAO");
+  ```
+- **Composição de Chave Natural no ETL:** Quando necessário desambiguar antes da geração da Surrogate Key:
+  `TO_NUMBER(TO_CHAR(V_TENANT) || '000' || TO_CHAR(ORIGEM.ID_NATURAL))`
+
+### 11.2 Estratégia de CDC quando a Origem NÃO possui `UPDATED_AT` (Delta por Ciclo de Vida)
+- Tabelas transacionais de sistemas legados ou governamentais (ex: `atividade` no SEI com `dth_abertura` e `dth_conclusao`) frequentemente não possuem coluna de auditoria `updated_at`.
+- **Filtro Composto de Eventos de Negócio:** Capturar tanto registros abertos recentemente quanto registros antigos concluídos na janela incremental (`#V_DATA_CORTE`):
+  ```sql
+  WHERE (A.DTH_ABERTURA >= :V_DATA_CORTE OR A.DTH_CONCLUSAO >= :V_DATA_CORTE)
+  ```
+- **Snapshot de Pendências + Fechamentos Recentes (Fato de Tramitação):**
+  ```sql
+  WHERE A.DTH_CONCLUSAO IS NULL            -- Permanece aberto/em andamento
+     OR A.DTH_CONCLUSAO >= :V_DATA_CORTE   -- Concluído na janela recente
+  ```
+- **High-Watermark Centralizado (`ODI_SCHEMA_CTRL`):** Persistir a última data/ID processado por tabela e tenant na tabela de controle de carga para suportar retomada automática após falhas.
+
+### 11.3 Estratégia Híbrida de Carga na Fato (Hot Window vs. Histórico Consolidado)
+- Quando a tabela de origem possui dezenas de milhões de linhas e índices `BITMAP` na Fato:
+  - **Carga Diária (Intra-Mês):** Executar `DELETE` seletivo na janela móvel ativa (ex: últimos 5 a 15 dias) ou partição vigente + `INSERT /*+ APPEND */`, seguido de rebuild `NOLOGGING` apenas dos índices afetados.
+  - **Carga de Fechamento (Mensal/Fim de Semana):** Recarregar a janela histórica maior (ex: 3 meses) via *Truncate Partition* ou *Truncate & Load* para consolidar eventuais reaberturas retroativas.
+
+### 11.4 Tuning Preditivo de Mappings ODI (`IKM Oracle Incremental Update`)
+- **PK Obrigatória na Staging:** Toda tabela `STG_*` usada como fonte de um `MERGE` ou `IKM Incremental Update` DEVE ter `PRIMARY KEY` (ou índice único) declarada nas colunas da chave de negócio. Sem isso, o join entre a tabela de integração `I$_` e o destino degrada para *Full Table Scan* em loop.
+- **Substituição de `IKM SQL Control Append` Lento:** Em tabelas volumosas, substituir updates linha-a-linha por `IKM Oracle Merge` com hint `/*+ APPEND PARALLEL(4) */` e `COMMIT` ao final do lote.
+

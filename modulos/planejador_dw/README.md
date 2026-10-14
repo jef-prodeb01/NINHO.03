@@ -99,19 +99,21 @@ modulos/planejador_dw/
 
 ## 3. Destino dos Artefatos Gerados
 
-Todos os arquivos gerados pelo agente para um projeto são salvos na pasta central de saídas:
-`saida/planejador_dw/<NOME_PROJETO>/`
+Todos os arquivos gerados pelo agente para um projeto são salvos diretamente nas 11 subpastas numeradas da pasta central de saídas (sem criar subpasta com o nome do projeto):
+`saida/planejador_dw/`
 
-A estrutura gerada para cada projeto inclui:
+A estrutura gerada inclui:
 - `01_controle_carga/`: DDL da tabela de auditoria.
 - `02_staging/`: DDLs das tabelas `STG_*`.
 - `03_dimensoes/`: DDLs das tabelas `ODI_DIM_*`, `DIM_*`, Sequences e script DML da linha `-1`.
 - `04_fatos/`: DDL da `FATO_*` configurada para a Estratégia A ou B.
 - `05_procedimentos_manutencao/`: Script da procedure `PRC_POS_CARGA_FATO` (se Estratégia A).
-- `06_pipelines_hop/`: Arquivos `.hpl` e `.hwf` para ingestão de arquivos.
-- `07_extratores_python/`: Scripts `.py` para ingestão de APIs.
+- `06_pipelines_hop/`: Arquivos `.hpl` e `.hwf` para ingestão de arquivos (se Apache Hop habilitado).
+- `07_extratores_python/`: Scripts `.py` para ingestão de APIs (se Extratores Python habilitado).
 - `08_datasets_bi/`: Datasets YAML do Superset e o entregável `GUIA_ANALISTA_BI_<PROJETO>.md` para a equipe externa de BI.
 - `09_relatorio_estrategias/`: Relatório completo `RELATORIO_ESTRATEGIAS.md`.
+- `10_testes_integridade/`: Script de validação pós-carga `13_testes_integridade.sql`.
+- `11_dicionario_dados/`: Dicionário interativo `dicionario_dados.html`.
 
 ---
 
