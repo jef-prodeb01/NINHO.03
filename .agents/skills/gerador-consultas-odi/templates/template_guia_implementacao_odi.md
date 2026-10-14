@@ -98,6 +98,37 @@ Conecte no Datastore alvo **`STG_{NOME_PROJETO}_{NOME_FATO}`**:
 
 ---
 
+### 1.4 Padrão Snapshot / Estado Recente com Função Analítica no Canvas (`ROW_NUMBER`)
+
+Para fatos de **Snapshot Acumulativo** ou **Estado Mais Recente** (ex: último andamento de processo, status atual do chamado, último login do usuário), não é necessário criar views ou subqueries na origem. O ODI 12c suporta modelagem 100% visual no Canvas:
+
+```
+[{TABELA_ORIGEM}] ──► [EXP_ANALITICA] ──► (FILTRO_RN_1) ──► [STG_{NOME_PROJETO}_{NOME_FATO}]
+                       (RN = ROW_NUMBER)     (RN = 1)
+```
+
+#### Passo a Passo no Canvas:
+1. **Datastore Origem:** Arraste a tabela de eventos/transações.
+2. **Componente Expressão (`EXP_ANALITICA`):**
+   * Arraste o componente **`Expressão`** (*Expression*).
+   * Adicione todos os atributos necessários da origem.
+   * Adicione um novo atributo **`RN`** (tipo `NUMBER`) com a expressão analítica do banco de origem (SQL Server, Oracle ou PostgreSQL):
+     ```sql
+     ROW_NUMBER() OVER (
+         PARTITION BY {ID_ENTIDADE_CHAVE} 
+         ORDER BY {DTH_EVENTO} DESC, {ID_EVENTO} DESC
+     )
+     ```
+3. **Componente Filtro (`FILTRO_RN_1`):**
+   * Conecte a saída de `EXP_ANALITICA` no componente **`Filtro`**.
+   * Defina a condição de filtro:
+     ```sql
+     EXP_ANALITICA.RN = 1
+     ```
+4. **Mapeamento para a Staging:** Conecte a saída do filtro no Datastore alvo `STG_{NOME_PROJETO}_{NOME_FATO}`. O ODI empurra a função de janela diretamente para a extração do banco fonte via LKM.
+
+---
+
 # PARTE 2: CARGA DA FATO FINAL DW (`{TABELA_FATO_FINAL}`)
 
 Esta etapa roda **100% dentro do Oracle (Oracle para Oracle)**, transformando as chaves naturais da Staging nas Surrogate Keys (`DIMENSION_KEY`) das dimensões SCD Tipo 2 e da dimensão Tempo.
@@ -193,3 +224,50 @@ Como a Staging, as Dimensões e a Fato já residem no mesmo schema Oracle (`{SCH
    * **TRUNCATE**: `True` (se Estratégia A de Truncate & Load).
    * **INSERT_HINT**: `/*+ APPEND PARALLEL(4) */` (Direct-Path Insert).
 4. **Performance de Produção Estimada:** Carga de dezenas de milhões de registros em **~2 a 3 minutos** através do paralelismo nativo.
+
+---
+
+### 2.5 Padrão de Lookups em Cadeia (Hierárquico / Snowflake) & Propriedade de Nulo Retornado
+
+Quando a tabela Staging contém apenas a chave de uma dimensão filha (ex: `ID_USUARIO`), mas a Fato necessita da chave de uma dimensão pai associada (ex: `DIM_ORGAO`), utilize **Lookups em Cadeia** no Canvas do ODI:
+
+```
+[STG_{FATO}] ──► [LOOKUP_USR] (DIM_USUARIO) ──► [LOOKUP_ORGAO] (DIM_ORGAO) ──► [{TABELA_FATO_FINAL}]
+```
+
+#### Passo a Passo no Canvas:
+1. Conecte `STG.ID_USUARIO` com `DIM_USUARIO.ID_USUARIO` (`LOOKUP_USR`).
+2. Conecte o atributo retornado pelo primeiro lookup (`LOOKUP_USR.ID_ORGAO`) com `DIM_ORGAO.ID_ORGAO` (`LOOKUP_ORGAO`).
+3. 🛑 **PROPRIEDADE OBRIGATÓRIA NO ODI 12c:**
+   * Selecione cada componente `Lookup` no Canvas.
+   * Na aba **Propriedades**, certifique-se de marcar:
+     **`Lookup com Nulo Retornado` = `True`** (equivalente a `LEFT OUTER JOIN`).
+   * **Por que é crucial?** Se esta opção ficar como `False` (comportamento padrão de `INNER JOIN`), qualquer registro na Staging com chave não cadastrada ou nula será **sumariamente descartado da Fato**, corrompendo totais analíticos e contagens de auditoria!
+
+---
+
+### 2.6 Padrão de Tratamento de Vigências Abertas / Datas Nulas (`DIM_TEMPO_FIM = -1`)
+
+Em tabelas de concessão, permissões, alocações ou status com vigência (onde registros ativos possuem `DTH_FIM IS NULL`):
+
+1. **Condição no Canvas ODI:**
+   * O Lookup de tempo de término compara:
+     ```sql
+     TRUNC(STG.DTH_FIM) = DIM_TEMPO_FIM.DTC_COMPLETA
+     ```
+2. **Resultado quando `DTH_FIM` é NULO:**
+   * Como a data é nula, o join não localiza nenhum registro na dimensão calendário.
+   * O lookup retorna `NULL` para `DIM_TEMPO_FIM.DIMENSION_KEY`.
+3. **Mapeamento Defensivo na Fato:**
+   * No Datastore da Fato, utilize:
+     ```sql
+     NVL(DIM_TEMPO_FIM.DIMENSION_KEY, -1)
+     ```
+4. **Vantagem Analítica no Power BI / Camada Semântica:**
+   * O registro `-1` na `DIM_TEMPO` possui:
+     * `DTC_COMPLETA` = `NULL` (ou `01/01/1900`)
+     * `ANO` = `-1`
+     * `DES_MES` = `'Não Informado / Vigente'`
+   * Permite que analistas filtrem registros atualmente em vigor filtrando simplesmente `DIM_TEMPO_FIM = -1`, sem necessidade de medidas DAX condicionais complexas ou lógica lenta de subqueries!
+
+

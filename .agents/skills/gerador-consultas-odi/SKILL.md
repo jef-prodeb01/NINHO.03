@@ -67,9 +67,20 @@ Ao ser acionada, os arquivos gerados devem ser salvos diretamente em:
    ```sql
    UPPER(NVL(REGEXP_SUBSTR(CAMPO_TEXTO, '^([^-]+)', 1, 1, 'i', 1), CAMPO_TEXTO)) AS DES_SIGLA
    ```
+4. **Função Analítica no Canvas para Fatos Snapshot (`ROW_NUMBER()`):**
+   * Empregar o par `Componente Expressão (EXP_ANALITICA)` com `RN = ROW_NUMBER() OVER(PARTITION BY ... ORDER BY ... DESC)` + `Componente Filtro (RN = 1)` para extrair o estado mais recente no Canvas Lógico sem subqueries manuais.
+5. **Lookups em Cadeia e "Lookup com Nulo Retornado":**
+   * Quando uma chave depender de dimensão intermediária (ex: `STG -> DIM_USUARIO -> DIM_ORGAO`), encadear lookups.
+   * Marcar **obrigatoriamente** `Lookup com Nulo Retornado = True` (Left Outer Join) para evitar o descarte silencioso de linhas.
+6. **Tratamento de Vigências Abertas / Datas Nulas (`DIM_TEMPO_FIM = -1`):**
+   * Mapear registros com data fim aberta (`DTH_FIM IS NULL`) com fallback para a linha `-1` da `DIM_TEMPO` (`DTC_COMPLETA = NULL`, `DES_MES = 'Não Informado / Vigente'`).
+7. **Arquitetura de Fatos Híbridas para Tabelas Transacionais Massivas:**
+   * Quando a fonte tiver dezenas/centenas de milhões de linhas, separar em Fato Histórica Agregada e Fato Snapshot Recente conforme [Arquitetura de Fatos Híbridas](../planejador-dw-oracle/references/arquitetura_fatos_hibridas.md).
 
 Consulte os modelos estruturais em:
 - [template_selects_odi.sql](./templates/template_selects_odi.sql)
 - [template_guia_implementacao_odi.md](./templates/template_guia_implementacao_odi.md)
+- [arquitetura_fatos_hibridas.md](../planejador-dw-oracle/references/arquitetura_fatos_hibridas.md)
+
 
 

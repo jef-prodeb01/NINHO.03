@@ -26,7 +26,14 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
      - `DTC_EFETIVACAO DATE NOT NULL` (Data de início de vigência)
      - `DTC_EXPIRACAO DATE NULL` (Data fim; `NULL` indica registro vigente)
      - `DES_ATUALIZAR VARCHAR2(1) DEFAULT 'N' NOT NULL` ('S' para atualizar, 'N' para inalterado)
-   - Se o ETL utilizar **Oracle Data Integrator (ODI)**, gere também a tabela auxiliar `ODI_DIM_<NOME>` com a coluna de controle `DES_STATUS_REGISTRO VARCHAR2(1)`.
+    - Se o ETL utilizar **Oracle Data Integrator (ODI)**, gere também a tabela auxiliar `ODI_DIM_<NOME>` com a coluna de controle `DES_STATUS_REGISTRO VARCHAR2(1)`.
+5. **Arquitetura de Fatos Híbridas (Para Fontes com Dezenas de Milhões ou Bilhões de Linhas):**
+   - Quando a tabela transacional da fonte tiver altíssima volumetria (ex: > 50M de linhas) e longo histórico (5 a 10 anos), **NÃO crie uma única fato "tudo-em-um"**.
+   - Divida o domínio em **3 Fatos Especializadas**:
+     1. `FATO_*_AGR_MENSAL` (Fato Histórica Agregada por Mês para tendências e painéis executivos);
+     2. `FATO_*_SITUACAO_ATUAL` (Fato Snapshot de Estado Atual / SLA dos últimos N meses com `ROW_NUMBER()`);
+     3. `FATO_*_ANDAMENTO` (Fato Linha do Tempo / Eventos Críticos com filtro de relevância funcional).
+   - Consulte os detalhes completos em [arquitetura_fatos_hibridas.md](./references/arquitetura_fatos_hibridas.md).
 
 ---
 
@@ -55,6 +62,7 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 Consulte os guias detalhados em:
 - [tablespaces_oracle.md](./references/tablespaces_oracle.md) (Organização de Tablespaces e Storage)
 - [tuning_indices_performance.md](./references/tuning_indices_performance.md) (Estratégias de Índices Bitmap vs B-Tree, Paralelismo e Compressão)
+- [arquitetura_fatos_hibridas.md](./references/arquitetura_fatos_hibridas.md) (Arquitetura de Fatos Híbridas para Alta Volumetria)
 - **Separação Física:** Se informado no Intake, aponte tabelas para `TABLESPACE <TS_DATA>` e índices para `TABLESPACE <TS_INDEX>`.
 - **Dimensões:** Aceitam **apenas índices B-Tree**. NUNCA use Bitmaps em dimensões.
 - **Compressão:** Em fatos históricas de alta volumetria, recomende `COMPRESS FOR OLTP` ou `COMPRESS FOR QUERY HIGH`. Em índices compostos, utilize `COMPRESS 1`.
