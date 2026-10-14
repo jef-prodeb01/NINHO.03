@@ -36,3 +36,4 @@ Quando acionada, os artefatos devem ser salvos em:
 - `saida/planejador_dw/02_staging/02_stg_controle_lote_ftp.sql`
 
 Consulte os modelos em [templates/extrair_metadados_ftps.sh](./templates/extrair_metadados_ftps.sh) e [templates/stg_meta.hpl](./templates/stg_meta.hpl).
+

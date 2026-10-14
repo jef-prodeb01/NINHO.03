@@ -44,3 +44,4 @@ curl -s --ssl-reqd --insecure \
 done
 
 echo "Concluido. Manifesto gerado em: ${CSV_OUTPUT}"
+

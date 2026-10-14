@@ -35,7 +35,7 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
   - Mapeamentos de carga direta banco-a-banco via DBLink / JDBC.
   - Orquestração de pacotes, cenários e tabelas auxiliares `ODI_DIM_*`.
   - Consultas SQL analíticas para interfaces/mappings com surrogate keys `SEQ_*.NEXTVAL`, SCD2 e lookups `NVL(dim.KEY, -1)`.
-  - *(Se marcado: gera `03_create_odi_dim_tables.sql`, `selects_odi_dimensoes.sql` e `selects_odi_fatos.sql`).*
+  - *(Se marcado: gera `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql`, `04_select_odi_fato.sql` e o `GUIA_IMPLEMENTACAO_ODI_<FATO>.md` com o roteiro visual do Canvas ODI 12c).*
 
 - [ ] **Apache Hop (.hpl / .hwf):**
   - Pipelines e workflows no Apache Hop 2.x para transformação de dados e orquestração.

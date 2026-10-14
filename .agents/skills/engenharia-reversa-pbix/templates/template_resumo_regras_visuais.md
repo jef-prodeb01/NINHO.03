@@ -39,3 +39,4 @@
    - *Tipo:* `{TIPO_VISUAL}` (ex: clusteredColumnChart)
    - *Eixo / Categoria:* `{CAMPO_EIXO}`
    - *Valores:* `{CAMPO_VALOR_OU_AGREGACAO}`
+

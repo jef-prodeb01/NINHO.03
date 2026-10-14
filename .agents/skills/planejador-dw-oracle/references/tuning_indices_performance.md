@@ -69,3 +69,4 @@ Sempre finalize a esteira de indexação garantindo que as estatísticas do otim
 ```sql
 EXEC DBMS_STATS.GATHER_TABLE_STATS(ownname => 'SCHEMA_OLAP', tabname => 'FATO_ATENDIMENTO', cascade => TRUE, estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE);
 ```
+

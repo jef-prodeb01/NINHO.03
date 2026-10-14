@@ -60,3 +60,4 @@ Os artefatos gerados por esta skill devem ser gravados em:
 Consulte os modelos de referência em:
 - [templates/template_guia_analista_bi.md](./templates/template_guia_analista_bi.md)
 - [templates/template_resumo_regras_visuais.md](./templates/template_resumo_regras_visuais.md)
+

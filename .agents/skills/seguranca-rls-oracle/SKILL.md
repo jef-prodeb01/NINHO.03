@@ -46,3 +46,4 @@ Quando acionada, os artefatos de segurança devem ser gerados em:
 - `saida/camada_semantica/seguranca/01_usuario_segmentos.sql` (DDL da tabela de permissões e inserts de carga inicial).
 
 Consulte o template completo em [template_rls_vpd.sql](./templates/template_rls_vpd.sql).
+
