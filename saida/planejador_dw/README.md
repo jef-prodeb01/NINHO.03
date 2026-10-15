@@ -13,14 +13,14 @@ Esta pasta armazena os scripts SQL, procedimentos, pipelines, extratores e relat
 | Subpasta | Conteúdo Gerado | Ferramenta / Condição |
 | :--- | :--- | :--- |
 | `01_controle_carga/` | `01_tb_controle_carga.sql` (auditoria e execução). | Gerado se `TB_CONTROLE_CARGA` não existir no schema. |
-| `02_staging/` | `02_create_stg_tables.sql` (tabelas e views de staging). | Obrigatório para aterrissagem de dados brutos. |
-| `03_dimensoes/` | `03_create_odi_dim_tables.sql`, `04_create_dim_tables.sql`, `06_init_default_records.sql`. | `03_create_odi_dim_tables.sql` apenas se ODI for selecionado. Dimensões e linha `-1` sempre. |
-| `04_fatos/` | `05_create_fato_tables.sql` (fatos, particionamento e índices). | Bitmap para Estratégia A, B-Tree para Estratégia B. |
-| `05_procedimentos_manutencao/` | `07_prc_pos_carga_fato.sql` (rebuild NOLOGGING e stats). | Gerado para a Estratégia A (Truncate & Load). |
-| `06_pipelines_hop/` | Pipelines (`.hpl`) e workflows (`.hwf`) do Apache Hop. | **CONDICIONAL:** Apenas gerado se **Apache Hop** for assinalado no INTAKE. |
-| `07_extratores_python/` | Extratores Python (`.py`) para APIs REST / OAuth2. | **CONDICIONAL:** Apenas gerado se **Extratores Python** for assinalado no INTAKE. |
+| `02_staging/` | `02_create_stg_tables.sql` (tabelas pré-agregadas e/ou bruta 1:1 do CSV). | Obrigatório para aterrissagem de dados (via Python, Hop ou carga direta no banco). |
+| `03_dimensoes/` | `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql`, `04_create_dim_tables.sql`, `06_init_default_records.sql`. | **OBRIGATÓRIO:** A partir da `STG_*`, a carga de Dimensões é sempre via ODI 12c (`ODI_DIM_* -> DIM_*`). |
+| `04_fatos/` | `04_select_odi_fato.sql`, `05_create_fato_tables.sql` (fatos, Lookups ODI e índices). | **OBRIGATÓRIO:** Consultas ODI da Fato (`04_select_odi_fato.sql`) + DDL da Fato (`05_create_fato_tables.sql`). |
+| `05_procedimentos_manutencao/` | `07_prc_pos_carga_fato.sql` (`PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO`). | Chamadas pelas Procedures do ODI (`TRT_PRE_CARGA_FATOS` e `TRT_POS_CARGA_FATOS`). |
+| `06_pipelines_hop/` | Pipelines (`.hpl`) e workflows (`.hwf`) do Apache Hop (apenas `Origem -> STG_*`). | **CONDICIONAL:** Apenas gerado se **Apache Hop** for assinalado para popular a `STG_*`. |
+| `07_extratores_python/` | Extratores Python (`.py`) para APIs REST / CSV (apenas `Origem -> STG_*`). | **CONDICIONAL:** Apenas gerado se **Extratores Python** for assinalado para popular a `STG_*`. |
 | `08_datasets_bi/` | `GUIA_ANALISTA_BI_<PROJETO>.md`. | Handoff analítico para Power BI. |
-| `09_relatorio_estrategias/` | `RELATORIO_ESTRATEGIAS.md` (topologia, matriz De/Para, sizing). | Relatório técnico completo de arquitetura. |
+| `09_relatorio_estrategias/` | `RELATORIO_ESTRATEGIAS.md` e `GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md`. | **OBRIGATÓRIO:** Blueprint arquitetural + Guia passo a passo de construção dos objetos no ODI 12c. |
 | `10_testes_integridade/` | `13_testes_integridade.sql` (validação de FKs e integridade). | Suíte de validação e qualidade pós-carga. |
 | `11_dicionario_dados/` | `dicionario_dados.html` (dicionário interativo de dados). | Documentação HTML navegável de tabelas e colunas. |
 

@@ -17,7 +17,7 @@
 -- =============================================================================
 CREATE OR REPLACE FORCE VIEW VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL AS
 SELECT
-    D.SK_<DIMENSAO>                                     AS SK_<DIMENSAO>,
+    D.DIMENSION_KEY                                     AS DIMENSION_KEY,
     D.ID_<DIMENSAO>                                     AS ID_<DIMENSAO>,
     D.CD_<DIMENSAO>                                     AS CD_<DIMENSAO>,
     NVL(D.NM_<DIMENSAO>, 'NÃO INFORMADO')               AS NM_<DIMENSAO>,
@@ -26,22 +26,23 @@ SELECT
         WHEN 'I' THEN 'INATIVO'
         ELSE 'NÃO IDENTIFICADO'
     END                                                 AS DS_SITUACAO,
-    D.IND_ATIVO                                         AS IND_ATIVO,
-    D.DTC_INICIO                                        AS DTC_INICIO_VIGENCIA
+    D.SIN_ATIVO                                         AS SIN_ATIVO,
+    D.DTC_EFETIVACAO                                    AS DTC_INICIO_VIGENCIA
 FROM
-    DIM_<DIMENSAO> D
+    DIM_<PROJETO>_<DIMENSAO> D
 WHERE
-    D.DTC_EXPIRACAO IS NULL;
+    D.DTC_EXPIRACAO IS NULL
+    AND D.SIN_ATIVO = 'S';
 
 COMMENT ON TABLE VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL IS
 'Uma linha representa o cadastro vigente (SCD Tipo 2 atual, onde DTC_EXPIRACAO IS NULL) de <DIMENSAO>. Inclui o registro técnico -1 (NÃO INFORMADO).';
 
-COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.SK_<DIMENSAO> IS 'Chave substituta (Surrogate Key) da dimensão <DIMENSAO>.';
+COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.DIMENSION_KEY IS 'Chave substituta (Surrogate Key padrão corporativo DIMENSION_KEY) da dimensão <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.ID_<DIMENSAO> IS 'Identificador natural de negócio de <DIMENSAO> no sistema de origem.';
 COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.CD_<DIMENSAO> IS 'Código curto ou sigla oficial de <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.NM_<DIMENSAO> IS 'Nome descritivo de <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.DS_SITUACAO IS 'Situação cadastral decodificada (ATIVO, INATIVO, NÃO IDENTIFICADO).';
-COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.IND_ATIVO IS 'Indicador binário de registro ativo na origem (S/N).';
+COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.SIN_ATIVO IS 'Indicador binário de registro ativo na dimensão (S/N).';
 COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.DTC_INICIO_VIGENCIA IS 'Data de início da vigência da versão atual do registro (SCD2).';
 
 
@@ -54,15 +55,14 @@ COMMENT ON COLUMN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL.DTC_INICIO_VIGENCIA IS 'Data
 CREATE OR REPLACE FORCE VIEW VW_<PROJETO>_EVENTO AS
 SELECT
     -- Chaves e Identificadores Degenerados
-    F.SK_<FATO>                                         AS SK_<FATO>,
     F.NR_PROTOCOLO                                      AS NR_PROTOCOLO,
     -- Datas e Competências
     T.DT_REFERENCIA                                     AS DT_EVENTO,
     T.NR_ANO                                            AS NR_ANO_EVENTO,
     T.NR_MES                                            AS NR_MES_EVENTO,
     T.CD_ANO_MES                                        AS CD_COMPETENCIA,
-    -- Atributos Enriquecidos das Dimensões (com proteção contra órfãos via -1 / NVL)
-    F.SK_<DIMENSAO>                                     AS SK_<DIMENSAO>,
+    -- Atributos Enriquecidos das Dimensões (FK corporativa DIM_<PROJETO>_<DIMENSAO> -> DIMENSION_KEY)
+    F.DIM_<PROJETO>_<DIMENSAO>                          AS DIM_<PROJETO>_<DIMENSAO>,
     NVL(D.CD_<DIMENSAO>, 'N/I')                         AS CD_<DIMENSAO>,
     NVL(D.NM_<DIMENSAO>, 'NÃO INFORMADO')               AS NM_<DIMENSAO>,
     -- Domínios Decodificados
@@ -78,11 +78,11 @@ SELECT
     NVL(F.VL_TOTAL_EVENTO, 0)                           AS VL_TOTAL_EVENTO,
     F.QT_DIAS_ATENDIMENTO                               AS QT_DIAS_ATENDIMENTO
 FROM
-    FATO_<FATO> F
+    FATO_<PROJETO>_<FATO> F
     LEFT JOIN DIM_TEMPO T
-        ON F.SK_TEMPO = T.SK_TEMPO
+        ON F.DIM_TEMPO = T.DIMENSION_KEY
     LEFT JOIN VW_<PROJETO>_DIM_<DIMENSAO>_ATUAL D
-        ON F.SK_<DIMENSAO> = D.SK_<DIMENSAO>
+        ON F.DIM_<PROJETO>_<DIMENSAO> = D.DIMENSION_KEY
 WHERE
     1 = 1
     -- [OPCIONAL - RLS] Descomentar/incluir apenas quando [x] RLS estiver marcado no INTAKE_SEMANTICA.md:
@@ -98,13 +98,12 @@ WHERE
 COMMENT ON TABLE VW_<PROJETO>_EVENTO IS
 'Uma linha representa um evento individual de <FATO> enriquecido com os atributos vigentes de <DIMENSAO> e calendário. Grão atômico para consultas detalhadas e base para views KPI.';
 
-COMMENT ON COLUMN VW_<PROJETO>_EVENTO.SK_<FATO> IS 'Identificador único (Surrogate Key) do registro na tabela fato.';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.NR_PROTOCOLO IS 'Número natural do protocolo/documento do evento (dimensão degenerada).';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.DT_EVENTO IS 'Data de ocorrência do evento.';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.NR_ANO_EVENTO IS 'Ano calendário do evento (YYYY).';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.NR_MES_EVENTO IS 'Mês calendário do evento (1 a 12).';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.CD_COMPETENCIA IS 'Competência no formato YYYYMM.';
-COMMENT ON COLUMN VW_<PROJETO>_EVENTO.SK_<DIMENSAO> IS 'Chave substituta da dimensão <DIMENSAO>.';
+COMMENT ON COLUMN VW_<PROJETO>_EVENTO.DIM_<PROJETO>_<DIMENSAO> IS 'Chave estrangeira para DIMENSION_KEY da dimensão <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.CD_<DIMENSAO> IS 'Código ou sigla de <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.NM_<DIMENSAO> IS 'Nome de <DIMENSAO>.';
 COMMENT ON COLUMN VW_<PROJETO>_EVENTO.DS_STATUS_EVENTO IS 'Status decodificado do evento (PENDENTE, CONCLUÍDO, CANCELADO, NÃO IDENTIFICADO).';

@@ -31,11 +31,11 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 > A IA **SOMENTE** gerará código para as tecnologias marcadas com `[x]` abaixo.  
 > Qualquer tecnologia desmarcada (`[ ]`) terá a sua geração de scripts **SUMARIAMENTE BLOQUEADA**, evitando criação de arquivos indesejados.
 
-- [ ] **Oracle Data Integrator (ODI):**
-  - Mapeamentos de carga direta banco-a-banco via DBLink / JDBC.
+- [x] **Oracle Data Integrator (ODI 12c — Obrigatório de `STG_*` para `DIM_*` e `FATO_*`):**
+  - A partir da `STG_*`, a geração das Dimensões (`ODI_DIM_*` -> `DIM_*`) e das Fatos (`FATO_*`) é feita **unicamente no ODI 12c**.
   - Orquestração de pacotes, cenários e tabelas auxiliares `ODI_DIM_*`.
-  - Consultas SQL analíticas para interfaces/mappings com surrogate keys `SEQ_*.NEXTVAL`, SCD2 e lookups `NVL(dim.KEY, -1)`.
-  - *(Se marcado: gera `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql`, `04_select_odi_fato.sql` e o `GUIA_IMPLEMENTACAO_ODI_<FATO>.md` com o roteiro visual do Canvas ODI 12c).*
+  - Consultas SQL analíticas para interfaces/mappings com surrogate keys `SEQ_*.NEXTVAL`, SCD2 e lookups `NVL(DIM_X.DIMENSION_KEY, -1)`.
+  - *(Gera `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql`, `04_select_odi_fato.sql` e 1 guia individual passo a passo por tabela: `guia_estrategias_odi_dim_<entidade>.md` e `guia_estrategias_odi_fato_<entidade>.md`).*
 
 - [ ] **Apache Hop (.hpl / .hwf):**
   - Pipelines e workflows no Apache Hop 2.x para transformação de dados e orquestração.
@@ -192,15 +192,18 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 
 Marque os artefatos que você deseja que a IA gere:
 - [x] **DDLs de Staging (`02_staging/02_create_stg_tables.sql`)**
-- [x] **DDLs de Dimensões e Sequences (`03_dimensoes/04_create_dim_tables.sql`)**
+- [x] **Tabelas Auxiliares do ODI (`03_dimensoes/03_create_odi_dim_tables.sql`)** *(Obrigatório — `ODI_DIM_*` para manobra SCD2 no ODI)*
+- [x] **Consultas de Carga de Dimensões no ODI (`03_dimensoes/03_selects_odi_dimensoes.sql`)** *(Obrigatório — `STG_* -> ODI_DIM_* / DIM_*`)*
+- [x] **DDLs de Dimensões e Sequences (`03_dimensoes/04_create_dim_tables.sql`)** *(inclui `DIM_TEMPO` obrigatória e PK `DIMENSION_KEY`)*
 - [x] **Carga Inicial da Linha `-1` (`03_dimensoes/06_init_default_records.sql`)**
+- [x] **Consultas de Carga de Fatos no ODI (`04_fatos/04_select_odi_fato.sql`)** *(Obrigatório — `STG_* -> FATO_*` com Lookups nas `DIM_*` e `DIM_TEMPO`)*
 - [x] **DDLs de Fatos com Índices e Tuning (`04_fatos/05_create_fato_tables.sql`)**
-- [ ] **Tabelas Auxiliares do ODI (`03_dimensoes/03_create_odi_dim_tables.sql`)** *(apenas se ODI selecionado)*
 - [ ] **Procedure Pós-Carga `PRC_POS_CARGA_FATO` (`05_procedimentos_manutencao/`)** *(apenas se Estratégia A)*
 - [ ] **Pipelines e Workflows do Apache Hop (`06_pipelines_hop/`)** *(apenas se Apache Hop selecionado)*
-- [ ] **Extratores Python de API (`07_extratores_python/`)** *(apenas se Python API selecionado)*
+- [ ] **Extratores Python de API / Pré-processadores (`07_extratores_python/`)** *(apenas se Python selecionado)*
 - [x] **Guia de Consumo e Handoff Power BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`)**
 - [x] **Relatório Técnico de Estratégias e Linhagem (`09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`)**
+- [x] **Guias Individuais de Construção no ODI 12c por Tabela (`09_relatorio_estrategias/guia_estrategias_odi_dim_<entidade>.md` e `guia_estrategias_odi_fato_<entidade>.md`)** *(Obrigatório — 1 arquivo `.md` detalhado por Dimensão e por Fato)*
 - [x] **Suíte de Testes SQL de Integridade Analítica (`10_testes_integridade/13_testes_integridade.sql`)**
 - [x] **Dicionário Interativo de Dados HTML (`11_dicionario_dados/dicionario_dados.html`)**
 

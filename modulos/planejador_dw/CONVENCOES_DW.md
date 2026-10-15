@@ -12,7 +12,7 @@ Este documento resume as regras inegociáveis do **Planejador de DW** para o Eng
 - **NUNCA** alterar, abreviar ou inventar nomes de colunas presentes no DDL de origem (`ddl_origem.sql` ou `ddl_completo.csv`).
 - Se a coluna na origem chama-se `ID_CHAMADO`, seu nome no DW é `ID_CHAMADO` (e não `NUM_CHAMADO`).
 - Se a coluna na origem chama-se `INDICADOR`, seu nome no DW é `INDICADOR` (e não `IND_STATUS`).
-- As únicas colunas com nomes padronizados introduzidas pelo framework são as colunas técnicas dimensionais Kimball (`DIMENSION_KEY`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `SIN_ATIVO`, `DES_ATUALIZAR`, `DTC_CARGA`).
+- As únicas colunas com nomes padronizados introduzidas pelo framework são as colunas técnicas dimensionais Kimball (`DIMENSION_KEY`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `SIN_ATIVO`, `DES_ATUALIZAR`). **PROIBIDO** incluir `DTC_CARGA` ou `DTC_CARGA_DW` nas tabelas Fato (já existe `TB_CONTROLE_CARGA`).
 
 ### 1.2 Disciplina Estrita de Pastas de Saída (Sem Subpastas de Projeto)
 - Todos os arquivos gerados DEVEM ser salvos diretamente dentro das 11 pastas numeradas em `saida/planejador_dw/`:
@@ -44,10 +44,10 @@ Este documento resume as regras inegociáveis do **Planejador de DW** para o Eng
   - `STG_<SISTEMA>_<DOMINIO>_<NOME>`: Aterrissagem
   - `ODI_DIM_<SISTEMA>_<DOMINIO>_<NOME>`: Auxiliar do módulo Dimensões e Cubos do ODI (sem constraints)
   - `DIM_<SISTEMA>_<DOMINIO>_<NOME>`: Dimensão oficial com SCD Tipo 2 e Surrogate Key (`DIMENSION_KEY`)
-  - `DIM_TEMPO`: Dimensão conformada de calendário
-  - `FATO_<SISTEMA>_<DOMINIO>_<NOME>`: Fato analítica com FKs `NOT NULL`
+  - `DIM_TEMPO`: Dimensão conformada de calendário (**SEMPRE obrigatória no schema de trabalho** e referenciada na Fato, mesmo em bases estáticas/anuais)
+  - `FATO_<SISTEMA>_<DOMINIO>_<NOME>`: Fato analítica com FKs `DIM_<SISTEMA>_<DOMINIO>_<NOME>` e `DIM_TEMPO` `NOT NULL` (**proibido** criar `DTC_CARGA` ou `DTC_CARGA_DW` na Fato)
 - **Índices em Dimensões:** **EXCLUSIVAMENTE B-TREE**. É terminantemente proibido criar índice Bitmap em tabelas Dimensão (risco de deadlock `ORA-00060`).
-- **Registro Padrão `-1`:** Toda dimensão DEVE conter a linha `-1` (`NAO INFORMADO`) para evitar violação de FK no ETL.
+- **Registro Padrão `-1`:** Toda dimensão (incluindo `DIM_TEMPO`) DEVE conter a linha `-1` (`NAO INFORMADO`) para evitar violação de FK no ETL.
 - **FKs da Fato:** Nenhuma FK pode aceitar nulo. Utilizar `NVL(LOOKUP.DIMENSION_KEY, -1)`.
 
 ---

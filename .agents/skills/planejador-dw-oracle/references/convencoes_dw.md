@@ -13,19 +13,21 @@
    - Colunas: idênticas à origem + metadados `DTC_EXTRACAO` e `ID_LOTE`.
    - **PK na Staging:** Sempre declarar `PRIMARY KEY` ou índice único nas colunas da chave de negócio da `STG_*` quando usada em cargas incrementais/MERGE no ODI.
 
-3. **Dimensões:**
-   - Tabelas: `DIM_<SISTEMA>_<DOMINIO>_<ENTIDADE>` ou `DIM_<ENTIDADE>`.
-   - Surrogate Key: `DIMENSION_KEY NUMBER(38,0) NOT NULL` (ou `<NOME_DIM>_KEY`).
-   - Sequence: `SEQ_DIM_<ENTIDADE> START WITH 1 INCREMENT BY 1 CACHE 50 NOCYCLE NOORDER`.
+3. **Dimensões e `DIM_TEMPO` Obrigatória:**
+   - Tabelas de domínio: `DIM_<PROJETO>_<ENTIDADE>` (ou `DIM_<SISTEMA>_<DOMINIO>_<ENTIDADE>`).
+   - **Dimensão Tempo Obrigatória (`DIM_TEMPO`):** Todo schema de trabalho possui obrigatoriamente a tabela conformada `<SCHEMA>.DIM_TEMPO` (sem sufixo de projeto, com `DIMENSION_KEY`, `IDE_SK_TEMPO`, `DES_DATA_DIA`, `NUM_ANO`, `NUM_MES`, `NUM_DIA`, `NUM_QUADRIMESTRE`, `NUM_TRIMESTRE`, `DES_QUINZENA`, `DES_QUADRIMESTRE`, `NUM_BIMESTRE`, `DES_BIMESTRE`, `DES_ANO_MES`, `DES_MES_ANO`, `DES_DIA`, `NUM_SEMESTRE`, `DES_MES_ANO_NUMERICO`, `DES_TRIMESTRE`, `IND_FINAL_SEMANA`, `DES_MES`, `NUM_QUINZENA`, `DES_MES_ANO_COMPLETO`, `DES_SEMESTRE`, `DTC_COMPLETA`). Mesmo em projetos com dados estáticos ou anuais, `DIM_TEMPO` NUNCA deve faltar.
+   - **Surrogate Key (Regra Estrita):** `DIMENSION_KEY NUMBER(38,0) NOT NULL` em **TODAS** as dimensões. **NUNCA** utilize `<NOME_DIM>_KEY` (ex: `CARGO_KEY`) ou `SK_<NOME_DIM>`.
+   - Sequence: `SEQ_DIM_<PROJETO>_<ENTIDADE> START WITH 1 INCREMENT BY 1 CACHE 50 NOCYCLE NOORDER`.
    - Chave Natural: `ID_<ENTIDADE>` (preservando o nome e tipo original).
    - Colunas SCD2: `SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`.
-   - **Linha `-1` Obrigatória:** Registro inicial `-1` (`NAO INFORMADO`) em todas as dimensões.
+   - **Linha `-1` Obrigatória:** Registro inicial `DIMENSION_KEY = -1` (`NAO INFORMADO`) em todas as dimensões (incluindo `DIM_TEMPO`).
    - **Índices:** Exclusivamente **B-Tree** (proibido `BITMAP INDEX` em dimensões para evitar deadlock `ORA-00060`).
-   - Tabela auxiliar ODI (se `[x] ODI` habilitado): `ODI_DIM_<ENTIDADE>` com `DES_STATUS_REGISTRO`.
+   - Tabela auxiliar ODI (se `[x] ODI` habilitado): `ODI_DIM_<PROJETO>_<ENTIDADE>` com `DES_STATUS_REGISTRO`.
 
 4. **Fatos:**
-   - Tabelas: `FATO_<SISTEMA>_<DOMINIO>_<PROCESSO>` ou `FATO_<PROCESSO_NEGOCIO>`.
-   - Chaves Estrangeiras (FKs): `NOT NULL` com fallback `NVL(LOOKUP.DIMENSION_KEY, -1)`.
+   - Tabelas: `FATO_<PROJETO>_<PROCESSO>` (ou `FATO_<SISTEMA>_<DOMINIO>_<PROCESSO>`).
+   - **Chaves Estrangeiras (FKs — Regra Estrita):** Devem chamar-se obrigatoriamente `DIM_<PROJETO>_<ENTIDADE> NUMBER(38,0) NOT NULL` (ex: `DIM_ELEICOES_PSD_BA_MUNICIPIO`, `DIM_ELEICOES_PSD_BA_CARGO_ELEICAO`) e `DIM_TEMPO NUMBER(38,0) NOT NULL`, apontando para a coluna `DIMENSION_KEY` da respectiva dimensão, com fallback `NVL(LOOKUP.DIMENSION_KEY, -1)`. **NUNCA** nomeie a FK na Fato como `<ENTIDADE>_KEY` ou `SK_<ENTIDADE>`.
+   - **Proibição de `DTC_CARGA` / `DTC_CARGA_DW` na Fato:** **NUNCA** crie colunas de controle de data de carga (`DTC_CARGA_DW`, `DTC_CARGA`, `DT_CARGA`) dentro das tabelas Fato. Como o controle e rastreamento de lotes já existem em `TB_CONTROLE_CARGA` / `ETA_ETAPAS_CARGA`, repetir data de carga em cada linha da Fato é redundância de informação e prejudica a compressão OLAP.
    - Estratégia A (Truncate & Load): `BITMAP INDEX` nas FKs da Fato + `PRC_POS_CARGA_FATO`.
    - Estratégia B (Incremental MERGE): `B-TREE INDEX` nas chaves de merge.
    - Estratégia Híbrida: Janela móvel diária (ex: últimos 5-15 dias) combinada com recarga de consolidação no fim de semana/mês.

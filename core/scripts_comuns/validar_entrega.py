@@ -610,6 +610,8 @@ def validar_saida_gerada(base_dir: Path) -> dict:
     if sqls_dw:
         print_ok(f"Auditando {len(sqls_dw)} script(s) SQL gerados em 'saida/planejador_dw/'...")
         tem_menos_um = False
+        tem_dim_tempo_ddl = False
+        tem_dim_tempo_fk = False
         for f_sql in sqls_dw:
             txt = f_sql.read_text(encoding="utf-8", errors="ignore")
 
@@ -625,8 +627,10 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                 print_err(f"[{f_sql.name}] Contem placeholder nao substituido: <{ph[0]}>")
                 results["erros"] += 1
 
-            # Proibição de BITMAP INDEX em Dimensões e verificação de antipadrões SCD2
+            # Proibição de BITMAP INDEX em Dimensões, verificação de DIMENSION_KEY, DIM_TEMPO e antipadrões SCD2
             if "03_dimensoes" in f_sql.parts or f_sql.name.upper().startswith("DIM_"):
+                if re.search(r"CREATE\s+TABLE\s+.*?\bDIM_TEMPO\b", txt, re.IGNORECASE):
+                    tem_dim_tempo_ddl = True
                 if re.search(r"CREATE\s+BITMAP\s+INDEX", txt, re.IGNORECASE):
                     print_err(
                         f"[{f_sql.name}] PROIBIDO criar BITMAP INDEX em tabelas de Dimensao (risco de deadlock ORA-00060)!"
@@ -642,6 +646,51 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                         f"[{f_sql.name}] Data magica ('2999-12-31'/'9999-12-31') detectada em dimensao! Prefira 'DTC_EXPIRACAO IS NULL'."
                     )
                     results["avisos"] += 1
+                if re.search(r"CREATE\s+TABLE\s+", txt, re.IGNORECASE):
+                    sk_invalidas = [
+                        k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
+                        if k != "DIMENSION_KEY"
+                    ]
+                    if sk_invalidas:
+                        print_err(
+                            f"[{f_sql.name}] Surrogate Key fora do padrao corporativo detectada ({sk_invalidas[0]})! "
+                            f"Em todas as dimensoes a SK deve chamar-se estritamente 'DIMENSION_KEY'."
+                        )
+                        results["erros"] += 1
+                    elif not re.search(r"\bDIMENSION_KEY\b", txt, re.IGNORECASE):
+                        print_err(
+                            f"[{f_sql.name}] Coluna obrigatoria 'DIMENSION_KEY' ausente no DDL de dimensao!"
+                        )
+                        results["erros"] += 1
+
+            # Verificação de FKs na Fato (padrão corporativo DIM_<PROJETO>_<...> apontando para DIMENSION_KEY), DIM_TEMPO e proibição de DTC_CARGA_DW
+            if "04_fatos" in f_sql.parts or f_sql.name.upper().startswith("FATO_"):
+                if re.search(r"\b(DTC_CARGA_DW|DTC_CARGA)\b", txt, re.IGNORECASE):
+                    print_err(
+                        f"[{f_sql.name}] PROIBIDO incluir coluna 'DTC_CARGA_DW' / 'DTC_CARGA' na tabela Fato! "
+                        f"O controle de carga ja existe em TB_CONTROLE_CARGA / ETA_ETAPAS_CARGA (evite redundancia)."
+                    )
+                    results["erros"] += 1
+                if re.search(r"\bDIM_TEMPO\b", txt, re.IGNORECASE):
+                    tem_dim_tempo_fk = True
+                fk_invalidas = [
+                    k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
+                    if k != "DIMENSION_KEY"
+                ]
+                if fk_invalidas:
+                    print_err(
+                        f"[{f_sql.name}] Coluna FK fora do padrao corporativo na Fato ({fk_invalidas[0]})! "
+                        f"Na Fato, as FKs de dimensao devem chamar-se 'DIM_<PROJETO>_<ENTIDADE>' referenciando 'DIMENSION_KEY'."
+                    )
+                    results["erros"] += 1
+                fks_declaradas = re.findall(r"FOREIGN\s+KEY\s*\(\s*([A-Z0-9_\"\.]+)\s*\)", txt, re.IGNORECASE)
+                for fk_col in fks_declaradas:
+                    fk_clean = fk_col.replace('"', '').strip().upper()
+                    if not fk_clean.startswith("DIM_"):
+                        print_err(
+                            f"[{f_sql.name}] Foreign Key '{fk_clean}' na Fato nao segue o padrao 'DIM_<PROJETO>_<ENTIDADE>'!"
+                        )
+                        results["erros"] += 1
 
             # Verificação de NOPARALLEL após REBUILD PARALLEL em procedimentos de manutenção
             if "05_procedimentos_manutencao" in f_sql.parts:
@@ -655,12 +704,70 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                 tem_menos_um = True
 
         pasta_dim = saida_dw / "03_dimensoes"
-        if pasta_dim.exists() and list(pasta_dim.glob("*.sql")) and not tem_menos_um:
-            print_warn("Dimensoes geradas em '03_dimensoes/', mas nenhum INSERT da linha tecnica -1 ('NAO INFORMADO') foi detectado.")
-            results["avisos"] += 1
-        elif tem_menos_um:
-            print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
-            results["sucessos"] += 1
+        if pasta_dim.exists() and list(pasta_dim.glob("*.sql")):
+            if not tem_menos_um:
+                print_warn("Dimensoes geradas em '03_dimensoes/', mas nenhum INSERT da linha tecnica -1 ('NAO INFORMADO') foi detectado.")
+                results["avisos"] += 1
+            else:
+                print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
+                results["sucessos"] += 1
+            if not tem_dim_tempo_ddl:
+                print_err("Dimensao conformada obrigatoria 'DIM_TEMPO' ausente em '03_dimensoes/'! Todo schema de trabalho deve conter a DIM_TEMPO corporativa.")
+                results["erros"] += 1
+            else:
+                print_ok("Dimensao conformada obrigatoria 'DIM_TEMPO' presente em '03_dimensoes/'.")
+                results["sucessos"] += 1
+            if not (pasta_dim / "03_create_odi_dim_tables.sql").exists():
+                print_err("Script obrigatorio '03_create_odi_dim_tables.sql' (tabelas ODI_DIM_*) ausente em '03_dimensoes/'! Da STG para DIM/FATO a carga e unicamente no ODI.")
+                results["erros"] += 1
+            else:
+                print_ok("Tabelas auxiliares 'ODI_DIM_*' ('03_create_odi_dim_tables.sql') presentes em '03_dimensoes/'.")
+                results["sucessos"] += 1
+            if not (pasta_dim / "03_selects_odi_dimensoes.sql").exists():
+                print_err("Script obrigatorio '03_selects_odi_dimensoes.sql' (consultas ODI STG -> DIM) ausente em '03_dimensoes/'!")
+                results["erros"] += 1
+            else:
+                print_ok("Consultas de carga dimensional no ODI ('03_selects_odi_dimensoes.sql') presentes em '03_dimensoes/'.")
+                results["sucessos"] += 1
+
+        pasta_fato = saida_dw / "04_fatos"
+        if pasta_fato.exists() and list(pasta_fato.glob("*.sql")):
+            if not tem_dim_tempo_fk:
+                print_err("Referencia obrigatoria para 'DIM_TEMPO' ausente nas tabelas Fato em '04_fatos/'!")
+                results["erros"] += 1
+            else:
+                print_ok("FK obrigatoria 'DIM_TEMPO' presente e sem redundancia de 'DTC_CARGA_DW' nas tabelas Fato.")
+                results["sucessos"] += 1
+            if not (pasta_fato / "04_select_odi_fato.sql").exists():
+                print_err("Script obrigatorio '04_select_odi_fato.sql' (consultas ODI STG -> FATO com Lookups) ausente em '04_fatos/'!")
+                results["erros"] += 1
+            else:
+                print_ok("Consultas de carga de Fato no ODI ('04_select_odi_fato.sql') presentes em '04_fatos/'.")
+                results["sucessos"] += 1
+
+        pasta_rel = saida_dw / "09_relatorio_estrategias"
+        if pasta_rel.exists():
+            guias_dim = list(pasta_rel.glob("guia_estrategias_odi_dim_*.md"))
+            guias_fato = list(pasta_rel.glob("guia_estrategias_odi_fato_*.md"))
+            guias_monoliticos = list(pasta_rel.glob("GUIA_IMPLEMENTACAO_ODI*.md"))
+            if guias_monoliticos:
+                print_err(
+                    f"Arquivo monolitico '{guias_monoliticos[0].name}' detectado em '09_relatorio_estrategias/'! "
+                    "O padrao exige 1 guia separado por tabela ('guia_estrategias_odi_dim_<entidade>.md' e 'guia_estrategias_odi_fato_<entidade>.md')."
+                )
+                results["erros"] += 1
+            if not guias_dim or not guias_fato:
+                print_err(
+                    "Guias individuais por tabela no ODI ('guia_estrategias_odi_dim_*.md' e 'guia_estrategias_odi_fato_*.md') "
+                    "ausentes em '09_relatorio_estrategias/'!"
+                )
+                results["erros"] += 1
+            else:
+                print_ok(
+                    f"Guias individuais de construcao no ODI 12c confirmados em '09_relatorio_estrategias/' "
+                    f"({len(guias_dim)} guia(s) de Dimensao e {len(guias_fato)} guia(s) de Fato)."
+                )
+                results["sucessos"] += 1
 
     # 4. Auditoria de SQLs gerados na Camada Semântica
     ddl_meta_base = saida_sem / "meta_projeto" / "01_create_meta_tables.sql"

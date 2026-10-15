@@ -1,48 +1,58 @@
 ---
 name: gerador-consultas-odi
-description: Gera consultas analíticas SQL, procedures, mappings e pacotes para o Oracle Data Integrator (ODI 12c), além do Guia Completo de Implementação no Canvas (Procedures, Mapas, Pacotes e Cenários) e Diagnóstico de Tuning de Performance para projetos novos e legados. Use APENAS quando a opção Oracle Data Integrator (ODI 12c) estiver explicitamente marcada no INTAKE_DW.md ou ao solicitar análise de objetos ODI.
+description: Gera tabelas auxiliares ODI_DIM_*, consultas analíticas SQL (03_selects_odi_dimensoes.sql e 04_select_odi_fato.sql), procedures, mappings e pacotes para o Oracle Data Integrator (ODI 12c), além do Guia Completo de Implementação no Canvas (Procedures, Mapas, Pacotes e Cenários) e Diagnóstico de Tuning de Performance. Sempre obrigatória a partir da camada STG_* para gerar DIM_* e FATO_*.
 ---
 
 # Skill: Gerador de Consultas, Arquitetura e Tuning de Performance para Oracle Data Integrator (ODI 12c)
 
 Esta skill orienta o agente em duas grandes frentes técnicas especializadas no **Oracle Data Integrator (ODI 12c)**:
-1. **Frente 1 (Projetos Novos / Greenfield):** Geração de scripts SQL de extração, transformação dimensional (SCD Tipo 2, lookups com fallback `-1`, surrogate keys) e elaboração do **Guia Completo de Implementação no ODI 12c** cobrindo os 4 componentes: Procedures (`TRT_*`), Mapeamentos (`MAP_*`), Pacotes com Loop Multi-Tenant (`PACK_*`) e Cenários de Produção (`SCEN_*`).
+1. **Frente 1 (Projetos Novos / Greenfield — OBRIGATÓRIA A PARTIR DA `STG_*`):** Geração das tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` (`03_create_odi_dim_tables.sql`), scripts SQL de transformação dimensional (`03_selects_odi_dimensoes.sql`), carga de Fatos com Lookups e fallback `-1` (`04_select_odi_fato.sql`) e elaboração do **Guia Completo de Implementação no ODI 12c** (`GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md`) cobrindo os 4 componentes: Procedures (`TRT_*`), Mapeamentos (`MAP_*`), Pacotes (`PACK_*`) e Cenários de Produção (`SCEN_*`).
 2. **Frente 2 (Consultoria de Tuning em Projetos Existentes / Brownfield):** Auditoria estática de objetos ODI exportados (arquivos XML de Mapas, Pacotes, Procedures ou Session Logs de execução) para identificar anti-padrões e gargalos de performance, entregando o **Relatório de Diagnóstico & Plano de Tuning de Performance** para acelerar esteiras lentas.
 
-> 🛑 **REGRA CONDICIONAL INVIOLÁVEL:**  
-> Para geração em esteiras de novo DW, esta skill **SÓ PODE SER ACIONADA** se a opção `[x] Oracle Data Integrator (ODI 12c)` estiver assinalada na Seção 1 do [`INTAKE_DW.md`](../../../modulos/planejador_dw/INTAKE_DW.md).  
-> Para consultoria de tuning em projetos existentes, pode ser acionada diretamente sob demanda do engenheiro mediante fornecimento do XML ou SQL do objeto.
+> 🏛️ **REGRA ARQUITETURAL CORPORATIVA INEGOCIÁVEL (`STG_* -> DIM_* / FATO_*` É UNICAMENTE NO ODI):**  
+> - **Fase 1 (Origem -> `STG_*`):** A chegada dos dados até a camada de Staging (`STG_*`) é flexível conforme a natureza da fonte: pode ser feita via **Python** (para APIs ou pré-processamento de CSV), via **Apache Hop** (lendo CSV/FTPS e gravando na `STG_*`), **gravando o CSV bruto do jeito que está direto em uma tabela `STG_*` no banco**, ou via **ODI** (DBLink/JDBC entre bancos).  
+> - **Fase 2 (`STG_* -> ODI_DIM_* -> DIM_*` e `STG_* -> FATO_*`):** A partir da `STG_*`, a construção e carga das Dimensões (`DIM_*`) e das Tabelas Fato (`FATO_*`) é realizada **UNICAMENTE NO ODI 12c**. Portanto, em **TODO** projeto de Planejador de DW, é obrigatório gerar `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql`, `04_select_odi_fato.sql` e o guia passo a passo `GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md`!
 
 ---
 
-## 🎯 Arquitetura de 2 Fases no ODI 12c
+## 🎯 Arquitetura de 2 Fases (Ingestão Flexível para `STG_*` + Transformação Exclusiva no ODI 12c)
 
-O processo de carga do Data Warehouse com ODI 12c é dividido em duas fases canônicas de alta performance:
+O processo de carga do Data Warehouse é dividido em duas fases canônicas de alta performance:
 
-### FASE 1: Extração de Origem para Staging (`STG_*`)
-- **SQL de Origem:** CTEs com `WITH (NOLOCK)` (se SQL Server), filtros temporais (janelas ativas de N meses), eliminação de duplicidades via `DISTINCT` e tipagem estrita (`NUMBER` para dias/durações, **nunca** `TIMESTAMP`).
-- **LKM:** `LKM SQL to Oracle (Built-In)` ou `LKM Oracle to Oracle Pull (DB Link)`.
-- **IKM:** `IKM Oracle Insert` com opções físicas:
-  - `TRUNCATE = False` (quando o truncate é gerenciado na Procedure de início do lote) ou `True` (em cargas isoladas)
-  - `INSERT_HINT = /*+ APPEND */`
-  - `FLOW_CONTROL = False` (elimina o overhead de CKM)
+### FASE 1: Chegada da Origem na Staging (`STG_*`) — Python, Apache Hop, CSV Direto no Banco ou ODI
+- **Opção 1A (Extrator / Pré-processador Python):** Consome API REST ou higieniza/agrega arquivos massivos CSV e grava via Bulk Insert (`executemany`) na `STG_*`.
+- **Opção 1B (Apache Hop):** Pipelines `.hpl` leem arquivos CSV/FTPS e gravam na `STG_*` via `Table Output`.
+- **Opção 1C (Carga Direta do CSV em Tabela no Banco):** O arquivo CSV é carregado exatamente como está na origem para uma tabela bruta `STG_*_BRUTO` no Oracle (via SQL*Loader, External Table, DBeaver ou Hop), deixando toda a inteligência de deduplicação, sanitização e agregação para os Mappings do ODI na Fase 2.
+- **Opção 1D (ODI Banco-a-Banco):** Extração direta via `LKM SQL to Oracle (Built-In)` ou `LKM Oracle to Oracle Pull (DB Link)` + `IKM Oracle Insert` (`INSERT_HINT = /*+ APPEND */`, `FLOW_CONTROL = False`).
 
-### FASE 2: Carga Dimensional da Staging para a Fato DW (`FATO_*`)
-- **Ambiente:** Execução **100% interna Oracle para Oracle** no mesmo schema (`{SCHEMA_ALVO}`).
-- **Zero LKM:** Nenhum LKM necessário (sem overhead de rede ou DBLink).
-- **Resolução Dimensional:** Lookups dimensionais em dimensões SCD Tipo 2 (`DTC_EXPIRACAO IS NULL`) e dimensões conformadas (`DIM_TEMPO`).
-- **Role-Playing Dimensions:** Uso de instâncias e aliases separados para dimensões reutilizadas (ex: `DIM_USR` executor e `DIM_USR_ATRIB` atribuído; `DIM_TEMPO_INI` e `DIM_TEMPO_FIM`).
-- **Regra Inegociável do `-1`:** Aplicação de `NVL(dim.DIMENSION_KEY, -1)` para **TODAS** as FKs dimensionais, garantindo integridade referencial para registros nulos ou não encontrados.
-- **IKM:** `IKM Oracle Insert` com Direct-Path Parallel (`/*+ APPEND PARALLEL(4) */`), atingindo milhões de linhas em minutos.
-
----
-
-## 🧭 As 3 Estratégias de Implementação no ODI 12c
-
-Ao documentar e gerar as esteiras de ODI, considere sempre as 3 estratégias de implementação:
-1. **Estratégia 1 (View na Origem):** Quando a equipe tem permissão DDL no banco transacional. Mapeamento 1 para 1 direto no ODI.
-2. **Estratégia 2 (100% Visual no Canvas Lógico):** **O padrão corporativo recomendado quando o acesso à origem é estritamente LEITURA (SELECT).** Modela todo o fluxo usando componentes nativos do ODI (`Datastore`, `Filtro`, `Distinto`, `Junção`, `Lookup`).
-3. **Estratégia 3 (ODI Procedure Direta):** Script SQL/PL/SQL direto em uma procedure ODI para casos específicos de contingência.
+### FASE 2: Carga Dimensional (`CARGA_DIM_*`) e Fatos (`CARGA_FATO_*`) a partir da `STG_*` (UNICAMENTE NO ODI 12c)
+- **Ambiente:** Execução **100% interna Oracle para Oracle** no mesmo schema (`{SCHEMA_ALVO}`), partindo das tabelas `STG_*`.
+- **Zero LKM nas Fatos e Dimensões:** Nenhum LKM necessário quando `STG_*`, `ODI_DIM_*`, `DIM_*` e `FATO_*` residem no mesmo schema Oracle.
+- **Regra de Documentação Modular (1 Guia `.md` Separado por Tabela — PROIBIDO COMPILAR TUDO EM UM ÚNICO ARQUIVO):**
+  - Para evitar documentos monolíticos e confusos, gere **1 arquivo `.md` exclusivo para cada tabela Dimensão e para cada tabela Fato** dentro de `saida/planejador_dw/09_relatorio_estrategias/`:
+    - Para cada Dimensão: `guia_estrategias_odi_dim_<entidade>.md` (ex: `guia_estrategias_odi_dim_municipio.md`, `guia_estrategias_odi_dim_partido.md`)
+    - Para cada Fato: `guia_estrategias_odi_fato_<entidade>.md` (ex: `guia_estrategias_odi_fato_votacao_municipio.md`, `guia_estrategias_odi_fato_colegio_municipio.md`)
+  - **Não inclua tutorial genérico de como criar o objeto em "Dimensões e Cubos" nem fixe o prefixo `S_BA_` (que era específico do projeto SEI_BA):** Foque 100% na **montagem passo a passo do Mapeamento no Canvas Lógico e Físico do ODI 12c** para aquela tabela específica!
+- **Padrão do Guia de Cada Dimensão (`guia_estrategias_odi_dim_<entidade>.md` — Mapeamento `CARGA_DIM_<PROJETO>_<ENTIDADE>`):**
+  1. **1. A Consulta SQL Alvo (Lógica de Negócio da Dimensão)**
+  2. **2. Diagrama de Blocos no Canvas do ODI 12c:** `[TABELA_ORIGEM / STG] ──► (FILTRO / DISTINCT / AGGREGATE) ──► (EXPRESSION) ──► [DIM_<PROJETO>_<ENTIDADE>]`
+  3. **3. Passo a Passo Detalhado no Canvas Lógico (Etapas 1 a 3):**
+     - Como filtrar, desduplicar (`DISTINCT`) ou agregar a fonte para garantir 1 registro único por Chave Natural.
+     - Detalhamento linha a linha do componente **`EXPRESSION`** com tabela completa (`Coluna Destino Oracle | Expressão de Mapeamento | Tipo no Destino | Regra de Negócio / Tratamento`), incluindo cálculo do hash MD5 `DES_ATUALIZAR = STANDARD_HASH(..., 'MD5')`, `SIN_ATIVO = 'S'` e `DTC_EFETIVACAO = TRUNC(SYSDATE)`.
+     - Conexão no componente alvo `DIM_<PROJETO>_<ENTIDADE>` (e configuração da aba `Histórico`: *Registro Inicial = `TO_DATE('01/01/1900', 'DD/MM/YYYY')`*, *Registro Aberto = `TRUNC(SYSDATE)`*, *Expiração Aberta = `NULL`*, *Tipo 2*, *Intervalo = `1 Segundo`*).
+  4. **4. Configurações Físicas e Performance (Aba Físico)**
+  5. **5. Checklist Rápido Pré-Execução**
+- **Padrão do Guia de Cada Fato (`guia_estrategias_odi_fato_<entidade>.md` — `STG_*` + `CARGA_FATO_<PROJETO>_<ENTIDADE>`):**
+  1. **1. A Consulta SQL Alvo (Lógica de Negócio Completa)** (incluindo CTEs `WITH`, `ROW_NUMBER()`, agregações e joins).
+  2. **2. Visão Geral das 3 Estratégias** (Estratégia 1: View no Banco; Estratégia 2: 100% Visual no Canvas do ODI; Estratégia 3: ODI Procedure) + **Diagramas de Blocos ASCII no Canvas do ODI 12c**:
+     - Fluxo de preparação da Staging (`[ORIGEM] -> (FILTRO) -> (DISTINCT) -> [JOIN] -> (EXP_RN) -> (FILTRO_RN_1) -> [STG_FATO]`)
+     - Fluxo de carga da Fato em **Escada Diagonal de `LOOKUP`s** (`[STG_FATO] -> (LOOKUP) -> (LOOKUP1) -> ... -> [EXPRESSION] -> [FATO_<PROJETO>_<ENTIDADE>]`).
+  3. **3. Passo a Passo Detalhado no Canvas Lógico do ODI (Etapa por Etapa):**
+     - Regras exatas de cada `Filtro`, `Distinto`, `Junção (Inner/Left Join)` e `Agregação` / `EXP_ANALITICA (ROW_NUMBER)`.
+     - Condição de Pesquisa exata de cada componente **`LOOKUP`** na escada diagonal (Chave Natural + filtro temporal SCD2 Point-in-Time: `TRUNC(STG.<DTA_REF>) >= DIM.DTC_EFETIVACAO AND TRUNC(STG.<DTA_REF>) <= NVL(DIM.DTC_EXPIRACAO, DATE '2999-12-31')`, e `TRUNC(STG.<DTA_REF>) = DIM_TEMPO.DTC_COMPLETA`, com `Lookup com Nulo Retornado = True`).
+     - Detalhamento completo de todas as colunas do componente **`EXPRESSION`** final (aplicando `NVL(DIM_<PROJETO>_<ENTIDADE>.DIMENSION_KEY, -1)` em todas as FKs e `NVL(..., 0)` nas métricas, em tabela `Coluna Destino Oracle | Expressão de Mapeamento | Tipo no Destino`).
+  4. **4. Configurações Físicas, Otimizações (Aba Físico) e Dica de Ouro (`Subquery / Inline View` para `ROW_NUMBER()`)**
+  5. **5. Checklist Rápido Pré-Execução**
 
 ---
 
@@ -57,8 +67,6 @@ Consulte o documento de referência completo: [Guia Avançado de Arquitetura e T
 5. **Staging Area no Target:** Configuração física da Staging no schema do DW, eliminando tráfego de rede cruzado.
 6. **Lookups Otimizados no Canvas:** Garantir `Lookup com Nulo Retornado = True` e índices na Staging para evitar `TABLE ACCESS FULL` repetidos.
 7. **Coleta de Estatísticas Pós-Carga:** Execução única de `DBMS_STATS.GATHER_TABLE_STATS` pós-rebuild de índices.
-
----
 
 ---
 
@@ -145,9 +153,11 @@ Quando o engenheiro fornecer um objeto ou diretório completo de um projeto lega
 ## 📂 Destino Canônico de Saída
 
 Ao ser acionada, os arquivos gerados devem ser salvos diretamente em:
+- `saida/planejador_dw/03_dimensoes/03_create_odi_dim_tables.sql` (Tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` de manobra SCD2).
 - `saida/planejador_dw/03_dimensoes/03_selects_odi_dimensoes.sql` (Consultas de surrogate keys e SCD2 para dimensões).
 - `saida/planejador_dw/04_fatos/04_select_odi_fato.sql` (Consulta consolidada com Lookups da Fato).
-- `saida/planejador_dw/09_relatorio_estrategias/GUIA_IMPLEMENTACAO_ODI_<FATO>.md` (Roteiro passo a passo cobrindo Procedures, Mapeamentos, Pacotes e Cenários de Produção).
+- `saida/planejador_dw/09_relatorio_estrategias/guia_estrategias_odi_dim_<entidade>.md` (**1 arquivo dedicado para cada tabela Dimensão**, detalhando passo a passo a montagem do mapeamento `CARGA_DIM_*` no Canvas).
+- `saida/planejador_dw/09_relatorio_estrategias/guia_estrategias_odi_fato_<entidade>.md` (**1 arquivo dedicado para cada tabela Fato**, detalhando passo a passo a montagem da `STG_*` e do `CARGA_FATO_*` com todas as regras de Joins, Lookups e Expression).
 - `saida/planejador_dw/09_relatorio_estrategias/DIAGNOSTICO_TUNING_ODI_<OBJETO>.md` (Relatório de consultoria de tuning para objetos legados).
 
 ---

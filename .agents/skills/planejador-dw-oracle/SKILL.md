@@ -12,14 +12,17 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
 
 ## 1. Princípios de Modelagem Dimensional (Kimball)
 
-1. **Star Schema Puro:**
-   - Dimensões (`DIM_*`) desnormalizadas, sem joins em cascata (evite Snowflake a menos que estritamente justificável).
-   - Fatos (`FATO_*` ou `FAT_*`) conectadas às dimensões através de Surrogate Keys (`DIMENSION_KEY` na dimensão referenciada por `DIM_<ENTIDADE>` na fato).
+1. **Star Schema Puro e Padrão Corporativo de Chaves (`DIMENSION_KEY` / `DIM_<PROJETO>_<...>`):**
+   - Dimensões (`DIM_<PROJETO>_<ENTIDADE>`) desnormalizadas, sem joins em cascata (evite Snowflake a menos que estritamente justificável).
+   - **`DIM_TEMPO` Sempre Obrigatória:** Todo schema de trabalho DEVE conter a dimensão conformada `<SCHEMA>.DIM_TEMPO` no padrão corporativo (24 colunas, de `DIMENSION_KEY` a `DTC_COMPLETA`), e toda Fato DEVE possuir FK `DIM_TEMPO` apontando para `DIM_TEMPO(DIMENSION_KEY)`, mesmo quando a base pareça estática ou anual.
+   - **Surrogate Key na Dimensão:** Chama-se **SEMPRE `DIMENSION_KEY NUMBER(38,0) NOT NULL`** em todas as dimensões (proibido usar `<ENTIDADE>_KEY` ou `SK_<ENTIDADE>`).
+   - **Foreign Key na Fato:** Nas tabelas Fato (`FATO_<PROJETO>_<PROCESSO>`), a coluna de FK que referencia a dimensão chama-se **SEMPRE `DIM_<PROJETO>_<ENTIDADE> NUMBER(38,0) NOT NULL`** (ex: `DIM_ELEICOES_PSD_BA_MUNICIPIO`) e `DIM_TEMPO NUMBER(38,0) NOT NULL`, apontando para `DIMENSION_KEY`.
+   - **Sem `DTC_CARGA` / `DTC_CARGA_DW` na Fato:** **NUNCA** inclua colunas de timestamp de carga (`DTC_CARGA`, `DTC_CARGA_DW`) nas tabelas Fato, pois a auditoria de carga já é controlada por `TB_CONTROLE_CARGA` / `ETA_ETAPAS_CARGA` (evita redundância e melhora a compressão).
 2. **Surrogate Keys e Sequences:**
-   - Chave artificial `NUMBER(38,0)` gerada via Oracle Sequence (`SEQ_DIM_<NOME>`).
+   - Chave artificial `DIMENSION_KEY NUMBER(38,0)` gerada via Oracle Sequence (`SEQ_DIM_<PROJETO>_<ENTIDADE>`).
    - Nunca utilize a chave natural do sistema de origem como Primary Key no DW.
 3. **Registro Padrão Inexistente / Não Informado (Linha `-1`):**
-   - Toda dimensão DEVE possuir um registro inicial com `DIMENSION_KEY = -1` (script `06_init_default_records.sql`).
+   - Toda dimensão (incluindo `DIM_TEMPO`) DEVE possuir um registro inicial com `DIMENSION_KEY = -1` (script `06_init_default_records.sql`).
    - Representa dados nulos, órfãos ou não informados, prevenindo que a Fato quebre por violação de integridade referencial (`ORA-02291`).
 4. **Slowly Changing Dimensions (SCD Tipo 2):**
    - Atributos padrão de versionamento histórico em todas as dimensões:
@@ -27,7 +30,10 @@ Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de a
      - `DTC_EXPIRACAO DATE NULL` (Data fim; `NULL` indica registro vigente)
      - `DES_ATUALIZAR CHAR(1 CHAR) DEFAULT 'S' NOT NULL` ('S' para atualizar, 'N' para inalterado)
      - `SIN_ATIVO CHAR(1 CHAR) DEFAULT 'S' NOT NULL` ('S' para ativo na origem, 'N' para inativo)
-    - Se o ETL utilizar **Oracle Data Integrator (ODI)**, gere também a tabela auxiliar `ODI_DIM_<NOME>` com a coluna de controle `DES_STATUS_REGISTRO VARCHAR2(1)`.
+    - **Regra Corporativa Inegociável (`STG_* -> DIM_* / FATO_*` é UNICAMENTE no ODI 12c):**
+      - A ingestão inicial até a camada `STG_*` é flexível conforme a fonte: pode ser via **Python** (APIs ou pré-processamento CSV), via **Apache Hop** (CSV/FTPS para `STG_*`), **carga direta do CSV bruto em tabela `STG_*` no banco**, ou via **ODI** (DBLink/JDBC).
+      - Porém, **a partir da `STG_*`, a geração das Dimensões (`DIM_*`) e das Fatos (`FATO_*`) é feita UNICAMENTE no ODI 12c** (nunca via procedure PL/SQL monolítica).
+      - Portanto, **SEMPRE** gere as tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` (`03_create_odi_dim_tables.sql`), os SELECTs de mapeamento do ODI (`03_selects_odi_dimensoes.sql` e `04_select_odi_fato.sql`) e o Guia Completo de Construção de cada objeto no ODI (`09_relatorio_estrategias/GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md`).
 5. **Arquitetura Multi-Tenant e Prevenção de ORA-00001:**
    - Se o DW compartilhar schemas entre múltiplos órgãos/municípios, nunca crie constraint `UNIQUE` unicolunar na chave natural. Utilize chave composta `(ID_NATURAL, COD_TENANT)`. No ETL/ELT, componha `to_number(to_char(V_TENANT) || '000' || to_char(ORIGEM.ID_NATURAL))` para evitar colisões.
 6. **Arquitetura de Fatos Híbridas (Para Fontes com Dezenas de Milhões ou Bilhões de Linhas):**
@@ -48,8 +54,9 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 - **Quando usar:** Volumetria moderada a grande, carga diária noturna em lote fechado.
 - **Indexação:** **BITMAP INDEX** nas Foreign Keys das Dimensões para habilitar **Star Transformation** no otimizador Oracle.
 - **Rotinas de Manutenção Obrigatórias (`07_prc_pos_carga_fato.sql`):**
-  1. `PRC_PRE_CARGA_FATO`: Coloca índices não únicos da fato como `UNUSABLE` antes da carga massiva (`INSERT /*+ APPEND PARALLEL(4) */`), preservando a PK.
-  2. `PRC_POS_CARGA_FATO`: Reconstrói os índices com `ALTER INDEX ... REBUILD PARALLEL 4 NOLOGGING;`, redefine para `NOPARALLEL LOGGING` e dispara coleta de estatísticas `DBMS_STATS.GATHER_TABLE_STATS(cascade => TRUE, degree => 4)`.
+  1. `PRC_PRE_CARGA_FATO`: Chamada pela procedure `TRT_PRE_CARGA_FATOS` do ODI antes do mapping da Fato; coloca índices não únicos da fato como `UNUSABLE` antes da carga massiva (`INSERT /*+ APPEND PARALLEL(4) */`), preservando a PK.
+  2. `PRC_POS_CARGA_FATO`: Chamada pela procedure `TRT_POS_CARGA_FATOS` do ODI após o mapping da Fato; reconstrói os índices com `ALTER INDEX ... REBUILD PARALLEL 4 NOLOGGING;`, redefine para `NOPARALLEL LOGGING` e dispara coleta de estatísticas `DBMS_STATS.GATHER_TABLE_STATS(cascade => TRUE, degree => 4)`.
+  - 🛑 **Atenção:** `07_prc_pos_carga_fato.sql` serve exclusivamente para manutenção física de índices/estatísticas pré e pós-carga invocada pelo ODI. **NUNCA** coloque lógica de ETL (`STG -> DIM/FATO`) dentro de uma procedure PL/SQL, pois `STG -> DIM/FATO` pertence exclusivamente aos Mappings do ODI 12c!
 
 ### Estratégia B: Incremental Idempotente via MERGE (Micro-lotes / Near Real-Time)
 - **Quando usar:** Cargas intra-dia, frequentes ou quando não é permitido truncar o histórico.
@@ -88,16 +95,18 @@ Nenhum DDL físico deve ser gerado no escuro. Diante de tabelas volumosas, regra
 
 Gere os arquivos nas subpastas apropriadas de `saida/planejador_dw/`:
 1. `01_controle_carga/01_tb_controle_carga.sql` (se não existir no schema)
-2. `02_staging/02_create_stg_tables.sql`
-3. `03_dimensoes/03_create_odi_dim_tables.sql` (SE ODI habilitado)
-4. `03_dimensoes/04_create_dim_tables.sql`
-5. `03_dimensoes/06_init_default_records.sql`
-6. `04_fatos/05_create_fato_tables.sql`
-7. `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql` (contendo `PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO` SE Estratégia A)
-8. `08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`
-9. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md`
-10. `10_testes_integridade/13_testes_integridade.sql`
-11. `11_dicionario_dados/dicionario_dados.html`
+2. `02_staging/02_create_stg_tables.sql` (incluindo tabela bruta 1:1 quando a fonte for CSV e tabelas pré-processadas se houver Python/Hop)
+3. `03_dimensoes/03_create_odi_dim_tables.sql` (**OBRIGATÓRIO** — tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` para manobra SCD2 no ODI)
+4. `03_dimensoes/03_selects_odi_dimensoes.sql` (**OBRIGATÓRIO** — consultas SQL de transformação `STG_* -> ODI_DIM_* / DIM_*` para os Mappings do ODI)
+5. `03_dimensoes/04_create_dim_tables.sql` (**OBRIGATÓRIO** — `DIM_TEMPO` + dimensões do projeto com PK `DIMENSION_KEY`)
+6. `03_dimensoes/06_init_default_records.sql` (**OBRIGATÓRIO** — registro `-1` em todas as dimensões + `DIM_TEMPO`)
+7. `04_fatos/04_select_odi_fato.sql` (**OBRIGATÓRIO** — consultas SQL de carga das Fatos no ODI a partir da `STG_*` com Lookups nas `DIM_*` vigentes e `DIM_TEMPO`)
+8. `04_fatos/05_create_fato_tables.sql` (**OBRIGATÓRIO** — Fatos com FKs `DIM_<PROJETO>_<...>` e `DIM_TEMPO`, sem `DTC_CARGA_DW`)
+9. `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql` (contendo `PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO` chamadas pelo ODI SE Estratégia A)
+10. `08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`
+11. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md` e `09_relatorio_estrategias/GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md` (**OBRIGATÓRIO** — passo a passo de construção de cada `TRT_*`, `ODI_DIM_*`, `MAP_DIM_*`, `MAP_FATO_*`, `PACK_*` e `SCEN_*` no ODI 12c)
+12. `10_testes_integridade/13_testes_integridade.sql`
+13. `11_dicionario_dados/dicionario_dados.html`
 
 > 🛑 **REGRA CANÔNICA:** Nunca crie subpastas com o nome do projeto (ex: `saida/planejador_dw/<PROJETO>/`). Salve diretamente nas pastas numeradas.
 

@@ -1,298 +1,167 @@
-# GUIA COMPLETO DE IMPLEMENTAÇÃO NO ODI 12c: ESTEIRA {NOME_PROJETO}
-## Procedimentos, Mapeamentos, Pacotes e Cenários de Produção
+# TEMPLATES CANÔNICOS DE GUIAS DE IMPLEMENTAÇÃO NO ODI 12c (1 ARQUIVO POR TABELA)
 
-Este guia apresenta o roteiro prático completo para o desenvolvedor de ETL implementar a esteira de dados no **Oracle Data Integrator (ODI 12c em Português)** para o projeto **`{NOME_PROJETO}`**.
-
-A arquitetura oficial de esteira é dividida em **5 Componentes Canônicos**:
-1. **PARTE 1: Procedures de Controle e Performance (`TRT_*`)** — Truncate dinâmico, auto-descoberta de schemas e rotinas de pré/pós-carga de índices.
-2. **PARTE 2: Mapeamentos no Canvas (`MAP_*`)** — Carga de Staging, Dimensões e Fatos no Canvas Lógico e Físico.
-3. **PARTE 3: Pacotes de Orquestração (`PACK_*`)** — Fluxos sequenciais e loops multi-tenant com variáveis e tratamento de erros.
-4. **PARTE 4: Cenários de Produção (`SCEN_*`)** — Geração de versões e orquestração master via `OdiStartScen`.
-5. **PARTE 5: Checklist Pré-Voo de Performance & Tuning** — Validação das 7 alavancas de aceleração para evitar gargalos.
+> 🛑 **REGRA DE OURO:** NUNCA compile todas as tabelas de um projeto em um único arquivo gigante. Gere sempre **1 arquivo `.md` separado e ultra-detalhado para cada tabela Dimensão (`guia_estrategias_odi_dim_<entidade>.md`) e para cada tabela Fato (`guia_estrategias_odi_fato_<entidade>.md`)** dentro de `saida/planejador_dw/09_relatorio_estrategias/`.
+> - **Para Dimensões (`DIM_*`):** Não descreva como criar o objeto em "Dimensões e Cubos" nem fixe prefixos específicos de outros projetos (como `S_BA_`). Vá direto para a montagem passo a passo do mapeamento `CARGA_DIM_<PROJETO>_<ENTIDADE>` no Canvas Lógico e Físico.
+> - **Para Fatos (`FATO_*`):** Detalhe todas as etapas de Joins, Filtros, Funções Analíticas (`ROW_NUMBER()`), Lookups em escada diagonal com vigência SCD2 Point-in-Time e o tratamento coluna a coluna no componente `EXPRESSION`.
 
 ---
 
-## 🧭 Visão Geral das 3 Estratégias do ODI 12c
+## 📄 MODELO A: GUIA POR TABELA DIMENSÃO (`guia_estrategias_odi_dim_<entidade>.md`)
+
+```markdown
+# GUIA DE IMPLEMENTAÇÃO NO ODI 12c: DIMENSÃO {NOME_DIMENSAO} (`CARGA_DIM_{PROJETO}_{ENTIDADE}`)
+
+Este guia apresenta o roteiro passo a passo para a montagem visual no **Oracle Data Integrator (ODI 12c)** do mapeamento **`CARGA_DIM_{PROJETO}_{ENTIDADE}`**, responsável pela carga e versionamento histórico SCD Tipo 2 da tabela **`{SCHEMA_ALVO}.DIM_{PROJETO}_{ENTIDADE}`**.
+
+---
+
+## 1. A Consulta SQL Alvo (Lógica de Negócio da Dimensão)
+
+```sql
+SELECT DISTINCT
+    STG.{COL_NK}                                                                 AS {ID_NK},
+    UPPER(TRIM(NVL(STG.{COL_DESC}, 'NÃO INFORMADO')))                            AS {NM_DESC},
+    'S'                                                                          AS SIN_ATIVO,
+    TRUNC(SYSDATE)                                                               AS DTC_EFETIVACAO,
+    CAST(NULL AS DATE)                                                           AS DTC_EXPIRACAO,
+    STANDARD_HASH(UPPER(TRIM(NVL(STG.{COL_DESC}, 'NI'))), 'MD5')                 AS DES_ATUALIZAR
+FROM {SCHEMA_ALVO}.{TABELA_STG_ORIGEM} STG
+WHERE STG.{COL_NK} IS NOT NULL;
+```
+
+---
+
+## 2. Diagrama de Blocos no Canvas do ODI 12c
+
+```text
+[{TABELA_STG_ORIGEM}]
+          │
+          ▼
+    (FILTRO_VALIDOS) : {COL_NK} IS NOT NULL
+          │
+          ▼
+   (DISTINCT_{ENTIDADE}) : Garante 1 linha única por Chave Natural
+          │
+          ▼
+   (EXP_{ENTIDADE}) : Higienização, Decodificação CASE, SIN_ATIVO, DTC_EFETIVACAO e Hash MD5
+          │
+          ▼
+[DIM_{PROJETO}_{ENTIDADE}] (Componente Alvo no Canvas)
+```
+
+---
+
+## 3. PASSO A PASSO NO CANVAS LÓGICO DO ODI
+
+### ETAPA 1: Origem e Filtro de Validação
+1. **Arraste a tabela `{TABELA_STG_ORIGEM}`** para o Canvas Lógico.
+2. **Arraste o componente `Filtro` (*Filter*)** e renomeie para **`FILTRO_VALIDOS`**.
+   * Condição do Filtro: `{TABELA_STG_ORIGEM}.{COL_NK} IS NOT NULL`
+
+### ETAPA 2: Deduplicação da Chave Natural (`DISTINCT` ou `AGGREGATE`)
+1. **Arraste o componente `Distinto` (*Distinct*)** (ou `Agregação` se houver métricas de porte) e renomeie para **`DISTINCT_{ENTIDADE}`**.
+2. Conecte a saída do `FILTRO_VALIDOS` nele, garantindo que saia exatamente **1 linha por `{COL_NK}`**.
+
+### ETAPA 3: Transformação e Cálculo do Hash SCD2 no Componente `EXPRESSION`
+1. **Arraste o componente `Expressão` (*Expression*)** e renomeie para **`EXP_{ENTIDADE}`**.
+2. Configure cada coluna de saída conforme a tabela detalhada abaixo:
+
+| Coluna Destino na `{NOME_DIMENSAO}` | Expressão de Mapeamento no `EXP_{ENTIDADE}` | Tipo no Destino | Regra de Negócio / Tratamento |
+| :--- | :--- | :--- | :--- |
+| **`{ID_NK}`** | `DISTINCT_{ENTIDADE}.{COL_NK}` | `NUMBER(10)` | Chave Natural da dimensão. |
+| **`{NM_DESC}`** | `UPPER(TRIM(NVL(DISTINCT_{ENTIDADE}.{COL_DESC}, 'NÃO INFORMADO')))` | `VARCHAR2(...)` | Padronização em caixa alta e sem espaços. |
+| **`SIN_ATIVO`** | `'S'` | `CHAR(1)` | Flag de versão ativa para o gatilho SCD2. |
+| **`DTC_EFETIVACAO`** | `TRUNC(SYSDATE)` | `DATE` | Data de início de vigência do registro. |
+| **`DES_ATUALIZAR`** | `STANDARD_HASH(..., 'MD5')` | `VARCHAR2(32)` | Hash MD5 determinístico das colunas monitoradas pelo SCD2. |
+
+### ETAPA 4: Conexão no Componente Alvo `DIM_{PROJETO}_{ENTIDADE}`
+1. **Arraste a dimensão alvo `DIM_{PROJETO}_{ENTIDADE}`** para o Canvas e conecte a saída do `EXP_{ENTIDADE}` nela.
+2. **Na aba `Propriedades -> Histórico` do bloco alvo `DIM_{PROJETO}_{ENTIDADE}`**, confira os parâmetros do SCD Tipo 2:
+   * **Horário de Efetivação Padrão de Registro Inicial:** `TO_DATE('01/01/1900', 'DD/MM/YYYY')`
+   * **Horário de Efetivação Padrão de Registro Aberto:** `TRUNC(SYSDATE)`
+   * **Tempo de Expiração Padrão de Registro Aberto:** `NULL`
+   * **Tipo de Alteração Lenta:** `Tipo 2` | **Intervalo Tipo 2:** `1` | **Unidade:** `Segundos`
+
+---
+
+## 4. Configurações Físicas e Performance (Aba Físico)
+1. **Unidade de Execução:** `{SCHEMA_ALVO}_LOGICO_UNIT` (100% interno no Oracle DW, sem LKM).
+2. **Tabela de Manobra SCD2 (`ODI_DIM_*`):** O padrão de dimensão utiliza automaticamente `{SCHEMA_ALVO}.ODI_DIM_{PROJETO}_{ENTIDADE}` para deduplicar (`DEDUP_EXPR`), comparar com a versão atual (`LKP_CURR`) e dividir nos 3 fluxos (`TGT_INS`, `TGT_CLS`, `TGT_UPD`).
+
+---
+
+## 5. Checklist Rápido Pré-Execução
+- [ ] A chave natural `{ID_NK}` está desduplicada antes de entrar no bloco da dimensão.
+- [ ] A coluna `DES_ATUALIZAR` usa `STANDARD_HASH(..., 'MD5')` sobre todas as colunas de negócio versionadas.
+- [ ] O registro default `-1` já foi inserido na tabela `DIM_{PROJETO}_{ENTIDADE}`.
+```
+
+---
+
+## 📄 MODELO B: GUIA POR TABELA FATO (`guia_estrategias_odi_fato_<entidade>.md`)
+
+```markdown
+# GUIA DE IMPLEMENTAÇÃO NO ODI 12c: FATO {NOME_FATO} (`STG_*` E `CARGA_FATO_{PROJETO}_{ENTIDADE}`)
+
+Este guia apresenta o roteiro passo a passo completo no **Oracle Data Integrator (ODI 12c)** para construir a tabela **`{SCHEMA_ALVO}.FATO_{PROJETO}_{ENTIDADE}`**, dividido nas duas etapas de Canvas:
+- **PARTE A:** Preparação Visual da Staging da Fato (`{TABELA_STG_FATO}`) com Joins, Filtros, Agregações / `ROW_NUMBER()`.
+- **PARTE B:** Mapeamento Final da Fato (`CARGA_FATO_{PROJETO}_{ENTIDADE}`) com **Escada Diagonal de Lookups SCD2 Point-in-Time** e tratamento completo no **`EXPRESSION` Final**.
+
+---
+
+## 1. A Consulta SQL Alvo (Lógica de Negócio Completa)
+
+```sql
+-- [SQL completo com CTEs de preparação + SELECT final com LEFT JOIN nas DIM_* e DIM_TEMPO]
+```
+
+---
+
+## 2. Visão Geral das 3 Estratégias (Preparação da Staging)
 
 | Estratégia | Nível de Acesso Necessário | Complexidade no ODI | Performance | Recomendação |
 | :--- | :--- | :--- | :--- | :--- |
-| **Estratégia 1: View no Banco de Origem** | Requer permissão de `CREATE VIEW` na fonte. | Mínima (1 para 1 no mapping). | Altíssima. | Ideal quando a equipe de BI tem acesso DDL à origem. |
-| **Estratégia 2: 100% Visual no Canvas Lógico** | **Apenas permissão de LEITURA (`SELECT`).** | Média/Alta (componentes de canvas). | Alta. | **A escolha obrigatória corporativa quando não se pode criar objetos na fonte.** |
-| **Estratégia 3: ODI Procedure Direta** | Apenas permissão de leitura. Código SQL direto. | Baixa no design visual, mas perde rastreabilidade. | Altíssima. | Alternativa de contingência para colar código manual. |
+| **Estratégia 1: View no Banco** | Requer `CREATE VIEW` na Origem. | Mínima (1 para 1). | Altíssima. | Ideal quando se tem privilégios de DDL na origem. |
+| **Estratégia 2: 100% Visual no ODI** | **Apenas leitura (`SELECT`).** Feito no Canvas do ODI. | Média / Alta (Uso de componentes). | Alta. | **Escolha padrão quando toda a regra deve ficar visível no Canvas do ODI.** |
+| **Estratégia 3: ODI Procedure** | Apenas leitura. Código SQL direto. | Baixa no design, perde rastreabilidade. | Altíssima. | Alternativa de contingência. |
 
 ---
 
-# PARTE 1: PROCEDURES DE CONTROLE E PERFORMANCE (`TRT_*`)
+## 3. PARTE A — PASSO A PASSO NO CANVAS PARA A STAGING (`{TABELA_STG_FATO}`)
 
-As procedures do ODI executam comandos nativos no Oracle (DDL, PL/SQL e scripts de manutenção) fora do fluxo de dados dos mappings.
-
-### 1.1 Procedure de Truncate Dinâmico de Staging (`TRT_TRUNC_STG_{NOME_PROJETO}`)
-- **Finalidade:** Esvaziar rapidamente as tabelas de Staging antes da ingestão do lote, sem sobrecarregar logs de transação (REDO/UNDO).
-- **Tecnologia:** `Oracle` | **Schema Lógico:** `{SCHEMA_ALVO}_LOGICO_UNIT`
-- **Código do Passo (Command on Target):**
-  ```sql
-  BEGIN
-      EXECUTE IMMEDIATE 'TRUNCATE TABLE STG_{NOME_PROJETO}_ATIVIDADE';
-      EXECUTE IMMEDIATE 'TRUNCATE TABLE STG_{NOME_PROJETO}_DOCUMENTO';
-      EXECUTE IMMEDIATE 'TRUNCATE TABLE STG_{NOME_PROJETO}_ORGAO';
-      EXECUTE IMMEDIATE 'TRUNCATE TABLE STG_{NOME_PROJETO}_PROCEDIMENTO';
-      EXECUTE IMMEDIATE 'TRUNCATE TABLE STG_{NOME_PROJETO}_USUARIO';
-  END;
-  ```
+*(Diagrama de blocos ASCII + Etapas detalhadas de Filtro, Distinct, Join, Agregação / `EXP_ANALITICA` com `ROW_NUMBER()` + `FILTRO (RN = 1)` + Tabela completa de expressões da `STG_*` + Dica de Ouro do `Subquery / Inline View`)*.
 
 ---
 
-### 1.2 Procedure de Auto-Descoberta de Schemas Multi-Tenant (`TRT_UP_PROC_MERGE_ODI_CTRL`)
-- **Finalidade:** Identificar dinamicamente novos órgãos/municípios criados no banco transacional e registrá-los na tabela de controle de esteira (`ODI_SCHEMA_CTRL`).
-- **Passo 1 (Command on Source - Dicionário de Dados):**
-  ```sql
-  SELECT username AS SCHEMA_NAME
-  FROM all_users u
-  WHERE username LIKE '{PADRAO_SCHEMA_TENANT}%'
-    AND EXISTS (
-      SELECT 1 FROM all_tables t
-      WHERE t.owner = u.username AND t.table_name = '{TABELA_TESTE_EXISTENCIA}'
-    )
-  ```
-- **Passo 2 (Command on Target - Tabela de Controle):**
-  ```sql
-  MERGE INTO ODI_SCHEMA_CTRL tgt
-  USING (SELECT '#SCHEMA_NAME' AS SCHEMA_NAME FROM dual) src
-  ON (tgt.SCHEMA_NAME = src.SCHEMA_NAME)
-  WHEN NOT MATCHED THEN
-  INSERT (SCHEMA_NAME, ATIVO_FLG, CRIADO_EM)
-  VALUES (src.SCHEMA_NAME, 'S', SYSDATE);
-  ```
+## 4. PARTE B — PASSO A PASSO NO CANVAS PARA A FATO (`CARGA_FATO_{PROJETO}_{ENTIDADE}`)
+
+### 4.1 Diagrama de Blocos no Canvas (Escada Diagonal de Lookups + Expression Final)
+
+```text
+                                                                                      [DIM_TEMPO]
+                                                                                           │
+                                                            [DIM_{PROJETO}_3]              ▼
+                                                                   │                  (LOOKUP3) ──► [EXPRESSION] ──► [FATO_{PROJETO}_{ENTIDADE}]
+                                    [DIM_{PROJETO}_2]              ▼                       ▲
+                                           │                  (LOOKUP2) ───────────────────┘
+            [DIM_{PROJETO}_1]              ▼                       ▲
+                   │                  (LOOKUP1) ───────────────────┘
+                   ▼                       ▲
+[STG_FATO] ──► (LOOKUP) ───────────────────┘
+```
+
+### 4.2 Passo a Passo Detalhado dos `LOOKUP`s (Etapa por Etapa)
+*(Para cada `LOOKUP`, detalhar a tabela de dimensão, a propriedade `Lookup com Nulo Retornado = True` e a `Condição de Pesquisa` exata com `TRUNC(STG.DT_REF) >= DIM.DTC_EFETIVACAO AND TRUNC(STG.DT_REF) <= NVL(DIM.DTC_EXPIRACAO, DATE '2999-12-31')`)*.
+
+### 4.3 Filtragem e Mapeamento Detalhado no Componente `EXPRESSION` Final
+*(Tabela completa linha a linha de todas as FKs com `NVL(DIM_*.DIMENSION_KEY, -1)`, chaves degeneradas e métricas com `NVL(..., 0)`)*.
 
 ---
 
-### 1.3 Procedure de Pré-Carga de Fatos: Desativação de Índices (`TRT_PRE_CARGA_FATOS`)
-- **Finalidade:** Colocar índices secundários em estado `UNUSABLE` para permitir carga direta ultra-rápida via `/*+ APPEND */` sem custo de reindexação linha a linha.
-- **Tecnologia:** `Oracle`
-- **Código do Passo:**
-  ```sql
-  BEGIN
-      PRC_PRE_CARGA_FATO('{TABELA_FATO_FINAL}', '{SCHEMA_ALVO}');
-  END;
-  ```
+## 5. Configurações Físicas e Otimizações no ODI (Aba Físico)
+*(Execution Unit, LKM, IKM Oracle Insert com `TRUNCATE = True` e `INSERT HINT = /*+ APPEND PARALLEL(4) */`, Batch/Array Size = 50000)*.
 
 ---
 
-### 1.4 Procedure de Pós-Carga de Fatos: Rebuild Paralelo & Estatísticas (`TRT_POS_CARGA_FATOS`)
-- **Finalidade:** Reconstruir índices secundários com paralelismo e atualizar estatísticas do otimizador do Oracle.
-- **Tecnologia:** `Oracle`
-- **Código do Passo:**
-  ```sql
-  BEGIN
-      PRC_POS_CARGA_FATO('{TABELA_FATO_FINAL}', '{SCHEMA_ALVO}');
-  END;
-  ```
-
----
-
-# PARTE 2: MAPEAMENTOS NO CANVAS (`MAP_*`)
-
-## 2.1 Fase 1: Carga da Staging (`MAP_CARGA_STG_*`)
-
+## 6. Checklist Rápido Pré-Execução
 ```
-[{TABELA_ORIGEM}] ──► [EXP_COMPOSICAO_KEY] ──► [STG_{NOME_PROJETO}_{ENTIDADE}]
-                        (#V_IBGE || '000' || ID)
-```
-
-### Passo a Passo no Canvas:
-1. **Datastore Origem:** Arraste a tabela de origem. Em arquiteturas multi-tenant, defina a tabela como `#V_SCHEMA.{TABELA_ORIGEM}`.
-2. **Componente Expressão (`EXP_COMPOSICAO_KEY`):**
-   - Para projetos multi-tenant, concatene a chave da unidade/tenant para evitar colisões:
-     ```sql
-     CASE 
-         WHEN {TABELA_ORIGEM}.{ID_NATURAL} IS NULL THEN NULL 
-         ELSE TO_NUMBER(TO_CHAR(#V_IBGE) || '000' || TO_CHAR({TABELA_ORIGEM}.{ID_NATURAL})) 
-     END
-     ```
-   - Carimbe a coluna de auditoria de tenant: `#V_IBGE`.
-3. **Função Analítica para Fatos Snapshot / Estado Mais Recente (`ROW_NUMBER()`):**
-   - Caso precise apenas do último evento:
-     ```sql
-     ROW_NUMBER() OVER (
-         PARTITION BY {ID_ENTIDADE_CHAVE} 
-         ORDER BY {DTH_EVENTO} DESC, {ID_EVENTO} DESC
-     )
-     ```
-   - Conecte em um componente **`Filtro`** com a condição: `RN = 1`.
-
-### Configurações Físicas na Aba Físico:
-- **LKM:** `LKM SQL to Oracle (Built-In)` ou `LKM Oracle to Oracle Pull (DB Link)`.
-- **IKM:** `IKM Oracle Insert`.
-- **Opções Físicas de Alta Performance:**
-  - `TRUNCATE = False` (pois o truncate é gerenciado na Procedure no início do lote).
-  - `INSERT_HINT = /*+ APPEND */`.
-  - `FLOW_CONTROL = False` (proibido validar CKM em staging).
-
----
-
-## 2.2 Fase 2: Carga das Dimensões (`MAP_CARGA_DIM_*`)
-
-```
-[STG_{ENTIDADE}] ──► [IKM Oracle Merge] ──► [DIM_{PROJETO}_{ENTIDADE}]
-```
-
-### Regras de Mapeamento:
-1. **Surrogate Key:** Utilizar a sequence do banco:
-   ```sql
-   "{SCHEMA_ALVO}"."SEQ_DIM_{ENTIDADE}".NEXTVAL
-   ```
-2. **Tratamento de Nulos com Fallback Seguro:**
-   - Textos: `NVL(STG.{CAMPO}, 'NÃO INFORMADO')`.
-   - Datas: `NVL(STG.{DATA}, TO_DATE('01/01/1900', 'DD/MM/YYYY'))`.
-   - Números: `NVL(STG.{NUMERO}, -1)`.
-3. **Decodificação de Domínios com Cláusula Protetora:**
-   ```sql
-   CASE STG.STATUS
-       WHEN 'A' THEN 'ATIVO'
-       WHEN 'I' THEN 'INATIVO'
-       ELSE 'STATUS NÃO IDENTIFICADO'
-   END
-   ```
-4. **Configurações Físicas:**
-   - **IKM:** `IKM Oracle Merge` ou `IKM SQL Merge`.
-   - **FLOW_CONTROL:** `False`.
-
----
-
-## 2.3 Fase 3: Carga da Fato DW (`MAP_CARGA_FATO_*`)
-
-```
-[STG_{FATO}] (Origem Oracle DW)
-     │
-     ├──► [LOOKUP_UNID]   ◄── [DIM_{PROJETO}_UNIDADE] (DTC_EXPIRACAO IS NULL)
-     │
-     ├──► [LOOKUP_USR]    ◄── [DIM_{PROJETO}_USUARIO] (DTC_EXPIRACAO IS NULL)
-     │
-     ├──► [LOOKUP_STATUS] ◄── [DIM_{PROJETO}_STATUS]  (DTC_EXPIRACAO IS NULL)
-     │
-     ├──► [LOOKUP_DT_INI] ◄── [DIM_TEMPO]             (TRUNC(DTH_INI) = DTC_COMPLETA)
-     │
-     └──► [LOOKUP_DT_FIM] ◄── [DIM_TEMPO]             (TRUNC(DTH_FIM) = DTC_COMPLETA)
-             │
-             ▼
-   [{TABELA_FATO_FINAL}] (Destino DW)
-```
-
-### Regras Inegociáveis de Mapeamento:
-1. **Propriedade Obrigatória nos Lookups:**
-   - Selecione cada componente `Lookup` no Canvas.
-   - Na aba **Propriedades**, marque **`Lookup com Nulo Retornado = True`** (Left Outer Join).
-2. **Regra do `-1` em Todas as FKs:**
-   ```sql
-   NVL(DIM_UNID.DIMENSION_KEY, -1)   AS DIM_{PROJETO}_UNIDADE,
-   NVL(DIM_USR.DIMENSION_KEY, -1)    AS DIM_{PROJETO}_USUARIO,
-   NVL(DIM_TEMPO_INI.DIMENSION_KEY, -1) AS DIM_TEMPO_INICIO,
-   NVL(DIM_TEMPO_FIM.DIMENSION_KEY, -1) AS DIM_TEMPO_FIM
-   ```
-3. **Configurações Físicas:**
-   - **LKM:** **Nenhum** (execução 100% interna Oracle para Oracle).
-   - **IKM:** `IKM Oracle Insert`.
-   - **INSERT_HINT:** `/*+ APPEND PARALLEL(4) */`.
-   - **FLOW_CONTROL:** `False` | **STATIC_CONTROL:** `False`.
-
----
-
-# PARTE 3: PACOTES DE ORQUESTRAÇÃO (`PACK_*`)
-
-## 3.1 Pacote com Loop Multi-Tenant (`PACK_FLUXO_STG_{NOME_PROJETO}`)
-
-Para processar múltiplos órgãos ou municípios de forma dinâmica sem duplicar mapeamentos:
-
-```
-[TRUNC_STG] ──► [UP_MERGE_CTRL] ──► (V_CNT = 1) ──► (V_MAX) ──► [EVAL_LOOP]
-                                                                     │
-  ┌──────────────────────────────────────────────────────────────────┘
-  ▼
-[V_SCHEMA / V_IBGE] ──► [MAP_CARGA_STG] ──► (V_CNT = V_CNT + 1) ──► [EVAL_LOOP]
-                                                                        │
-                                                                   (Se V_CNT > V_MAX)
-                                                                        ▼
-                                                                     [FIM OK]
-```
-
-### Configuração Passo a Passo no Designer:
-1. **Passo 1 (Procedure):** Arraste `TRT_TRUNC_STG_{NOME_PROJETO}`.
-2. **Passo 2 (Procedure):** Arraste `TRT_UP_PROC_MERGE_ODI_CTRL`.
-3. **Passo 3 (Variável - Set):** Arraste `V_CNT` com a opção **Set Variable** = `1`.
-4. **Passo 4 (Variável - Refresh):** Arraste `V_MAX` com **Refresh Variable**:
-   ```sql
-   SELECT TO_NUMBER(COUNT(*)) FROM ODI_SCHEMA_CTRL WHERE ATIVO_FLG = 'S'
-   ```
-5. **Passo 5 (Variável - Evaluate):** Arraste `V_CNT` com **Evaluate Variable**:
-   - Operador: `Less than or equal to` (`<=`).
-   - Valor: `#V_MAX`.
-   - **Linha Verde (True):** Conecta no Passo 6.
-   - **Linha Azul (False / Saída do Loop):** Conecta no encerramento com sucesso.
-6. **Passo 6 (Variável - Refresh):** Arraste `V_SCHEMA` e `V_IBGE` com **Refresh Variable**:
-   ```sql
-   SELECT SCHEMA_NAME FROM (
-       SELECT SCHEMA_NAME, ROW_NUMBER() OVER (ORDER BY NVL(ORDEM, 999999), SCHEMA_NAME) RN 
-       FROM ODI_SCHEMA_CTRL WHERE ATIVO_FLG = 'S'
-   ) WHERE RN = #V_CNT
-   ```
-7. **Passo 7 (Mapping):** Arraste `MAP_CARGA_STG_{ENTIDADE}`.
-8. **Passo 8 (Variável - Increment):** Arraste `V_CNT` como **Increment Variable** (valor `1`).
-9. **Retorno do Loop:** Conecte a saída do Passo 8 de volta ao Passo 5 (`EVAL_LOOP`).
-
----
-
-## 3.2 Pacote de Carga Dimensional e Fato (`PACK_FLUXO_DW_{NOME_PROJETO}`)
-
-```
-[TRUNC_DIM_STG] ──► [MAP_DIM_1] ──► [MAP_DIM_2] ──► [TRT_PRE_CARGA_FATOS]
-                                                             │
-                                                             ▼
-                                                    [MAP_CARGA_FATO]
-                                                             │
-                                                             ▼
-                                                    [TRT_POS_CARGA_FATOS]
-```
-
----
-
-# PARTE 4: CENÁRIOS DE PRODUÇÃO (`SCEN_*`)
-
-Em produção, os pacotes nunca são executados em modo de edição (designer); são compilados em **Cenários Executáveis**.
-
-### 4.1 Compilação dos Cenários
-1. Clique com o botão direito no Pacote -> **Generate Scenario**.
-2. Nomenclatura Padrão:
-   - `SCEN_FLUXO_STG_{NOME_PROJETO}` (Versão 001)
-   - `SCEN_FLUXO_DIM_{NOME_PROJETO}` (Versão 001)
-   - `SCEN_FLUXO_FATO_{NOME_PROJETO}` (Versão 001)
-
-### 4.2 Cenário Master de Produção (`SCEN_FLUXO_PRD_{NOME_PROJETO}`)
-Crie um Pacote Master que executa os 3 cenários em sequência através de comandos nativos do ODI:
-
-```
-[START_SCEN_STG] ──────► [START_SCEN_DIM] ──────► [START_SCEN_FATO]
-(FLUXO_STG v001)         (FLUXO_DIM v001)         (FLUXO_FATO v001)
-```
-
-- **Comando do Passo 1:** `OdiStartScen -SCEN_NAME=SCEN_FLUXO_STG_{NOME_PROJETO} -SCEN_VERSION=001`
-- **Comando do Passo 2:** `OdiStartScen -SCEN_NAME=SCEN_FLUXO_DIM_{NOME_PROJETO} -SCEN_VERSION=001`
-- **Comando do Passo 3:** `OdiStartScen -SCEN_NAME=SCEN_FLUXO_FATO_{NOME_PROJETO} -SCEN_VERSION=001`
-
----
-
-# PARTE 5: CHECKLIST PRÉ-VOO DE PERFORMANCE & TUNING
-
-Antes de promover a esteira de homologação para produção, confira rigorosamente:
-
-| Item de Verificação | Configuração Correta | Status |
-| :--- | :--- | :---: |
-| **1. CKM Desativado** | `FLOW_CONTROL = False` e `STATIC_CONTROL = False` em todos os IKMs. | [ ] |
-| **2. Direct-Path Insert** | `INSERT_HINT = /*+ APPEND PARALLEL(4) */` na carga da Fato. | [ ] |
-| **3. Índices Secundários** | `PRC_PRE_CARGA_FATO` (UNUSABLE) e `PRC_POS_CARGA_FATO` (REBUILD). | [ ] |
-| **4. Proteção de Nulos (-1)** | `Lookup com Nulo Retornado = True` e `NVL(..., -1)` em 100% das FKs. | [ ] |
-| **5. Staging no Target** | A área de staging física está configurada na Unidade Lógica do DW. | [ ] |
-| **6. Índices na Staging** | Chaves naturais da Staging indexadas para acelerar os lookups da Fato. | [ ] |
-| **7. Coleta de Estatísticas** | `DBMS_STATS` executado no encerramento da carga pós-rebuild de índices. | [ ] |
-
----
-*Documento de engenharia de dados gerado de acordo com o padrão corporativo de arquitetura e tuning do ODI 12c.*

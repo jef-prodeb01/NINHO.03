@@ -24,9 +24,10 @@ Este documento estabelece o **DNA corporativo** para arquitetura, modelagem dime
   - *Exemplo de Erro:* Mudar `ID_CHAMADO` para `NUM_CHAMADO`, ou trocar `INDICADOR` para `IND_STATUS`, ou inventar `DS_SUMARIO` quando a coluna original é `RESUMO`.
   - *Comportamento Correto:* O nome original deve ser mantido ipsis litteris em maiúsculas (ex: `ID_CHAMADO`, `INDICADOR`, `DT_FECHAMENTO`).
 - **Colunas Técnicas Exclusivas do DW:** As únicas colunas com nomes padronizados pelo framework que não existem na origem são as colunas de controle dimensional Kimball:
-  - Dimensões: `DIMENSION_KEY`, `SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`.
-  - Fatos: `DIM_<ENTIDADE>`, `DIM_TEMPO`, `DTC_CARGA`, e métricas com prefixos padronizados (`QTD_*`, `VAL_*`, `TOT_*`).
-  - Staging: `DTC_EXTRACAO`, `ID_LOTE`.
+  - **Dimensões (`DIM_<PROJETO>_<ENTIDADE>`):** A Surrogate Key chama-se **SEMPRE `DIMENSION_KEY`** (proibido usar `<ENTIDADE>_KEY` ou `SK_<ENTIDADE>`), acompanhada de `SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`.
+  - **Dimensão Tempo (`DIM_TEMPO`):** Obrigatória em todo schema de trabalho (mesmo quando a fato parece estática), seguindo a estrutura corporativa de 24 colunas (`DIMENSION_KEY`, `IDE_SK_TEMPO`, `DES_DATA_DIA`, `NUM_ANO`, ..., `DTC_COMPLETA`).
+  - **Fatos (`FATO_<PROJETO>_<PROCESSO>`):** As Foreign Keys para dimensões chamam-se **SEMPRE `DIM_<PROJETO>_<ENTIDADE>`** (ex: `DIM_ELEICOES_PSD_BA_MUNICIPIO`, `DIM_ELEICOES_PSD_BA_CARGO_ELEICAO`), além da FK obrigatória `DIM_TEMPO` e métricas com prefixos padronizados (`QTD_*`, `VAL_*`, `TOT_*`). **PROIBIDO** incluir `DTC_CARGA` ou `DTC_CARGA_DW` na Fato (redundante com `TB_CONTROLE_CARGA`).
+  - **Staging (`STG_<PROJETO>_<ENTIDADE>`):** `DTC_EXTRACAO`, `ID_LOTE`.
 - **Matriz De/Para Obrigatória:** Antes de gerar qualquer DDL, o agente deve apresentar no comando `/gerar-blueprint` a tabela completa De/Para mapeando 100% das colunas de origem para as tabelas de destino para validação do engenheiro.
 
 ### 1.2 Disciplina Estrita de Pastas de Saída (Sem Pastas com Nome do Projeto)
@@ -101,6 +102,44 @@ INSERT INTO "<SCHEMA>"."DIM_<NOME>" (
 );
 ```
 
+### 3.4 Definição Canônica Obrigatória da `DIM_TEMPO` Corporativa
+Sempre haverá uma `DIM_TEMPO` no schema de trabalho, mesmo quando os dados do projeto parecerem estáticos ou anuais. Sua estrutura física padrão é:
+```sql
+CREATE TABLE "<SCHEMA>"."DIM_TEMPO" (
+    "DIMENSION_KEY"        NUMBER NOT NULL ENABLE,
+    "IDE_SK_TEMPO"         NUMBER,
+    "DES_DATA_DIA"         VARCHAR2(25),
+    "NUM_ANO"              NUMBER(4,0),
+    "NUM_MES"              NUMBER(3,0),
+    "NUM_DIA"              NUMBER(3,0),
+    "NUM_QUADRIMESTRE"     NUMBER(3,0),
+    "NUM_TRIMESTRE"        NUMBER(2,0),
+    "DES_QUINZENA"         VARCHAR2(12),
+    "DES_QUADRIMESTRE"     VARCHAR2(12),
+    "NUM_BIMESTRE"         NUMBER(3,0),
+    "DES_BIMESTRE"         VARCHAR2(12),
+    "DES_ANO_MES"          VARCHAR2(8),
+    "DES_MES_ANO"          VARCHAR2(8),
+    "DES_DIA"              VARCHAR2(7),
+    "NUM_SEMESTRE"         NUMBER(3,0),
+    "DES_MES_ANO_NUMERICO" VARCHAR2(7),
+    "DES_TRIMESTRE"        VARCHAR2(12),
+    "IND_FINAL_SEMANA"     CHAR(1),
+    "DES_MES"              VARCHAR2(15),
+    "NUM_QUINZENA"         NUMBER(3,0),
+    "DES_MES_ANO_COMPLETO" VARCHAR2(30),
+    "DES_SEMESTRE"         VARCHAR2(12),
+    "DTC_COMPLETA"         DATE,
+    CONSTRAINT "DIM_TEMPO_UK" UNIQUE ("NUM_ANO", "NUM_MES", "NUM_DIA")
+        USING INDEX TABLESPACE "<TABLESPACE_IDX>" ENABLE,
+    CONSTRAINT "DIM_TEMPO_PK" PRIMARY KEY ("DIMENSION_KEY")
+        USING INDEX TABLESPACE "<TABLESPACE_IDX>" ENABLE
+) TABLESPACE "<TABLESPACE_DATA>";
+
+CREATE INDEX "<SCHEMA>"."IDX_DIM_TEMPO_ANO_MES" ON "<SCHEMA>"."DIM_TEMPO" ("NUM_ANO", "NUM_MES") TABLESPACE "<TABLESPACE_IDX>";
+CREATE INDEX "<SCHEMA>"."IDX_DIM_TEMPO_DTC" ON "<SCHEMA>"."DIM_TEMPO" ("DTC_COMPLETA") TABLESPACE "<TABLESPACE_IDX>";
+```
+
 ---
 
 ## 4. Padrão da Camada `ODI_DIM_*` (Auxiliar de Dimensão do ODI)
@@ -116,13 +155,13 @@ INSERT INTO "<SCHEMA>"."DIM_<NOME>" (
 
 ## 5. Padrão da Camada `FATO_*` (Fatos Analíticas)
 
-### 5.1 Colunas Obrigatórias
+### 5.1 Colunas Obrigatórias (Sem `DTC_CARGA` / `DTC_CARGA_DW`)
 ```sql
 DIM_<DOMINIO>_<ENTIDADE_1> NUMBER(38,0) NOT NULL, -- FK para DIMENSION_KEY da Dimensão 1
 DIM_<DOMINIO>_<ENTIDADE_2> NUMBER(38,0) NOT NULL, -- FK para DIMENSION_KEY da Dimensão 2
-DIM_TEMPO                  NUMBER(38,0) NOT NULL, -- FK para DIM_TEMPO (YYYYMMDD ou SK)
+DIM_TEMPO                  NUMBER(38,0) NOT NULL, -- FK obrigatória para DIM_TEMPO (DIMENSION_KEY)
 -- [Medidas quantitativas com prefixos padronizados...]
-DTC_CARGA                  DATE DEFAULT SYSDATE NOT NULL -- Timestamp de gravação da linha no DW
+-- PROIBIDO incluir DTC_CARGA ou DTC_CARGA_DW na Fato (já existe TB_CONTROLE_CARGA)
 ```
 
 > ⚠️ **Nenhuma Foreign Key na Fato pode ser nula (`NOT NULL ENABLE`):** Quando a origem trouxer valor nulo ou desconhecido, o mapeamento ETL deve converter obrigatoriamente para `-1` via expressão `NVL(LOOKUP.DIMENSION_KEY, -1)`.
