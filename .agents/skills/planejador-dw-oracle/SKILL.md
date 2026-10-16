@@ -3,12 +3,13 @@ name: planejador-dw-oracle
 description: >-
   Conduz o planejamento de Data Warehouse no Oracle: modelagem Kimball Star Schema,
   SCD Tipo 2, criação de tabelas staging (STG_*), dimensões (DIM_*), fatos (FAT_*),
-  constraints, sequences, tablespaces e validação do grão.
+  constraints, sequences, tablespaces, validação do grão e melhorias rápidas não-destrutivas
+  (Fast-Track: comentários, índices, linha -1 e constraints NOVALIDATE) em DWs já construídos.
 ---
 
 # Skill: Planejador de Data Warehouse (Oracle)
 
-Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de alta performance para novos Data Warehouses no Oracle Database (versões 12c a 19c+).
+Esta skill orienta a concepção, modelagem dimensional e geração de DDLs de alta performance para novos Data Warehouses no Oracle Database (versões 12c a 19c+), além do modo **Fast-Track** para melhorias cirúrgicas não-destrutivas em DWs já construídos.
 
 ## 1. Princípios de Modelagem Dimensional (Kimball)
 
@@ -96,17 +97,62 @@ Nenhum DDL físico deve ser gerado no escuro. Diante de tabelas volumosas, regra
 Gere os arquivos nas subpastas apropriadas de `saida/planejador_dw/`:
 1. `01_controle_carga/01_tb_controle_carga.sql` (se não existir no schema)
 2. `02_staging/02_create_stg_tables.sql` (incluindo tabela bruta 1:1 quando a fonte for CSV e tabelas pré-processadas se houver Python/Hop)
-3. `03_dimensoes/03_create_odi_dim_tables.sql` (**OBRIGATÓRIO** — tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` para manobra SCD2 no ODI)
-4. `03_dimensoes/03_selects_odi_dimensoes.sql` (**OBRIGATÓRIO** — consultas SQL de transformação `STG_* -> ODI_DIM_* / DIM_*` para os Mappings do ODI)
-5. `03_dimensoes/04_create_dim_tables.sql` (**OBRIGATÓRIO** — `DIM_TEMPO` + dimensões do projeto com PK `DIMENSION_KEY`)
+3. `03_dimensoes/03_create_odi_dim_tables.sql` (**OBRIGATÓRIO em novo DW** — tabelas auxiliares `ODI_DIM_<PROJETO>_<ENTIDADE>` para manobra SCD2 no ODI)
+4. `03_dimensoes/03_selects_odi_dimensoes.sql` (**OBRIGATÓRIO em novo DW** — consultas SQL de transformação `STG_* -> ODI_DIM_* / DIM_*` para os Mappings do ODI)
+5. `03_dimensoes/04_create_dim_tables.sql` (**OBRIGATÓRIO em novo DW** — `DIM_TEMPO` + dimensões do projeto com PK `DIMENSION_KEY`)
 6. `03_dimensoes/06_init_default_records.sql` (**OBRIGATÓRIO** — registro `-1` em todas as dimensões + `DIM_TEMPO`)
-7. `04_fatos/04_select_odi_fato.sql` (**OBRIGATÓRIO** — consultas SQL de carga das Fatos no ODI a partir da `STG_*` com Lookups nas `DIM_*` vigentes e `DIM_TEMPO`)
-8. `04_fatos/05_create_fato_tables.sql` (**OBRIGATÓRIO** — Fatos com FKs `DIM_<PROJETO>_<...>` e `DIM_TEMPO`, sem `DTC_CARGA_DW`)
+7. `04_fatos/04_select_odi_fato.sql` (**OBRIGATÓRIO em novo DW** — consultas SQL de carga das Fatos no ODI a partir da `STG_*` com Lookups nas `DIM_*` vigentes e `DIM_TEMPO`)
+8. `04_fatos/05_create_fato_tables.sql` (**OBRIGATÓRIO em novo DW** — Fatos com FKs `DIM_<PROJETO>_<...>` e `DIM_TEMPO`, sem `DTC_CARGA_DW`)
 9. `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql` (contendo `PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO` chamadas pelo ODI SE Estratégia A)
 10. `08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`
-11. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md` e `09_relatorio_estrategias/GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md` (**OBRIGATÓRIO** — passo a passo de construção de cada `TRT_*`, `ODI_DIM_*`, `MAP_DIM_*`, `MAP_FATO_*`, `PACK_*` e `SCEN_*` no ODI 12c)
+11. `09_relatorio_estrategias/RELATORIO_ESTRATEGIAS.md` e `09_relatorio_estrategias/GUIA_IMPLEMENTACAO_ODI_<PROJETO>.md` (**OBRIGATÓRIO em novo DW** — passo a passo de construção de cada `TRT_*`, `ODI_DIM_*`, `MAP_DIM_*`, `MAP_FATO_*`, `PACK_*` e `SCEN_*` no ODI 12c)
 12. `10_testes_integridade/13_testes_integridade.sql`
 13. `11_dicionario_dados/dicionario_dados.html`
 
 > 🛑 **REGRA CANÔNICA:** Nunca crie subpastas com o nome do projeto (ex: `saida/planejador_dw/<PROJETO>/`). Salve diretamente nas pastas numeradas.
 
+---
+
+## 5. ⚡ Micro-Processos Independentes & Modo Fast-Track (`melhorar_dw_existente.py`)
+
+Quando o Engenheiro de Dados **já construiu o DW** (`DIM_*`, `FATO_*`, `STG_*`) ou deseja rodar **apenas um micro-processo isolado** sem disparar o processo completo:
+
+1. **Smart Bypass do Gate 0:** Não exija o preenchimento do `INTAKE_DW.md`. Basta o DDL em `entrega/planejador_dw/ddl/` (ou passado via `--caminho`).
+2. **Modos Granulares Disponíveis em [`core/scripts_comuns/melhorar_dw_existente.py`](../../../core/scripts_comuns/melhorar_dw_existente.py):**
+   - `--modo comentarios` (`/gerar-comentarios`): Gera `90_patch_comentarios_dimensoes.sql`, `90_patch_comentarios_fatos.sql`, `90_patch_comentarios_staging.sql` e `11_dicionario_dados/dicionario_dados.html`.
+   - `--modo dicionario` (`/gerar-dicionario`): Gera exclusivamente o Dicionário de Dados HTML interativo (`11_dicionario_dados/dicionario_dados.html`).
+   - `--modo indices` (`/gerar-indices`): Gera `91_patch_indices_dimensoes.sql` (B-Tree SCD2), `91_patch_indices_fatos.sql` (`BITMAP` se `--estrategia A` ou `B-TREE COMPRESS 1` se `--estrategia B`, mais `DBMS_STATS`) e `05_procedimentos_manutencao/07_prc_pos_carga_fato.sql`.
+   - `--modo linha-default` (`/gerar-linha-default`): Gera apenas `03_dimensoes/06_init_default_records.sql` (`MERGE INTO` idempotente do registro `-1`).
+   - `--modo constraints` (`/gerar-constraints`): Gera apenas `92_patch_ajustes_dimensoes.sql` e `92_patch_ajustes_fatos.sql` (`ALTER TABLE ... ADD CONSTRAINT ... ENABLE NOVALIDATE` / `RELY DISABLE NOVALIDATE` e `CREATE SEQUENCE`).
+   - `--modo testes` (`/gerar-testes-dw`): Gera apenas `10_testes_integridade/13_testes_integridade.sql`.
+   - `--modo guia-bi` (`/gerar-guia-bi`): Gera apenas `08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`.
+   - `--modo selects-odi` (`/gerar-selects-odi`): Gera apenas `03_create_odi_dim_tables.sql`, `03_selects_odi_dimensoes.sql` e `04_select_odi_fato.sql`.
+   - `--modo guia-odi` (`/gerar-guia-odi`): Gera apenas os guias individuais de construção no Canvas do ODI 12c em `09_relatorio_estrategias/guia_estrategias_odi_*.md`.
+   - `--modo odi`: Gera o conjunto ODI (`selects-odi` + `guia-odi` + `06_init_default_records.sql`).
+   - `--modo tudo` (`/melhorar-dw-existente`): Executa todos os micro-processos não-destrutivos + `09_relatorio_estrategias/DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md`.
+3. **Validação Automática (`validar_entrega.py`):**
+   Execute `python core/scripts_comuns/validar_entrega.py saida` (ou `fast-track`) para validar 100% de conformidade dos artefatos gerados.
+
+---
+
+## 6. 🧪 Gerador de Simulações & Blueprint 100% Editável (`simular_projeto.py`)
+
+Quando o Engenheiro de Dados quiser visualizar **de ponta a ponta** como o projeto de DW vai começar, transformar e terminar **antes** de fechar o cenário e entrar na esteira de execução real:
+
+1. **Fase 1 — Gerar a Simulação Editável (`/simular-dw` ou `/simular-projeto`):**
+   ```bash
+   python core/scripts_comuns/simular_projeto.py --modulo dw --acao simular
+   ```
+   Gera [`entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md`](../../../entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md) contendo:
+   - **Seção 1:** Gate de Aprovação (`- [ ] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL`);
+   - **Seção 2:** Parâmetros Globais editáveis (`PROJETO_SIGLA`, `SCHEMA_DW_ALVO`, `SCHEMA_STG_ALVO`, `ESTRATEGIA_CARGA_FATO`, `TABLESPACE_DADOS`, `TABLESPACE_INDICES`);
+   - **Seção 3:** Arquitetura Visual da Esteira Completa (Mermaid);
+   - **Seção 4:** Matriz Editável de Tabelas e Colunas (`[x]`/`[ ]` para incluir/excluir colunas, renomear colunas destino, trocar tipos Oracle, alterar `SCD1`/`SCD2` e editar descrições `COMMENT ON`);
+   - **Seção 5:** **Simulação Dry-Run de Dados (Amostra Visual de 3 Linhas)** mostrando exatamente como cada tabela ficará populada (incluindo o registro sentinela `-1`);
+   - **Seção 6:** Radar Consultivo da IA (`[x]`/`[ ]`);
+   - **Seção 7:** Escopo de Entregáveis Físicos (`01_tablespaces` a `11_dicionario_html`) com checkboxes individuais.
+2. **Fase 2 — Executar na Esteira Real após Aprovação (`/executar-simulacao`):**
+   ```bash
+   python core/scripts_comuns/simular_projeto.py --modulo dw --acao executar
+   ```
+   Lê todas as edições feitas pelo engenheiro na `SIMULACAO_BLUEPRINT_DW.md` e gera os artefatos reais em `saida/planejador_dw/`.

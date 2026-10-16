@@ -19,11 +19,15 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
 
 ## 🛑 Gate 0 — Protocolo Inicial Obrigatório (Validação de Intake & Estado do Schema)
 
-> ⚠️ **REGRA ZERO DE ATENDIMENTO — ANTES DE QUALQUER AÇÃO OU GERAÇÃO:**
+> ⚡ **EXCEÇÃO DE VIA RÁPIDA (BYPASS INTELIGENTE DO GATE 0 — MICRO-PROCESSOS & SIMULAÇÃO EDITÁVEL):**
+> 1. **Micro-Processos Modulares (`modular_semantica.py`):** Quando o Engenheiro desejar gerar **apenas uma parte isolada** da Camada Semântica (`/gerar-views-semantica`, `/gerar-catalogo-meta` ou `/gerar-rls`), **dispense o preenchimento do `INTAKE_SEMANTICA.md`** e execute diretamente [`core/scripts_comuns/modular_semantica.py`](../../core/scripts_comuns/modular_semantica.py) com `--modo {views-dim,views-evento,views-kpi,views-semantica,catalogo-meta,rls,validacoes,documento,tudo}`.
+> 2. **Simulação Ponta a Ponta & Blueprint Editável (`simular_projeto.py`):** Quando o Engenheiro quiser simular a Camada Semântica antes de fechar o cenário real (`/simular-semantica` ou `/simular-projeto`), execute `python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular`. Isso gera [`entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`](../../entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md) 100% editável. Após o engenheiro aprovar (`[x]`) ou acionar `/executar-simulacao`, execute `--acao executar` para gerar os scripts reais em `saida/camada_semantica/`.
+
+> ⚠️ **REGRA ZERO DE ATENDIMENTO — PARA O PROCESSO COMPLETO TRADICIONAL:**
 > 
 > 1. **Verificação do INTAKE:**
 >    - Inspecione imediatamente [`INTAKE_SEMANTICA.md`](INTAKE_SEMANTICA.md) em `modulos/camada_semantica/INTAKE_SEMANTICA.md`.
->    - Se estiver em branco ou contiver placeholders (`<...>` ou `[Ex: ...]`), **PARE IMEDIATAMENTE** e envie o link direto ao engenheiro:
+>    - Se estiver em branco ou contiver placeholders (`<...>` ou `[Ex: ...]`) e não for micro-processo ou simulação, **PARE IMEDIATAMENTE** e envie o link direto ao engenheiro:
 >      👉 [INTAKE_SEMANTICA.md](INTAKE_SEMANTICA.md)
 > 
 > 2. **Flexibilidade para Regras, Perguntas e Radar Consultivo da IA:**
@@ -51,14 +55,27 @@ Para conduzir a modelagem e geração semântica, utilize as skills modulares do
 4. **Aditividade Obrigatória por Medida:**
    - Toda métrica cadastrada em `META_METRICA` e calculada nas views deve ter sua aditividade declarada (`ADITIVA`, `SEMI_ADITIVA` com restrição, ou `NAO_ADITIVA`). Nunca assuma aditividade sem validação.
 5. **Comentários em Tudo (`COMMENT ON`):**
-   - Toda view e tabela gerada deve conter comando `COMMENT ON TABLE` e comentários nas colunas calculadas.
+   - Toda view e tabela gerada deve conter comando `COMMENT ON TABLE` (`'Uma linha representa...'`) e comentários nas colunas calculadas.
 6. **Alinhamento Técnico Mandatório & Radar Consultivo da IA (Copiloto Consultivo — Não Gere no Escuro):**
    - O agente NUNCA deve tomar decisões analíticas ou semânticas críticas de forma isolada. Se houver ambiguidade de regras, filtros ocultos de relatórios legados ou grão não explícito, pause a geração e alinhe a quatro mãos com o Engenheiro/Analista de Dados.
    - Em todo projeto, além de atender ao escopo solicitado pelo cliente, a IA DEVE apresentar no `DOCUMENTO_ENTENDIMENTO_<PROJETO>.md` o **💡 Radar Consultivo da IA**, sugerindo novos KPIs (`VW_*_KPI_*` / `META_METRICA`), regras de negócio e sanitização (`META_REGRA_NEGOCIO`) e novas perguntas estratégicas, táticas e de auditoria (`META_CONSULTA_NEGOCIO`) que o cliente não percebeu inicialmente.
 
 ---
 
-## 🚀 Fases de Execução
+## 🛠️ Comandos Rápidos (Simulação, Micro-Processos e Processo Completo)
+
+| Comando | Ação Obrigatória do Agente | Regra de Parada (Gate) |
+| :--- | :--- | :--- |
+| `/simular-semantica` | **(Simulação Editável)** Executar `simular_projeto.py --modulo semantica --acao simular`, gerando `entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`. | **Pausa para Revisão/Edição** da Blueprint pelo engenheiro. |
+| `/executar-simulacao` | **(Execução Pós-Simulação)** Executar `simular_projeto.py --modulo semantica --acao executar`, lendo as edições da Blueprint aprovada e gerando os artefatos reais em `saida/camada_semantica/`. | Exige `[x] SIMULAÇÃO 100% FECHADA E APROVADA` (ou `--forcar`). |
+| `/gerar-views-semantica` | **(Micro-Processo)** Executar `modular_semantica.py --modo views-semantica` (ou `--modo views-dim`, `--modo views-evento`, `--modo views-kpi`), gerando apenas as Views em `vw_analiticas/`. | **Bypass Gate 0**. |
+| `/gerar-catalogo-meta` | **(Micro-Processo)** Executar `modular_semantica.py --modo catalogo-meta`, gerando apenas os scripts idempotentes das 8 tabelas `META_*` em `meta_projeto/`. | **Bypass Gate 0**. |
+| `/gerar-rls` | **(Micro-Processo)** Executar `modular_semantica.py --modo rls`, gerando apenas `meta_projeto/02_rls.sql`. | **Bypass Gate 0**. |
+| `/iniciar-semantica` | Conduzir o processo completo em 4 fases ou executar `modular_semantica.py --modo tudo`. | Valida Gate 0 ou Simulação Aprovada. |
+
+---
+
+## 🚀 Fases de Execução (Processo Completo)
 
 1. **Fase 1 — Coleta, Inspeção e Radar de KPIs:** Valida `INTAKE_SEMANTICA.md`, inspeciona DDLs e amostras em `entrega/camada_semantica/` (executando `inspecionar_ddl_origem.py` sobre o DDL do DW).
 2. **Fase 2 — Documento de Entendimento & Expansão Consultiva:** Define grão, aditividade de medidas, hierarquias, joins, armadilhas e apresenta as sugestões do **Radar Consultivo da IA** (novos KPIs, regras e perguntas) separadas do escopo do cliente para aprovação do engenheiro antes de codificar.

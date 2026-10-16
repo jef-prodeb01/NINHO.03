@@ -19,11 +19,13 @@ Não perca tempo procurando arquivos. Localize seu desafio abaixo e acesse diret
 | Seu Papel / Desafio Atual | O que você deve ler | Onde colocar seus arquivos | Comando / Módulo de Execução | Onde ficam os resultados |
 | :--- | :--- | :--- | :--- | :--- |
 | 👋 **Iniciante na Plataforma**<br/>*(Entender tudo do zero)* | 🌟 [**Guia Inicial do Engenheiro**](documentacao/guias/GUIA_INICIAL_ENGENHEIRO.md)<br/>⚡ [Comandos Rápidos](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md) | — | `python core/scripts_comuns/gerenciar_projeto.py --status` | — |
-| 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md)<br/>`/inspecionar-fontes` $\rightarrow$ `/gerar-blueprint` | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(11 pastas + Guia de BI)* |
+| 👷 **Engenheiro de Dados**<br/>*(Criar ou reformular um DW)* | 📘 [**Guia do Engenheiro de DW**](documentacao/guias/GUIA_ENGENHEIRO_DW.md)<br/>📋 [Formulário INTAKE_DW](modulos/planejador_dw/INTAKE_DW.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) | ⚙️ [`modulos/planejador_dw/`](modulos/planejador_dw/README.md)<br/>`/inspecionar-fontes` $\rightarrow$ `/simular-dw` $\rightarrow$ `/executar-simulacao-dw` | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(11 pastas + Guia de BI)* |
+| 🧪 **Engenheiro — Simulador & Blueprint 100% Editável**<br/>*(Simular ponta a ponta e editar tabelas/colunas/KPIs antes de gerar)* | 📘 [Comandos Rápidos (Seção 1.12)](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md#112-simulador-blueprint-editavel) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) ou [`entrega/camada_semantica/`](entrega/camada_semantica/) | `python core/scripts_comuns/simular_projeto.py --modulo {dw,semantica,ambos} --acao {simular,executar}`<br/>ou `/simular-dw`, `/simular-semantica` | 📋 `SIMULACAO_BLUEPRINT_DW.md` / `SIMULACAO_BLUEPRINT_SEMANTICA.md` $\rightarrow$ 📤 `saida/` |
+| ⚡ **Engenheiro — DW Já Construído (Fast-Track & Micro-Processos)**<br/>*(Só Comentários, Índices, Dicionário, Linha `-1`, Selects ODI, Guia BI)* | 📘 [Comandos Rápidos (Seção 1.11)](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md#111-melhorar-dw-existente)<br/>🧩 [Skill Planejador DW (Seção 5)](.agents/skills/planejador-dw-oracle/SKILL.md) | 📥 [`entrega/planejador_dw/ddl/`](entrega/planejador_dw/ddl/) (`.sql` do DW atual) | `python core/scripts_comuns/melhorar_dw_existente.py --modo {comentarios,dicionario,indices,linha-default,constraints,testes,guia-bi,selects-odi,guia-odi,tudo}` | 📤 [`saida/planejador_dw/`](saida/planejador_dw/README.md) *(`90_patch_*`, `91_patch_*`, `92_patch_*`, ODI, Dicionário HTML)* |
 | 🦅 **Engenheiro ETL — ODI 12c**<br/>*(Auditar e fazer tuning de ODI)* | 🧩 [Skill Gerador/Auditor ODI](.agents/skills/gerador-consultas-odi/SKILL.md) | 📥 Pasta com XMLs (`Mapas`, `Cenas`, `Pacotes`, `Procedures`) | `python core/scripts_comuns/auditar_mapa_odi.py <pasta>`<br/>ou `/auditar-mapa-odi` | 📊 Diagnóstico preditivo (`H1` a `H9`) + SQL otimizado |
 | 🐝 **Engenheiro ETL — Apache Hop**<br/>*(Auditar Hop `.hpl`/`.hwf`, FTPS e Python)* | 🧩 [Skill ETL Hop](.agents/skills/gerador-etl-hop/SKILL.md)<br/>🧩 [Skill FTPS Lote](.agents/skills/extrator-ftps-lote-hop/SKILL.md) | 📥 Pasta do projeto Hop (`.hpl`, `.hwf`, `.json`, `.py`, `.sh`) | `python core/scripts_comuns/auditar_esteira_hop.py <pasta>`<br/>ou `/auditar-hop` | 📊 Auditoria de segurança e qualidade (`HOP-H1` a `HOP-H8`) |
 | 📊 **Engenheiro — Migração Power BI**<br/>*(Engenharia reversa de `.pbix` legado)* | 🧩 [Skill Engenharia Reversa PBIX](.agents/skills/engenharia-reversa-pbix/SKILL.md) | 📥 [`entrega/planejador_dw/`](entrega/planejador_dw/) (arquivo `.pbix`) | `python core/scripts_comuns/inspecionar_pbix.py <arquivo.pbix>`<br/>ou `/inspecionar-pbix` | 📤 Star Schema DW + DAX + Diagnóstico (`PBIX-H1` a `PBIX-H5`) |
-| 🧠 **Engenheiro de Dados**<br/>*(Criar Camada Semântica & Metadados)* | 📘 [**Guia de Camada Semântica**](documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md)<br/>📋 [Formulário INTAKE_SEMANTICA](modulos/camada_semantica/INTAKE_SEMANTICA.md) | 📥 [`entrega/camada_semantica/`](entrega/camada_semantica/) *(ou via `/concluir-dw`)* | ⚙️ [`modulos/camada_semantica/`](modulos/camada_semantica/README.md) | 📤 [`saida/camada_semantica/`](saida/camada_semantica/) *(Views 3 níveis + 8 `META_*`)* |
+| 🧠 **Engenheiro de Dados**<br/>*(Camada Semântica Completa ou Micro-Processos)* | 📘 [**Guia de Camada Semântica**](documentacao/guias/GUIA_ENGENHEIRO_SEMANTICA.md)<br/>📋 [Formulário INTAKE_SEMANTICA](modulos/camada_semantica/INTAKE_SEMANTICA.md) | 📥 [`entrega/camada_semantica/`](entrega/camada_semantica/) *(ou via `/concluir-dw`)* | `python core/scripts_comuns/modular_semantica.py --modo {views-dim,views-evento,views-kpi,catalogo-meta,rls,tudo}`<br/>ou `/simular-semantica`, `/iniciar-semantica` | 📤 [`saida/camada_semantica/`](saida/camada_semantica/) *(Views 3 níveis + 8 `META_*` + RLS)* |
 | 🛡️ **Engenheiro de Governança**<br/>*(MongoDB PRODEB, AWS SageMaker Catalog, LAI/LGPD)* | 📘 [**README de Governança**](modulos/governanca_dados/README.md)<br/>📋 [Formulário INTAKE_GOVERNANCA](modulos/governanca_dados/INTAKE_GOVERNANCA.md)<br/>🏛️ [Arquitetura Mongo + AWS SageMaker](modulos/governanca_dados/ARQUITETURA_MONGO_AWS.md) | 📥 [`entrega/governanca_dados/`](entrega/governanca_dados/) (`.xlsx` e `.csv` do cliente) | `python core/scripts_comuns/inspecionar_insumos_governanca.py`<br/>ou `/inspecionar-governanca` | 📤 [`saida/governanca_dados/`](saida/governanca_dados/) *(Gate 0.5 Devolução ou Mongo+AWS)* |
 | ✅ **Líder Técnico / QA**<br/>*(Validação, Qualidade e Empacotamento)* | 📋 [**Checklist de Validação**](documentacao/checklists/CHECKLIST_VALIDACAO.md)<br/>📜 [Convenções DW](core/convencoes/CONVENCOES_DW.md) | 📚 [Catálogo de Projetos](documentacao/catalogo_projetos/PROJETO_RESUMO.md) | `python core/scripts_comuns/validar_entrega.py all`<br/>`python core/scripts_comuns/gerenciar_projeto.py --status` | 📦 `pacotes_exportados/*.zip` |
 
@@ -36,12 +38,12 @@ NINHO /
 │
 ├── AGENTS.md                                  # 🤖 Orquestrador Principal do NINHO (Regras de Ouro & Gates)
 ├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
-│   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning e Índices
+│   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning, Índices e Fast-Track
 │   ├── gerador-etl-hop/                        # Pipelines (.hpl) e workflows (.hwf) do Apache Hop 2.x
 │   ├── gerador-consultas-odi/                  # Consultas analíticas, esteiras e motor preditivo de tuning ODI 12c
 │   ├── extrator-api-python/                    # Extratores Python modulares (REST, OAuth2, bulk insert)
 │   ├── extrator-ftps-lote-hop/                 # Ingestão em lote via FTPS/SFTP + Shell curl + Apache Hop
-│   ├── camada-semantica-oracle/                # Views em 3 camadas e carga das 8 tabelas META_*
+│   ├── camada-semantica-oracle/                # Views em 3 camadas, Micro-Processos e carga das 8 tabelas META_*
 │   ├── seguranca-rls-oracle/                   # Row Level Security (RLS) e VPD (DBMS_RLS) no Oracle
 │   ├── governanca-dados-corporativa/           # Governança PRODEB MongoDB, AWS SageMaker Catalog (ex-DataZone) e LGPD/LAI
 │   ├── engenharia-reversa-pbix/                # Engenharia reversa de relatórios Power BI legados para DW
@@ -52,8 +54,12 @@ NINHO /
 │   │   ├── CONVENCOES_DW.md                    # 📜 DNA do DW (SCD2, B-Tree, Dual Strategy, Linha -1)
 │   │   └── CONVENCOES_SEMANTICA.md             # 📜 DNA da Semântica (Views, 8 Tabelas META_, AI Rules)
 │   ├── scripts_comuns/                         # 🛠️ Utilitários Python/SQL reutilizáveis
-│   │   ├── validar_entrega.py                  # 🔍 Validador pré-voo de formulários e insumos
+│   │   ├── ajuda_ninho.py                      # 🧭 Central de Ajuda interativa (/help) organizada por tópicos
+│   │   ├── validar_entrega.py                  # 🔍 Validador pré-voo e pós-geração (Full, Fast-Track e Simulação)
 │   │   ├── inspecionar_ddl_origem.py           # 🔎 Extrator determinístico de DDLs e Radar Consultivo de KPIs
+│   │   ├── simular_projeto.py                  # 🧪 Gerador de Simulações e Blueprints 100% Editáveis (DW & Semântica)
+│   │   ├── melhorar_dw_existente.py            # ⚡ Motor Fast-Track e Micro-Processos para DW & ODI
+│   │   ├── modular_semantica.py                # 🧠 Motor de Micro-Processos da Camada Semântica (Views, META_*, RLS)
 │   │   ├── inspecionar_insumos_governanca.py   # 🛡️ Auditor Gate 0.5 de planilhas/CSVs do cliente + DE/PARA MongoDB
 │   │   ├── auditar_mapa_odi.py                 # 🦅 Motor preditivo de auditoria e tuning ODI 12c (H1 a H9)
 │   │   ├── auditar_esteira_hop.py              # 🐝 Motor preditivo de auditoria Apache Hop & Python/FTPS (HOP-H1 a H8)
@@ -157,6 +163,7 @@ flowchart LR
 
 | Categoria | Comando no Chat | O que a IA Faz |
 | :--- | :--- | :--- |
+| 🧭 **Central de Ajuda** | **`/help`** (ou **`/ajuda`**, **`/comandos`**, **`/help <topico>`**) | Lista diretamente aqui no chat todos os comandos organizados por tópico (`simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`) (`ajuda_ninho.py`). |
 | 🔍 **Inspeção & Auditoria** | **`/inspecionar-fontes`** | Lê os DDLs/CSVs de `entrega/planejador_dw/`, extrai colunas/PKs e sugere KPIs (`inspecionar_ddl_origem.py`). |
 | 🔍 **Inspeção & Auditoria** | **`/inspecionar-pbix`** | Desconstrói relatórios `.pbix` do Power BI, extrai DAX, filtros ocultos e anti-padrões `PBIX-H1` a `PBIX-H5` (`inspecionar_pbix.py`). |
 | 🔍 **Inspeção & Auditoria** | **`/auditar-mapa-odi`** | Audita XMLs ou pastas do ODI 12c (`Mapas`, `Cenas`, `Pacotes`, `Procedures`) com as heurísticas `H1` a `H9` (`auditar_mapa_odi.py`). |
@@ -168,8 +175,16 @@ flowchart LR
 | 🏛️ **Modelagem DW** | **`/gerar-blueprint`** | Monta a proposta completa do DW (Star Schema, Matriz De/Para fiel à origem e **💡 Radar Consultivo da IA**) sem gerar código ainda. |
 | 🏛️ **Modelagem DW** | **`/aprovar-blueprint`** | Libera o Gate de aprovação e gera todos os scripts DDL, procedures, ETL e Guia de BI nas 11 pastas de `saida/planejador_dw/`. |
 | 🏛️ **Modelagem DW** | **`/auditar-ddl`** | Confere sintaxe Oracle, linha `-1`, sequences e índices dos scripts gerados. |
-| 🧠 **Semântica & Cloud** | **`/concluir-dw`** | Transfere automaticamente os DDLs/amostras do DW e preenche o `INTAKE_SEMANTICA.md` (`transicionar_dw_para_semantica.py`). |
-| 🧠 **Semântica & Cloud** | **`/iniciar-semantica`** | Gera as Views em 3 camadas (`VW_DIM_*_ATUAL`, `VW_EVENTO_*`, `VW_KPI_*`), políticas RLS e as 8 tabelas `META_*` em `saida/camada_semantica/`. |
+| 🧪 **Simulador & Blueprint Editável** | **`/simular-dw`** / **`/executar-simulacao-dw`** | Gera `SIMULACAO_BLUEPRINT_DW.md` 100% editável (tabelas, colunas `[x]/[ ]`, tipos, SCD, prévia 3 linhas + `-1`, KPIs) e, após aprovado, executa na esteira real (`simular_projeto.py --modulo dw`). |
+| 🧪 **Simulador & Blueprint Editável** | **`/simular-semantica`** / **`/executar-simulacao-semantica`** | Gera `SIMULACAO_BLUEPRINT_SEMANTICA.md` 100% editável (Views 3 camadas, KPIs, RLS, 8 `META_*`) e, após aprovado, executa na esteira real (`simular_projeto.py --modulo semantica`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-comentarios`** / **`/gerar-dicionario`** | Gera apenas `COMMENT ON TABLE / COLUMN` (`--modo comentarios`) ou apenas o `dicionario_dados.html` (`--modo dicionario`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-indices`** / **`/gerar-linha-default`** / **`/gerar-constraints`** | Gera apenas índices + `PRC_POS_CARGA_FATO` (`--modo indices`), apenas `MERGE` da linha `-1` (`--modo linha-default`) ou apenas constraints `NOVALIDATE` (`--modo constraints`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-testes-dw`** / **`/gerar-guia-bi`** | Gera apenas os 6 testes SQL pós-carga (`--modo testes`) ou apenas o `GUIA_ANALISTA_BI_<PROJETO>.md` (`--modo guia-bi`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-selects-odi`** / **`/gerar-guia-odi`** | Gera apenas as queries SQL do ODI (`03_selects_odi_dimensoes.sql` + `04_select_odi_fato.sql`) ou apenas o Guia do Canvas ODI 12c (`--modo selects-odi` / `--modo guia-odi`). |
+| ⚡ **Fast-Track DW Completo** | **`/melhorar-dw-existente`** | Executa o Raio-X não-destrutivo e gera o pacote completo de melhorias sem mexer no ETL (`melhorar_dw_existente.py --modo tudo`). |
+| 🧠 **Micro-Processos Semântica** | **`/gerar-views-dim`** / **`/gerar-views-evento`** / **`/gerar-views-kpi`** | Gera individualmente a Camada 1 (`VW_DIM_*_ATUAL`), Camada 2 (`VW_EVENTO_*`) ou Camada 3 (`VW_KPI_*`) (`modular_semantica.py`). |
+| 🧠 **Micro-Processos Semântica** | **`/gerar-catalogo-meta`** / **`/gerar-rls-semantica`** | Gera apenas o DDL + INSERT das 8 tabelas `META_*` (`--modo catalogo-meta`) ou apenas a segurança VPD/RLS (`--modo rls`). |
+| 🧠 **Semântica & Cloud** | **`/concluir-dw`** / **`/iniciar-semantica`** | Transfere os DDLs/amostras do DW (`transicionar_dw_para_semantica.py`) e gera a Camada Semântica completa em `saida/camada_semantica/`. |
 | 🧠 **Semântica & Cloud** | **`/gerar-governanca`** | Gera os scripts das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e artefatos para AWS Glue & SageMaker Catalog em `saida/governanca_dados/`. |
 | ✅ **Qualidade & Entrega** | **`/validar-entrega`** | Executa a bateria de auditoria pré-voo e pós-geração da pasta `saida/` (`validar_entrega.py`). |
 | ✅ **Qualidade & Entrega** | **`/diagnosticar-erro-carga`** | Analisa erros de execução (`ORA-xxxxx`, logs ODI/Hop) e gera o script de correção e reprocessamento seguro. |

@@ -90,3 +90,42 @@ Gere os arquivos diretamente nas pastas canônicas:
 - Script de Validação e Testes (baseado em [template_09_validacoes.sql](./templates/template_09_validacoes.sql)): `saida/camada_semantica/meta_projeto/09_validacoes.sql`
 - Catálogo Corporativo: `documentacao/catalogo_projetos/PROJETO_RESUMO.md` e `PROJETO_VERSION.md`
 
+---
+
+## 5. ⚡ Micro-Processos Independentes da Camada Semântica (`modular_semantica.py`)
+
+Quando o Engenheiro desejar rodar **apenas uma etapa isolada** da Camada Semântica sem precisar executar o processo completo:
+
+```bash
+python core/scripts_comuns/modular_semantica.py --modo <MODO>
+```
+
+Modos disponíveis:
+- `views-dim`: Gera apenas `vw_analiticas/01_vw_dim_atuais.sql` (`VW_<PROJETO>_DIM_<ENTIDADE>_ATUAL`).
+- `views-evento`: Gera apenas `vw_analiticas/02_vw_eventos.sql` (`VW_<PROJETO>_EVENTO_<PROCESSO>`).
+- `views-kpi`: Gera apenas `vw_analiticas/03_vw_kpis.sql` (`VW_<PROJETO>_KPI_<PROCESSO>`).
+- `views-semantica` (`/gerar-views-semantica`): Gera as 3 camadas de Views (`01_vw_dim_atuais.sql`, `02_vw_eventos.sql` e `03_vw_kpis.sql`).
+- `catalogo-meta` (`/gerar-catalogo-meta`): Gera apenas os scripts idempotentes (`MERGE INTO`) das 8 tabelas `META_*` (`01_meta_glossario.sql` a `08_meta_valor_dominio.sql`).
+- `rls` (`/gerar-rls`): Gera apenas o script de segurança Row-Level Security / VPD (`meta_projeto/02_rls.sql`).
+- `validacoes`: Gera apenas o script de smoke tests (`meta_projeto/09_validacoes.sql`).
+- `documento`: Gera apenas o `meta_projeto/DOCUMENTO_ENTENDIMENTO_<PROJETO>.md`.
+- `tudo`: Executa todos os micro-processos acima de uma só vez.
+
+---
+
+## 6. 🧪 Gerador de Simulações & Blueprint 100% Editável (`simular_projeto.py`)
+
+Quando o Engenheiro quiser simular a Camada Semântica antes de fechar o cenário e entrar na esteira de execução real:
+
+1. **Fase 1 — Gerar a Simulação Editável (`/simular-semantica` ou `/simular-projeto`):**
+   ```bash
+   python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular
+   ```
+   Gera [`entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`](../../../entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md) com parâmetros globais, matriz editável das Views em 3 camadas, catálogo de indicadores `META_METRICA`, Radar Consultivo da IA e escopo de entregáveis com checkboxes `[x]`/`[ ]`.
+2. **Fase 2 — Executar na Esteira Real após Aprovação (`/executar-simulacao`):**
+   ```bash
+   python core/scripts_comuns/simular_projeto.py --modulo semantica --acao executar
+   ```
+   Lê todas as edições feitas na Blueprint aprovada e gera os artefatos reais em `saida/camada_semantica/`.
+
+

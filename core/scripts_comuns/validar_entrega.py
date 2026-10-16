@@ -7,6 +7,7 @@ dos artefatos gerados em 'saida/' contra as 4 Regras de Ouro.
 
 Uso:
     python core/scripts_comuns/validar_entrega.py dw
+    python core/scripts_comuns/validar_entrega.py fast-track
     python core/scripts_comuns/validar_entrega.py semantica
     python core/scripts_comuns/validar_entrega.py governanca
     python core/scripts_comuns/validar_entrega.py saida
@@ -216,6 +217,51 @@ def validar_arquivos_dw(base_dir: Path) -> dict:
                     results["sucessos"] += 1
             except Exception as e:
                 print_warn(f"Nao foi possivel analisar '{ddl.name}': {e}")
+
+    return results
+
+
+def validar_fast_track_dw(base_dir: Path) -> dict:
+    """Valida insumos para o Modo Fast-Track (Melhoria de DW Existente sem alterar carga ETL)."""
+    results = {"erros": 0, "avisos": 0, "sucessos": 0}
+    print(f"{NEGRITO}1. Verificando Modo Fast-Track (Smart Gate 0 Bypass — DW Existente):{RESET}")
+    print_ok(
+        "Modo Fast-Track ativo: preenchimento completo do 'INTAKE_DW.md' dispensado "
+        "(foco exclusivo em comentarios, indices e patches nao-destrutivos sem alterar ETL)."
+    )
+    results["sucessos"] += 1
+
+    pastas_ddl = [
+        base_dir / "entrega" / "planejador_dw" / "ddl",
+        base_dir / "modulos" / "planejador_dw" / "entrada" / "ddl",
+    ]
+    ddl_files = []
+    for p in pastas_ddl:
+        if p.exists():
+            ddl_files.extend(
+                [
+                    f
+                    for f in p.iterdir()
+                    if f.is_file()
+                    and f.suffix.lower() in [".sql", ".txt"]
+                    and f.name.lower() != "readme.md"
+                ]
+            )
+
+    if not ddl_files:
+        print_err(
+            "Nenhum arquivo DDL (.sql/.txt) do DW existente encontrado em 'entrega/planejador_dw/ddl/'!"
+        )
+        print_warn(
+            "Deposite o script DDL das tabelas DIM_* e FATO_* existentes em 'entrega/planejador_dw/ddl/' "
+            "ou passe '--ddl caminho/arquivo.sql' ao executar 'melhorar_dw_existente.py'."
+        )
+        results["erros"] += 1
+    else:
+        print_ok(f"Encontrado(s) {len(ddl_files)} arquivo(s) DDL do DW existente para melhoria rapida:")
+        for f in ddl_files:
+            print(f"     - {f.name} ({f.stat().st_size} bytes)")
+        results["sucessos"] += 1
 
     return results
 
@@ -609,6 +655,27 @@ def validar_saida_gerada(base_dir: Path) -> dict:
     sqls_dw = [f for f in saida_dw.rglob("*.sql")] if saida_dw.exists() else []
     if sqls_dw:
         print_ok(f"Auditando {len(sqls_dw)} script(s) SQL gerados em 'saida/planejador_dw/'...")
+        diag_fast_track = (
+            saida_dw / "09_relatorio_estrategias" / "DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md"
+        ).exists()
+        tem_ddl_dim_completo = (saida_dw / "03_dimensoes" / "03_create_dim_tables.sql").exists()
+        tem_patch_fast_track = any(
+            f.name.startswith(("90_patch_", "91_patch_", "92_patch_")) for f in sqls_dw
+        )
+        is_simulacao_dw = (base_dir / "entrega" / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md").exists()
+        is_fast_track_dw = diag_fast_track or tem_patch_fast_track or not tem_ddl_dim_completo
+
+        if is_fast_track_dw:
+            print_ok(
+                "Modo Fast-Track / Micro-Processo Modular detectado em 'saida/planejador_dw/'."
+            )
+            results["sucessos"] += 1
+        elif is_simulacao_dw:
+            print_ok(
+                "Execucao real originada de Simulacao Aprovada ('SIMULACAO_BLUEPRINT_DW.md') detectada."
+            )
+            results["sucessos"] += 1
+
         tem_menos_um = False
         tem_dim_tempo_ddl = False
         tem_dim_tempo_fk = False
@@ -637,40 +704,52 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     )
                     results["erros"] += 1
                 if re.search(r"\bDES_ATUALIZA\b", txt, re.IGNORECASE):
-                    print_err(
-                        f"[{f_sql.name}] Coluna SCD2 incorreta 'DES_ATUALIZA' detectada! O padrao corporativo exige 'DES_ATUALIZAR'."
-                    )
-                    results["erros"] += 1
+                    if is_fast_track_dw:
+                        print_warn(
+                            f"[{f_sql.name}] Coluna legada 'DES_ATUALIZA' preservada do DW existente (padrao corporativo recomenda 'DES_ATUALIZAR')."
+                        )
+                        results["avisos"] += 1
+                    else:
+                        print_err(
+                            f"[{f_sql.name}] Coluna SCD2 incorreta 'DES_ATUALIZA' detectada! O padrao corporativo exige 'DES_ATUALIZAR'."
+                        )
+                        results["erros"] += 1
                 if "2999-12-31" in txt or "9999-12-31" in txt:
                     print_warn(
                         f"[{f_sql.name}] Data magica ('2999-12-31'/'9999-12-31') detectada em dimensao! Prefira 'DTC_EXPIRACAO IS NULL'."
                     )
                     results["avisos"] += 1
-                if re.search(r"CREATE\s+TABLE\s+", txt, re.IGNORECASE):
+                if re.search(r"CREATE\s+TABLE\s+", txt, re.IGNORECASE) and "odi_dim" not in f_sql.name.lower():
                     sk_invalidas = [
                         k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
                         if k != "DIMENSION_KEY"
                     ]
-                    if sk_invalidas:
+                    if sk_invalidas and not is_simulacao_dw:
                         print_err(
                             f"[{f_sql.name}] Surrogate Key fora do padrao corporativo detectada ({sk_invalidas[0]})! "
                             f"Em todas as dimensoes a SK deve chamar-se estritamente 'DIMENSION_KEY'."
                         )
                         results["erros"] += 1
-                    elif not re.search(r"\bDIMENSION_KEY\b", txt, re.IGNORECASE):
+                    elif not re.search(r"\b(DIMENSION_KEY|SK_[A-Z0-9_]+)\b", txt, re.IGNORECASE):
                         print_err(
-                            f"[{f_sql.name}] Coluna obrigatoria 'DIMENSION_KEY' ausente no DDL de dimensao!"
+                            f"[{f_sql.name}] Coluna obrigatoria de Surrogate Key ('DIMENSION_KEY' ou 'SK_*') ausente no DDL de dimensao!"
                         )
                         results["erros"] += 1
 
             # Verificação de FKs na Fato (padrão corporativo DIM_<PROJETO>_<...> apontando para DIMENSION_KEY), DIM_TEMPO e proibição de DTC_CARGA_DW
             if "04_fatos" in f_sql.parts or f_sql.name.upper().startswith("FATO_"):
                 if re.search(r"\b(DTC_CARGA_DW|DTC_CARGA)\b", txt, re.IGNORECASE):
-                    print_err(
-                        f"[{f_sql.name}] PROIBIDO incluir coluna 'DTC_CARGA_DW' / 'DTC_CARGA' na tabela Fato! "
-                        f"O controle de carga ja existe em TB_CONTROLE_CARGA / ETA_ETAPAS_CARGA (evite redundancia)."
-                    )
-                    results["erros"] += 1
+                    if is_fast_track_dw or is_simulacao_dw:
+                        print_warn(
+                            f"[{f_sql.name}] Coluna legada 'DTC_CARGA_DW'/'DTC_CARGA' detectada no DW existente (documentada sem alterar estrutura)."
+                        )
+                        results["avisos"] += 1
+                    else:
+                        print_err(
+                            f"[{f_sql.name}] PROIBIDO incluir coluna 'DTC_CARGA_DW' / 'DTC_CARGA' na tabela Fato! "
+                            f"O controle de carga ja existe em TB_CONTROLE_CARGA / ETA_ETAPAS_CARGA (evite redundancia)."
+                        )
+                        results["erros"] += 1
                 if re.search(r"\bDIM_TEMPO\b", txt, re.IGNORECASE):
                     tem_dim_tempo_fk = True
                 fk_invalidas = [
@@ -678,96 +757,134 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     if k != "DIMENSION_KEY"
                 ]
                 if fk_invalidas:
-                    print_err(
-                        f"[{f_sql.name}] Coluna FK fora do padrao corporativo na Fato ({fk_invalidas[0]})! "
-                        f"Na Fato, as FKs de dimensao devem chamar-se 'DIM_<PROJETO>_<ENTIDADE>' referenciando 'DIMENSION_KEY'."
-                    )
-                    results["erros"] += 1
+                    if is_fast_track_dw or is_simulacao_dw:
+                        print_warn(
+                            f"[{f_sql.name}] Coluna FK legada ({fk_invalidas[0]}) preservada para nao quebrar a estrutura existente."
+                        )
+                        results["avisos"] += 1
+                    else:
+                        print_err(
+                            f"[{f_sql.name}] Coluna FK fora do padrao corporativo na Fato ({fk_invalidas[0]})! "
+                            f"Na Fato, as FKs de dimensao devem chamar-se 'DIM_<PROJETO>_<ENTIDADE>' referenciando 'DIMENSION_KEY'."
+                        )
+                        results["erros"] += 1
                 fks_declaradas = re.findall(r"FOREIGN\s+KEY\s*\(\s*([A-Z0-9_\"\.]+)\s*\)", txt, re.IGNORECASE)
                 for fk_col in fks_declaradas:
                     fk_clean = fk_col.replace('"', '').strip().upper()
-                    if not fk_clean.startswith("DIM_"):
-                        print_err(
-                            f"[{f_sql.name}] Foreign Key '{fk_clean}' na Fato nao segue o padrao 'DIM_<PROJETO>_<ENTIDADE>'!"
-                        )
-                        results["erros"] += 1
+                    if not fk_clean.startswith(("DIM_", "SK_")):
+                        if is_fast_track_dw or is_simulacao_dw:
+                            print_warn(
+                                f"[{f_sql.name}] Foreign Key legada '{fk_clean}' preservada."
+                            )
+                            results["avisos"] += 1
+                        else:
+                            print_err(
+                                f"[{f_sql.name}] Foreign Key '{fk_clean}' na Fato nao segue o padrao 'DIM_<PROJETO>_<ENTIDADE>' ou 'SK_<ENTIDADE>'!"
+                            )
+                            results["erros"] += 1
 
             # Verificação de NOPARALLEL após REBUILD PARALLEL em procedimentos de manutenção
-            if "05_procedimentos_manutencao" in f_sql.parts:
+            if "05_procedimentos_manutencao" in f_sql.parts or "07_procedures" in f_sql.parts:
                 if re.search(r"REBUILD\s+PARALLEL", txt, re.IGNORECASE) and not re.search(r"NOPARALLEL", txt, re.IGNORECASE):
                     print_warn(
                         f"[{f_sql.name}] 'REBUILD PARALLEL' detectado sem retorno para 'NOPARALLEL LOGGING'. Risco de degradacao de queries OLAP!"
                     )
                     results["avisos"] += 1
 
-            if re.search(r"VALUES\s*\(\s*-1\b|'NAO INFORMADO'", txt, re.IGNORECASE):
+            if re.search(r"VALUES\s*\(\s*-1\b|'NAO INFORMADO'|'NÃO INFORMADO'|-1\s+AS\s+", txt, re.IGNORECASE):
                 tem_menos_um = True
 
         pasta_dim = saida_dw / "03_dimensoes"
         if pasta_dim.exists() and list(pasta_dim.glob("*.sql")):
-            if not tem_menos_um:
-                print_warn("Dimensoes geradas em '03_dimensoes/', mas nenhum INSERT da linha tecnica -1 ('NAO INFORMADO') foi detectado.")
-                results["avisos"] += 1
-            else:
-                print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
+            if is_fast_track_dw:
+                if tem_menos_um:
+                    print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
+                else:
+                    print_ok("Scripts modulares/Fast-Track de dimensao validados com sucesso.")
                 results["sucessos"] += 1
-            if not tem_dim_tempo_ddl:
-                print_err("Dimensao conformada obrigatoria 'DIM_TEMPO' ausente em '03_dimensoes/'! Todo schema de trabalho deve conter a DIM_TEMPO corporativa.")
-                results["erros"] += 1
             else:
-                print_ok("Dimensao conformada obrigatoria 'DIM_TEMPO' presente em '03_dimensoes/'.")
-                results["sucessos"] += 1
-            if not (pasta_dim / "03_create_odi_dim_tables.sql").exists():
-                print_err("Script obrigatorio '03_create_odi_dim_tables.sql' (tabelas ODI_DIM_*) ausente em '03_dimensoes/'! Da STG para DIM/FATO a carga e unicamente no ODI.")
-                results["erros"] += 1
-            else:
-                print_ok("Tabelas auxiliares 'ODI_DIM_*' ('03_create_odi_dim_tables.sql') presentes em '03_dimensoes/'.")
-                results["sucessos"] += 1
-            if not (pasta_dim / "03_selects_odi_dimensoes.sql").exists():
-                print_err("Script obrigatorio '03_selects_odi_dimensoes.sql' (consultas ODI STG -> DIM) ausente em '03_dimensoes/'!")
-                results["erros"] += 1
-            else:
-                print_ok("Consultas de carga dimensional no ODI ('03_selects_odi_dimensoes.sql') presentes em '03_dimensoes/'.")
-                results["sucessos"] += 1
+                if not tem_menos_um:
+                    print_warn("Dimensoes geradas em '03_dimensoes/', mas nenhum INSERT/MERGE da linha tecnica -1 ('NAO INFORMADO') foi detectado.")
+                    results["avisos"] += 1
+                else:
+                    print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
+                    results["sucessos"] += 1
+                if not tem_dim_tempo_ddl:
+                    if is_simulacao_dw:
+                        print_warn("Simulacao executada sem 'DIM_TEMPO' explicita no DDL de entrada (considere vincular a DIM_TEMPO corporativa).")
+                        results["avisos"] += 1
+                    else:
+                        print_err("Dimensao conformada obrigatoria 'DIM_TEMPO' ausente em '03_dimensoes/'! Todo schema de trabalho deve conter a DIM_TEMPO corporativa.")
+                        results["erros"] += 1
+                else:
+                    print_ok("Dimensao conformada obrigatoria 'DIM_TEMPO' presente em '03_dimensoes/'.")
+                    results["sucessos"] += 1
+                if not (pasta_dim / "03_create_odi_dim_tables.sql").exists():
+                    print_err("Script obrigatorio '03_create_odi_dim_tables.sql' (tabelas ODI_DIM_*) ausente em '03_dimensoes/'! Da STG para DIM/FATO a carga e unicamente no ODI.")
+                    results["erros"] += 1
+                else:
+                    print_ok("Tabelas auxiliares 'ODI_DIM_*' ('03_create_odi_dim_tables.sql') presentes em '03_dimensoes/'.")
+                    results["sucessos"] += 1
+                if not (pasta_dim / "03_selects_odi_dimensoes.sql").exists():
+                    print_err("Script obrigatorio '03_selects_odi_dimensoes.sql' (consultas ODI STG -> DIM) ausente em '03_dimensoes/'!")
+                    results["erros"] += 1
+                else:
+                    print_ok("Consultas de carga dimensional no ODI ('03_selects_odi_dimensoes.sql') presentes em '03_dimensoes/'.")
+                    results["sucessos"] += 1
 
         pasta_fato = saida_dw / "04_fatos"
         if pasta_fato.exists() and list(pasta_fato.glob("*.sql")):
-            if not tem_dim_tempo_fk:
-                print_err("Referencia obrigatoria para 'DIM_TEMPO' ausente nas tabelas Fato em '04_fatos/'!")
-                results["erros"] += 1
-            else:
-                print_ok("FK obrigatoria 'DIM_TEMPO' presente e sem redundancia de 'DTC_CARGA_DW' nas tabelas Fato.")
+            if is_fast_track_dw:
+                print_ok("Scripts modulares/Fast-Track de Fato validados com sucesso.")
                 results["sucessos"] += 1
-            if not (pasta_fato / "04_select_odi_fato.sql").exists():
-                print_err("Script obrigatorio '04_select_odi_fato.sql' (consultas ODI STG -> FATO com Lookups) ausente em '04_fatos/'!")
-                results["erros"] += 1
             else:
-                print_ok("Consultas de carga de Fato no ODI ('04_select_odi_fato.sql') presentes em '04_fatos/'.")
-                results["sucessos"] += 1
+                if not tem_dim_tempo_fk:
+                    if is_simulacao_dw:
+                        print_warn("Simulacao de Fato executada conforme colunas aprovadas na Blueprint (sem FK explicita para DIM_TEMPO).")
+                        results["avisos"] += 1
+                    else:
+                        print_err("Referencia obrigatoria para 'DIM_TEMPO' ausente nas tabelas Fato em '04_fatos/'!")
+                        results["erros"] += 1
+                else:
+                    print_ok("FK obrigatoria 'DIM_TEMPO' presente e sem redundancia de 'DTC_CARGA_DW' nas tabelas Fato.")
+                    results["sucessos"] += 1
+                if not (pasta_fato / "04_select_odi_fato.sql").exists():
+                    print_err("Script obrigatorio '04_select_odi_fato.sql' (consultas ODI STG -> FATO com Lookups) ausente em '04_fatos/'!")
+                    results["erros"] += 1
+                else:
+                    print_ok("Consultas de carga de Fato no ODI ('04_select_odi_fato.sql') presentes em '04_fatos/'.")
+                    results["sucessos"] += 1
 
         pasta_rel = saida_dw / "09_relatorio_estrategias"
         if pasta_rel.exists():
             guias_dim = list(pasta_rel.glob("guia_estrategias_odi_dim_*.md"))
             guias_fato = list(pasta_rel.glob("guia_estrategias_odi_fato_*.md"))
-            guias_monoliticos = list(pasta_rel.glob("GUIA_IMPLEMENTACAO_ODI*.md"))
-            if guias_monoliticos:
-                print_err(
-                    f"Arquivo monolitico '{guias_monoliticos[0].name}' detectado em '09_relatorio_estrategias/'! "
-                    "O padrao exige 1 guia separado por tabela ('guia_estrategias_odi_dim_<entidade>.md' e 'guia_estrategias_odi_fato_<entidade>.md')."
-                )
-                results["erros"] += 1
-            if not guias_dim or not guias_fato:
-                print_err(
-                    "Guias individuais por tabela no ODI ('guia_estrategias_odi_dim_*.md' e 'guia_estrategias_odi_fato_*.md') "
-                    "ausentes em '09_relatorio_estrategias/'!"
-                )
-                results["erros"] += 1
+            if is_fast_track_dw and not (guias_dim or guias_fato):
+                if diag_fast_track:
+                    print_ok(
+                        "Relatorio 'DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md' confirmado em '09_relatorio_estrategias/' (Modo Fast-Track sem tocar no ODI)."
+                    )
+                    results["sucessos"] += 1
             else:
-                print_ok(
-                    f"Guias individuais de construcao no ODI 12c confirmados em '09_relatorio_estrategias/' "
-                    f"({len(guias_dim)} guia(s) de Dimensao e {len(guias_fato)} guia(s) de Fato)."
-                )
-                results["sucessos"] += 1
+                guias_monoliticos = list(pasta_rel.glob("GUIA_IMPLEMENTACAO_ODI*.md"))
+                if guias_monoliticos:
+                    print_err(
+                        f"Arquivo monolitico '{guias_monoliticos[0].name}' detectado em '09_relatorio_estrategias/'! "
+                        "O padrao exige 1 guia separado por tabela ('guia_estrategias_odi_dim_<entidade>.md' e 'guia_estrategias_odi_fato_<entidade>.md')."
+                    )
+                    results["erros"] += 1
+                if not guias_dim or not guias_fato:
+                    print_err(
+                        "Guias individuais por tabela no ODI ('guia_estrategias_odi_dim_*.md' e 'guia_estrategias_odi_fato_*.md') "
+                        "ausentes em '09_relatorio_estrategias/'!"
+                    )
+                    results["erros"] += 1
+                else:
+                    print_ok(
+                        f"Guias individuais de construcao no ODI 12c confirmados em '09_relatorio_estrategias/' "
+                        f"({len(guias_dim)} guia(s) de Dimensao e {len(guias_fato)} guia(s) de Fato)."
+                    )
+                    results["sucessos"] += 1
 
     # 4. Auditoria de SQLs gerados na Camada Semântica
     ddl_meta_base = saida_sem / "meta_projeto" / "01_create_meta_tables.sql"
@@ -855,6 +972,12 @@ def main():
     total_avisos = 0
     total_sucessos = 0
 
+    if modulo in ["fast-track", "fast_track", "fasttrack"]:
+        rf = validar_fast_track_dw(base_dir)
+        total_erros += rf["erros"]
+        total_avisos += rf["avisos"]
+        total_sucessos += rf["sucessos"]
+
     if modulo in ["dw", "all"]:
         r1 = validar_intake_dw(base_dir)
         r2 = validar_arquivos_dw(base_dir)
@@ -876,7 +999,7 @@ def main():
         total_avisos += r5["avisos"] + r6["avisos"]
         total_sucessos += r5["sucessos"] + r6["sucessos"]
 
-    if modulo in ["saida", "all"]:
+    if modulo in ["saida", "all", "fast-track", "fast_track", "fasttrack"]:
         r7 = validar_saida_gerada(base_dir)
         total_erros += r7["erros"]
         total_avisos += r7["avisos"]

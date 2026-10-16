@@ -210,3 +210,26 @@ Consulte os modelos estruturais em:
 - [template_guia_implementacao_odi.md](./templates/template_guia_implementacao_odi.md)
 - [template_selects_odi.sql](./templates/template_selects_odi.sql)
 - [arquitetura_fatos_hibridas.md](../planejador-dw-oracle/references/arquitetura_fatos_hibridas.md)
+
+---
+
+## ⚡ Micro-Processos Independentes do ODI (Execução Isolada sem o Processo Completo)
+
+Quando o Engenheiro de Dados já possui o DDL do DW (`DIM_*`, `FATO_*`) e deseja gerar **apenas as consultas SQL do ODI** ou **apenas os guias do Canvas ODI 12c** sem rodar todo o planejamento do DW:
+
+- **Apenas Tabelas `ODI_DIM_*` e Consultas SQL (`/gerar-selects-odi`):**
+  ```bash
+  python core/scripts_comuns/melhorar_dw_existente.py --modo selects-odi
+  ```
+  Gera `03_dimensoes/03_create_odi_dim_tables.sql`, `03_dimensoes/03_selects_odi_dimensoes.sql` e `04_fatos/04_select_odi_fato.sql`.
+- **Apenas Guias de Construção no Canvas ODI 12c (`/gerar-guia-odi`):**
+  ```bash
+  python core/scripts_comuns/melhorar_dw_existente.py --modo guia-odi
+  ```
+  Gera os guias passo a passo `09_relatorio_estrategias/guia_estrategias_odi_*.md` e `RELATORIO_ESTRATEGIAS.md`.
+- **Pacote ODI Completo (`--modo odi`):**
+  ```bash
+  python core/scripts_comuns/melhorar_dw_existente.py --modo odi
+  ```
+  Combina `selects-odi` + `guia-odi` + `06_init_default_records.sql`.
+

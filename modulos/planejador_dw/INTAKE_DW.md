@@ -3,7 +3,10 @@
 Preencha este formulário com as informações do projeto. O **Planejador de DW** utilizará esses dados para projetar as camadas (`STG_*`, `ODI_DIM_*`, `DIM_*`, `FATO_*`), definir a estratégia de carga (Truncate & Load vs. MERGE), configurar as ferramentas de ingestão autorizadas e gerar os artefatos diretamente na pasta `saida/planejador_dw/`.
 
 > ⚠️ **AVISO AO ENGENHEIRO DE DADOS:**  
-> A IA iniciará o processo conferindo este formulário. Se campos obrigatórios ou as caixas de seleção de tecnologias estiverem vazios, a IA pausará o atendimento e solicitará o preenchimento deste link antes de prosseguir.
+> A IA iniciará o processo conferindo este formulário para **novos projetos de DW**. Se campos obrigatórios ou as caixas de seleção de tecnologias estiverem vazios, a IA pausará o atendimento e solicitará o preenchimento deste link antes de prosseguir.
+> 
+> ⚡ **ATALHO FAST-TRACK (DW JÁ CONSTRUÍDO — SEM ALTERAR CARGA):**  
+> Se você **já construiu o DW (`DIM_*`, `FATO_*`) e não vai mexer na carga (ODI/Hop)**, precisando apenas de **Comentários + Dicionário HTML**, **Índices + Procedure Pós-Carga** ou **Patches Não-Destrutivos (Linha `-1`, Constraints `ENABLE NOVALIDATE`, Testes e Guia BI)**, **você NÃO precisa preencher este formulário!** Basta depositar o `.sql` do seu DW em `entrega/planejador_dw/ddl/` e enviar no chat `/gerar-comentarios`, `/gerar-indices` ou `/melhorar-dw-existente` (ou rodar `python core/scripts_comuns/melhorar_dw_existente.py`).
 
 ---
 
@@ -18,6 +21,7 @@ Preencha este formulário com as informações do projeto. O **Planejador de DW*
 ### 0.1 Natureza da Execução
 - [ ] **Projeto Novo do Zero:** Criação de novo DW completo no schema alvo.
 - [ ] **Evolução / Adaptação:** Adição de novas fatos/dimensões a um schema já existente.
+- [ ] **⚡ Melhoria Rápida (Fast-Track em DW Existente sem mexer na carga):** Gerar apenas comentários, índices e ajustes não-destrutivos sobre DDL já construído.
 
 ### 0.2 Tabela de Auditoria `TB_CONTROLE_CARGA`
 - [ ] **Já existe no schema alvo** (reutilizar existente, não gerar script de criação).

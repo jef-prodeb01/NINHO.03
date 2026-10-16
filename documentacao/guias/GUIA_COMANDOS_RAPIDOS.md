@@ -2,6 +2,8 @@
 
 > **Documento Oficial de Referência Operacional** — Plataforma NINHO  
 > Este guia centraliza comandos, scripts, queries, rotinas e prompts para o **Planejador de DW**, a **Camada Semântica & Metadados Ativos**, **Apache Hop**, **Shell/ODI**, **Oracle Database**, **DAX/Power BI** e **Interações com IA**.
+>
+> 💡 **Atalho Rápido no Chat (`/help`):** A qualquer momento no chat, digite **`/help`** (ou `/ajuda`, `/comandos`, ou `/help <topico>`) para exibir a lista completa de comandos organizada por tópico. No terminal, você também pode rodar `python core/scripts_comuns/ajuda_ninho.py`.
 
 ---
 
@@ -20,6 +22,9 @@ Clique em qualquer tópico ou comando abaixo para navegar diretamente para a ins
   - [1.8 Auditor de Esteiras Apache Hop, FTPS e Python (`auditar_esteira_hop.py`)](#18-auditor-esteira-hop)
   - [1.9 Inspetor e Engenharia Reversa de Power BI (`inspecionar_pbix.py`)](#19-inspetor-pbix)
   - [1.10 Inspetor Gate 0.5 de Governança de Dados (`inspecionar_insumos_governanca.py`)](#110-inspetor-governanca)
+  - [1.11 Motor de Micro-Processos e Fast-Track para DW e ODI (`melhorar_dw_existente.py`)](#111-melhorar-dw-existente)
+  - [1.12 Motor de Micro-Processos da Camada Semântica (`modular_semantica.py`)](#112-modular-semantica)
+  - [1.13 Gerador de Simulações e Blueprint 100% Editável antes da Execução Real (`simular_projeto.py`)](#113-simular-projeto)
 - [2. Comandos Operacionais do Planejador de DW (Oracle)](#2-comandos-planejador-dw)
   - [2.1 Ordem Canônica de Execução dos DDLs Físicos](#21-ordem-execucao-ddls)
   - [2.2 Gerenciamento de Sequences e Surrogate Keys](#22-sequences-surrogate-keys)
@@ -237,6 +242,100 @@ python core/scripts_comuns/inspecionar_pbix.py <caminho_pbix> --out saida/planej
 ```bash
 # Auditar insumos depositados em entrega/governanca_dados/
 python core/scripts_comuns/inspecionar_insumos_governanca.py
+```
+
+---
+
+<a id="111-melhorar-dw-existente"></a>
+### 1.11 Motor de Micro-Processos e Fast-Track para DW e ODI (`melhorar_dw_existente.py`)
+> **Cenário:** O Engenheiro de Dados **já construiu o DW** (`DIM_*`, `FATO_*`, `STG_*`) ou deseja rodar **apenas um micro-processo isolado** de DW ou de ODI sem disparar o processo completo (ex: somente comentários, somente o dicionário HTML, somente índices, somente a linha `-1`, somente constraints, somente testes, somente consultas SQL do ODI ou somente guias do Canvas ODI 12c). **Não exige preencher o `INTAKE_DW.md`** (Smart Gate 0 Bypass).
+
+```bash
+# 1. Gerar APENAS comentários de tabelas/colunas (90_patch_comentarios_*.sql) + Dicionário HTML (/gerar-comentarios)
+python core/scripts_comuns/melhorar_dw_existente.py --modo comentarios
+
+# 2. Gerar APENAS o Dicionário de Dados HTML interativo (/gerar-dicionario)
+python core/scripts_comuns/melhorar_dw_existente.py --modo dicionario
+
+# 3. Gerar APENAS índices de performance (91_patch_indices_*.sql) + PRC_POS_CARGA_FATO (/gerar-indices)
+#    Use --estrategia A para BITMAP INDEX (carga batch/noturna) ou --estrategia B para B-TREE (carga MERGE concorrente)
+python core/scripts_comuns/melhorar_dw_existente.py --modo indices --estrategia A
+
+# 4. Gerar APENAS o script idempotente (MERGE INTO) do registro sentinela -1 (/gerar-linha-default)
+python core/scripts_comuns/melhorar_dw_existente.py --modo linha-default
+
+# 5. Gerar APENAS constraints PK/FK não-destrutivas (ENABLE NOVALIDATE / RELY DISABLE NOVALIDATE) (/gerar-constraints)
+python core/scripts_comuns/melhorar_dw_existente.py --modo constraints
+
+# 6. Gerar APENAS a suíte SQL de testes de integridade (/gerar-testes-dw)
+python core/scripts_comuns/melhorar_dw_existente.py --modo testes
+
+# 7. Gerar APENAS o Guia do Analista de BI (/gerar-guia-bi)
+python core/scripts_comuns/melhorar_dw_existente.py --modo guia-bi
+
+# 8. Gerar APENAS as tabelas ODI_DIM_* e as consultas SQL de carga do ODI (/gerar-selects-odi)
+python core/scripts_comuns/melhorar_dw_existente.py --modo selects-odi
+
+# 9. Gerar APENAS os guias passo a passo do Canvas ODI 12c (/gerar-guia-odi)
+python core/scripts_comuns/melhorar_dw_existente.py --modo guia-odi
+
+# 10. Executar o pacote COMPLETO de melhorias não-destrutivas (/melhorar-dw-existente)
+python core/scripts_comuns/melhorar_dw_existente.py --modo tudo --estrategia A
+```
+
+---
+
+<a id="112-modular-semantica"></a>
+### 1.12 Motor de Micro-Processos da Camada Semântica (`modular_semantica.py`)
+> **Cenário:** Permite gerar **individualmente** cada camada de Views (`VW_DIM`, `VW_EVENTO`, `VW_KPI`), o catálogo das 8 tabelas `META_*`, o script de segurança RLS/VPD (`02_rls.sql`), o script de validações (`09_validacoes.sql`) ou o Documento de Entendimento sem precisar rodar a esteira semântica inteira.
+
+```bash
+# 1. Gerar APENAS as Views de Dimensão Vigente (Camada 1: 01_vw_dim_atuais.sql)
+python core/scripts_comuns/modular_semantica.py --modo views-dim
+
+# 2. Gerar APENAS as Views de Evento Detalhado (Camada 2: 02_vw_eventos.sql)
+python core/scripts_comuns/modular_semantica.py --modo views-evento
+
+# 3. Gerar APENAS as Views de KPIs Consolidados (Camada 3: 03_vw_kpis.sql)
+python core/scripts_comuns/modular_semantica.py --modo views-kpi
+
+# 4. Gerar TODAS as 3 camadas de Views Analíticas (/gerar-views-semantica)
+python core/scripts_comuns/modular_semantica.py --modo views-semantica
+
+# 5. Gerar APENAS os scripts idempotentes (MERGE INTO) das 8 tabelas META_* (/gerar-catalogo-meta)
+python core/scripts_comuns/modular_semantica.py --modo catalogo-meta
+
+# 6. Gerar APENAS o script de segurança Row-Level Security / VPD (/gerar-rls)
+python core/scripts_comuns/modular_semantica.py --modo rls
+
+# 7. Gerar APENAS os smoke tests semânticos (09_validacoes.sql)
+python core/scripts_comuns/modular_semantica.py --modo validacoes
+
+# 8. Executar toda a Camada Semântica de forma determinística
+python core/scripts_comuns/modular_semantica.py --modo tudo
+```
+
+---
+
+<a id="113-simular-projeto"></a>
+### 1.13 Gerador de Simulações e Blueprint 100% Editável antes da Execução Real (`simular_projeto.py`)
+> **Cenário:** Gera uma **Simulação Ponta a Ponta (Dry-Run)** em formato de Blueprint 100% editável (`entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md` e `entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`) **antes** de fechar o cenário real. O engenheiro visualiza e pode editar parâmetros globais, incluir/excluir colunas (`[x]`/`[ ]`), renomear colunas, alterar tipos Oracle, trocar `SCD1`/`SCD2`, inspecionar a amostra visual de 3 linhas (com registro `-1`) e escolher os entregáveis. Após marcar `- [x] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL`, a ação `executar` lê todas as edições da Blueprint e roda a esteira real em `saida/`.
+
+```bash
+# 1. Gerar a Simulação Editável para o Planejador DW e Camada Semântica (/simular-projeto)
+python core/scripts_comuns/simular_projeto.py --modulo ambos --acao simular
+
+# 2. Gerar a Simulação Editável APENAS do Planejador de DW (/simular-dw)
+python core/scripts_comuns/simular_projeto.py --modulo dw --acao simular
+
+# 3. Gerar a Simulação Editável APENAS da Camada Semântica (/simular-semantica)
+python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular
+
+# 4. Consultar o status de aprovação das Blueprints de Simulação
+python core/scripts_comuns/simular_projeto.py --acao status
+
+# 5. Executar a esteira real em saida/ após aprovar [x] a Blueprint (/executar-simulacao)
+python core/scripts_comuns/simular_projeto.py --modulo ambos --acao executar
 ```
 
 ---
