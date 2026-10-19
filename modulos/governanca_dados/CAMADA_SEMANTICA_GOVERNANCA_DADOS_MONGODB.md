@@ -415,7 +415,7 @@ Abaixo está o documento JSON real que integra o Portal **BA.GOV.BR**, o **DETRA
 A grande entrega de valor para o Estado da Bahia é transformar buscas técnicas e isoladas em **consultas federadas orientadas ao significado**:
 
 ```mermaid
-graph LR
+graph TD
     subgraph "CAMADA SEMÂNTICA CORPORATIVA (PRODEB)"
         CNC["Conceito Canônico:<br/>CIDADÃO (CPF)"]
         REL1["é_um"]

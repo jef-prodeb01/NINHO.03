@@ -35,7 +35,7 @@ Este guia orienta o **Engenheiro de Dados** a utilizar o **Planejador de DW** pa
 ## 1. Visão Geral do Processo
 
 ```mermaid
-graph LR
+graph TD
     ENG["Você, Engenheiro"] -->|1. Preenche INTAKE_DW.md<br/>e coloca amostras em entrega/| IA["IA - Arquiteto DW"]
     IA -->|2. Entende grão, regras e fontes<br/>Apresenta Blueprint e Star Schema| ENG
     ENG -->|3. Valida e aprova modelo| IA

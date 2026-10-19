@@ -825,7 +825,7 @@ Com base no cruzamento das especificações de modelagem e das rotinas reais de 
 A construção do **Catálogo Semântico Governamental do Estado da Bahia** deve ocorrer de forma faseada e pragmática:
 
 ```mermaid
-graph LR
+graph TD
     F1["FASE 1: Fundação & Piloto<br/>(Mês 1 e 2)<br/>- Coleções tb_sem_* no MongoDB<br/>- Homologação do Portal BA.GOV.BR<br/>- Dicionários de Qualidade e LGPD"]
     
     F2["FASE 2: Expansão Interórgãos<br/>(Mês 3 a 5)<br/>- Integração DETRAN, PLANSERV, RH<br/>- Mapeamento de Conceitos e Sinônimos<br/>- Comitê Semântico de Governança"]

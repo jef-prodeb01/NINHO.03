@@ -44,105 +44,105 @@ Não perca tempo procurando arquivos. Localize seu desafio abaixo e acesse diret
 ```text
 NINHO /
 │
-├── AGENTS.md                                  # 🤖 Orquestrador Principal do NINHO (Regras de Ouro & Gates)
-├── 🤖 .agents/skills/                          # 🧩 SKILLS MODULARES & PROGRESSIVE DISCLOSURE
-│   ├── planejador-dw-oracle/                   # Modelagem dimensional, SCD2, Sequences, Tuning, Índices e Fast-Track
-│   ├── gerador-etl-hop/                        # Pipelines (.hpl) e workflows (.hwf) do Apache Hop 2.x
-│   ├── gerador-consultas-odi/                  # Consultas analíticas, esteiras e motor preditivo de tuning ODI 12c
-│   ├── extrator-api-python/                    # Extratores Python modulares (REST, OAuth2, bulk insert)
-│   ├── extrator-ftps-lote-hop/                 # Ingestão em lote via FTPS/SFTP + Shell curl + Apache Hop
-│   ├── camada-semantica-oracle/                # Views em 3 camadas, Micro-Processos e carga das 8 tabelas META_*
-│   ├── seguranca-rls-oracle/                   # Row Level Security (RLS) e VPD (DBMS_RLS) no Oracle
-│   ├── governanca-dados-corporativa/           # Governança PRODEB MongoDB, AWS SageMaker Catalog (ex-DataZone) e LGPD/LAI
-│   ├── engenharia-reversa-pbix/                # Engenharia reversa de relatórios Power BI legados para DW
-│   └── validador-qualidade-entrega/            # Validação pré-voo e gates automatizados de integridade
+├── AGENTS.md                            # 🤖 Orquestrador Principal (Regras & Gates)
+├── 🤖 .agents/skills/                   # 🧩 SKILLS MODULARES ESPECIALIZADAS
+│   ├── planejador-dw-oracle/            # Star Schema, SCD2, Sequences, Índices e Fast-Track
+│   ├── gerador-etl-hop/                 # Pipelines (.hpl) e workflows (.hwf) Apache Hop 2.x
+│   ├── gerador-consultas-odi/           # Consultas SQL, pacotes e tuning preditivo ODI 12c
+│   ├── extrator-api-python/             # Extratores Python (REST, OAuth2, bulk insert)
+│   ├── extrator-ftps-lote-hop/          # Ingestão FTPS/SFTP + Shell curl + Apache Hop
+│   ├── camada-semantica-oracle/         # Views em 3 camadas e carga das 8 tabelas META_*
+│   ├── seguranca-rls-oracle/            # Row Level Security (RLS) e VPD no Oracle
+│   ├── governanca-dados-corporativa/    # MongoDB PRODEB, AWS SageMaker Catalog e LGPD/LAI
+│   ├── engenharia-reversa-pbix/         # Engenharia reversa de Power BI (.pbix) para DW
+│   └── validador-qualidade-entrega/     # Validação pré-voo e auditoria pós-geração
 │
-├── 🧠 core/                                    # NÚCLEO COMPARTILHADO & PADRÕES CORPORATIVOS
+├── 🧠 core/                             # NÚCLEO COMPARTILHADO & MOTORES PYTHON
 │   ├── convencoes/
-│   │   ├── CONVENCOES_DW.md                    # 📜 DNA do DW (SCD2, B-Tree, Dual Strategy, Linha -1)
-│   │   └── CONVENCOES_SEMANTICA.md             # 📜 DNA da Semântica (Views, 8 Tabelas META_, AI Rules)
-│   ├── scripts_comuns/                         # 🛠️ 14 Utilitários Python determinísticos
-│   │   ├── ajuda_ninho.py                      # 🧭 Central UX (/help, /comecar, /onde-estou, /duvida, /doctor, /demo)
-│   │   ├── validar_entrega.py                  # 🔍 Validador pré-voo e pós-geração (all, fast-track e saida)
-│   │   ├── testar_ninho.py                     # 🧪 Suíte automatizada de testes End-to-End (9 baterias E2E)
-│   │   ├── inspecionar_ddl_origem.py           # 🔎 Extrator determinístico de DDLs e Radar Consultivo de KPIs
-│   │   ├── simular_projeto.py                  # 🧪 Gerador de Simulações e Blueprints 100% Editáveis (DW & Semântica)
-│   │   ├── melhorar_dw_existente.py            # ⚡ Motor Fast-Track e Micro-Processos para DW & ODI
-│   │   ├── modular_semantica.py                # 🧠 Motor de Micro-Processos da Camada Semântica (Views, META_*, RLS)
-│   │   ├── inspecionar_insumos_governanca.py   # 🛡️ Auditor Gate 0.5 de planilhas/CSVs do cliente + DE/PARA MongoDB
-│   │   ├── auditar_mapa_odi.py                 # 🦅 Motor preditivo de auditoria e tuning ODI 12c (H1 a H9)
-│   │   ├── auditar_esteira_hop.py              # 🐝 Motor preditivo de auditoria Apache Hop & Python/FTPS (HOP-H1 a H8)
-│   │   ├── inspecionar_pbix.py                 # 📊 Extrator e auditor de arquivos Power BI (.pbix, PBIX-H1 a H5)
-│   │   ├── transicionar_dw_para_semantica.py   # 🔄 Handoff automatizado DW -> Camada Semântica
-│   │   ├── gerar_mock_dados.py                 # 🎲 Gerador dinâmico de dados sintéticos CSV com linha -1 para BI
-│   │   └── gerenciar_projeto.py                # 📦 Gerenciador de status, exportação .zip e limpeza do workspace
-│   └── README.md                               # 📖 Visão geral do Core
+│   │   ├── CONVENCOES_DW.md             # 📜 DNA do DW (SCD2, B-Tree, Dual Strategy, Linha -1)
+│   │   └── CONVENCOES_SEMANTICA.md      # 📜 DNA da Semântica (Views, 8 Tabelas META_)
+│   ├── scripts_comuns/                  # 🛠️ 14 Utilitários Python determinísticos
+│   │   ├── ajuda_ninho.py               # 🧭 Central UX (/help, /comecar, /onde-estou, /demo)
+│   │   ├── validar_entrega.py           # 🔍 Validador pré-voo e pós-geração (all/saida)
+│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (9 baterias)
+│   │   ├── inspecionar_ddl_origem.py    # 🔎 Extrator de DDLs e Radar Consultivo de KPIs
+│   │   ├── simular_projeto.py           # 🧪 Simulador e Blueprints Editáveis (DW/Semântica)
+│   │   ├── melhorar_dw_existente.py     # ⚡ Motor Fast-Track e Micro-Processos DW & ODI
+│   │   ├── modular_semantica.py         # 🧠 Micro-Processos Semântica (Views, META_*, RLS)
+│   │   ├── inspecionar_insumos_governanca.py # 🛡️ Auditor Gate 0.5 + DE/PARA MongoDB PRODEB
+│   │   ├── auditar_mapa_odi.py          # 🦅 Auditor preditivo de tuning ODI 12c (H1 a H9)
+│   │   ├── auditar_esteira_hop.py       # 🐝 Auditor Apache Hop & Python/FTPS (HOP-H1 a H8)
+│   │   ├── inspecionar_pbix.py          # 📊 Extrator e auditor Power BI (PBIX-H1 a H5)
+│   │   ├── transicionar_dw_para_semantica.py # 🔄 Handoff automatizado DW -> Semântica
+│   │   ├── gerar_mock_dados.py          # 🎲 Gerador de dados sintéticos CSV com linha -1
+│   │   └── gerenciar_projeto.py         # 📦 Exportação .zip e limpeza do workspace
+│   └── README.md                        # 📖 Visão geral do Core
 │
-├── 📥 entrega/                                 # ENTRADA DE DADOS (Insumos depositados pelo Usuário)
-│   ├── planejador_dw/                          # 📁 DDLs de origem, amostras CSV, FTP e APIs
-│   │   ├── ddl/                                # DDLs das tabelas transacionais de origem
-│   │   ├── amostras/                           # Amostras reais de dados em CSV/Excel
-│   │   ├── arquivos_ftp/                       # Layouts de arquivos recebidos via lote/SFTP
-│   │   └── api_specs/                          # Swagger/OpenAPI e payloads JSON de APIs
-│   ├── camada_semantica/                       # 📁 DDLs do DW Oracle, amostras e relatórios de carga
-│   ├── governanca_dados/                       # 📁 Planilha padrão PRODEB (.xlsx), amostras (.csv) e LGPD/LAI
-│   └── README.md                               # 📖 Roteiro de preenchimento dos insumos
+├── 📥 entrega/                          # ENTRADA DE DADOS (Insumos do Engenheiro)
+│   ├── planejador_dw/                   # 📁 DDLs de origem, amostras CSV, FTP e APIs
+│   │   ├── ddl/                         # DDLs das tabelas transacionais de origem
+│   │   ├── amostras/                    # Amostras reais de dados em CSV/Excel
+│   │   ├── arquivos_ftp/                # Layouts de arquivos recebidos via SFTP
+│   │   └── api_specs/                   # Swagger/OpenAPI e payloads JSON de APIs
+│   ├── camada_semantica/                # 📁 DDLs do DW Oracle, amostras e relatórios
+│   ├── governanca_dados/                # 📁 Planilha PRODEB (.xlsx), amostras (.csv) e LGPD
+│   └── README.md                        # 📖 Roteiro de preenchimento dos insumos
 │
-├── ⚙️ modulos/                                 # MOTORES DE INTELIGÊNCIA & EXECUÇÃO
-│   ├── planejador_dw/                          # 🏛️ MÓDULO 1: Planejamento e Modelagem de DW
-│   │   ├── INTAKE_DW.md                        # 📋 Formulário de requisitos do novo DW
-│   │   ├── AGENTS.md                           # 🤖 Orquestrador do módulo (chama skills sob demanda)
-│   │   ├── templates/                          # 📄 14 templates (SQL, Hop, Py, BI, Testes, HTML)
-│   │   └── README.md                           # 📖 Manual completo do módulo Planejador de DW
+├── ⚙️ modulos/                          # MOTORES DE INTELIGÊNCIA & EXECUÇÃO
+│   ├── planejador_dw/                   # 🏛️ MÓDULO 1: Planejamento e Modelagem de DW
+│   │   ├── INTAKE_DW.md                 # 📋 Formulário de requisitos do novo DW
+│   │   ├── AGENTS.md                    # 🤖 Orquestrador do módulo
+│   │   ├── templates/                   # 📄 14 templates (SQL, Hop, Py, BI, Testes, HTML)
+│   │   └── README.md                    # 📖 Manual completo do Planejador de DW
 │   │
-│   ├── camada_semantica/                       # 🧠 MÓDULO 2: Camada Semântica & Metadados Ativos
-│   │   ├── INTAKE_SEMANTICA.md                 # 📋 Formulário de requisitos de semântica
-│   │   ├── AGENTS.md                           # 🤖 Orquestrador da Camada Semântica (chama skills)
-│   │   ├── templates/                          # 📄 Templates de views analíticas e tabelas META_
-│   │   └── README.md                           # 📖 Manual completo da Camada Semântica
+│   ├── camada_semantica/                # 🧠 MÓDULO 2: Camada Semântica & Metadados Ativos
+│   │   ├── INTAKE_SEMANTICA.md          # 📋 Formulário de requisitos de semântica
+│   │   ├── AGENTS.md                    # 🤖 Orquestrador da Camada Semântica
+│   │   ├── templates/                   # 📄 Templates de views e tabelas META_*
+│   │   └── README.md                    # 📖 Manual completo da Camada Semântica
 │   │
-│   ├── governanca_dados/                       # 🛡️ MÓDULO 3: Governança PRODEB MongoDB & AWS SageMaker Catalog
-│   │   ├── INTAKE_GOVERNANCA.md                # 📋 Formulário de requisitos de governança e Gate 0.5
-│   │   ├── AGENTS.md                           # 🤖 Orquestrador de Governança (Gate 0.5 de devolução ao cliente)
-│   │   ├── ARQUITETURA_MONGO_AWS.md            # 🏛️ Arquitetura MongoDB Enterprise + AWS Glue & SageMaker Catalog
-│   │   ├── DOCUMENTO_CONSOLIDADO_GOVERNANCA_DADOS.md # 📘 Padrão PRODEB MongoDB ($jsonSchema, BSON, 5 coleções)
-│   │   ├── CAMADA_SEMANTICA_GOVERNANCA_DADOS_MONGODB.md # 🧠 Camada Semântica (tb_sem_dominios e tb_sem_conceitos)
-│   │   ├── templates/                          # 📄 Template oficial Excel (Dados - Insumos / Dicionário de Dados)
-│   │   └── README.md                           # 📖 Manual do módulo de Governança
+│   ├── governanca_dados/                # 🛡️ MÓDULO 3: Governança MongoDB & SageMaker
+│   │   ├── INTAKE_GOVERNANCA.md         # 📋 Formulário de governança e Gate 0.5
+│   │   ├── AGENTS.md                    # 🤖 Orquestrador de Governança (Gate 0.5)
+│   │   ├── ARQUITETURA_MONGO_AWS.md     # 🏛️ Arquitetura MongoDB + AWS Glue & SageMaker
+│   │   ├── DOCUMENTO_CONSOLIDADO_GOVERNANCA_DADOS.md # 📘 Padrão PRODEB ($jsonSchema, BSON)
+│   │   ├── CAMADA_SEMANTICA_GOVERNANCA_DADOS_MONGODB.md # 🧠 Domínios e Conceitos MongoDB
+│   │   ├── templates/                   # 📄 Template Excel (Dados - Insumos / Dicionário)
+│   │   └── README.md                    # 📖 Manual do módulo de Governança
 │   │
-│   └── README.md                               # 📖 Visão integrada dos módulos
+│   └── README.md                        # 📖 Visão integrada dos módulos
 │
-├── 📚 documentacao/                            # GOVERNANÇA, MANUAIS & CATALOGAÇÃO CONSOLIDADA
-│   ├── guias/                                  # 📘 MANUAIS OPERACIONAIS PASSO A PASSO
-│   │   ├── GUIA_INICIAL_ENGENHEIRO.md          # 👋 Guia de boas-vindas e onboarding para iniciantes
-│   │   ├── GUIA_COMANDOS_RAPIDOS.md            # ⚡ Cheat sheet central (Python, Bash, Hop, SQL, DAX)
-│   │   ├── GUIA_ENGENHEIRO_DW.md               # Manual prático do Engenheiro de DW (ODI, Hop, SQL)
-│   │   ├── GUIA_ENGENHEIRO_SEMANTICA.md        # Manual prático de Camada Semântica
-│   │   └── GUIA_ANALISTA_BI.md                 # Manual corporativo de BI (Power BI, DAX, Star Schema)
-│   ├── GLOSSARIO.md                            # 📖 Glossário analítico (SCD2, VertiPaq, Linha -1, Star Schema)
+├── 📚 documentacao/                     # GOVERNANÇA, MANUAIS & CATALOGAÇÃO
+│   ├── guias/                           # 📘 MANUAIS OPERACIONAIS PASSO A PASSO
+│   │   ├── GUIA_INICIAL_ENGENHEIRO.md   # 👋 Guia de boas-vindas e onboarding
+│   │   ├── GUIA_COMANDOS_RAPIDOS.md     # ⚡ Cheat sheet central de comandos
+│   │   ├── GUIA_ENGENHEIRO_DW.md        # Manual prático de DW (ODI, Hop, SQL)
+│   │   ├── GUIA_ENGENHEIRO_SEMANTICA.md # Manual prático de Camada Semântica
+│   │   └── GUIA_ANALISTA_BI.md          # Manual de BI (Power BI, DAX, Star Schema)
+│   ├── GLOSSARIO.md                     # 📖 Glossário analítico (SCD2, Linha -1, etc.)
 │   ├── checklists/
-│   │   └── CHECKLIST_VALIDACAO.md              # ✅ Checklist de integridade e homologação pré-entrega
+│   │   └── CHECKLIST_VALIDACAO.md       # ✅ Checklist de homologação pré-entrega
 │   ├── catalogo_projetos/
-│   │   ├── PROJETO_RESUMO.md                   # 📄 Ficha técnica viva do projeto ativo
-│   │   └── PROJETO_VERSION.md                  # 📜 Histórico de versionamento incremental
-│   └── README.md                               # 📖 Índice central da documentação
+│   │   ├── PROJETO_RESUMO.md            # 📄 Ficha técnica viva do projeto ativo
+│   │   └── PROJETO_VERSION.md           # 📜 Histórico de versionamento incremental
+│   └── README.md                        # 📖 Índice central da documentação
 │
-└── 📤 saida/                                   # ARTEFATOS FINAIS GERADOS PARA IMPLANTAÇÃO
-    ├── planejador_dw/                          # 📦 Entregáveis do DW (direto nas 11 subpastas canônicas)
-    │   ├── 01_controle_carga/                  # Script TB_CONTROLE_CARGA
-    │   ├── 02_staging/                         # DDLs das tabelas STG_*
-    │   ├── 03_dimensoes/                       # DDLs DIM_*, ODI_DIM_*, Sequences e linha -1
-    │   ├── 04_fatos/                           # DDLs FATO_* (Estratégia A ou B)
-    │   ├── 05_procedimentos_manutencao/        # Procedure PRC_POS_CARGA_FATO
-    │   ├── 06_pipelines_hop/                   # Pipelines Hop (.hpl / .hwf) (se solicitado)
-    │   ├── 07_extratores_python/               # Extratores Python modulares (se solicitado)
-    │   ├── 08_datasets_bi/                     # Guia de Modelagem e Handoff Power BI
-    │   ├── 09_relatorio_estrategias/           # Relatório executivo de arquitetura
-    │   ├── 10_testes_integridade/              # Scripts de testes pós-carga
-    │   └── 11_dicionario_dados/                # Dicionário de dados HTML
-    ├── camada_semantica/                       # 📦 Views analíticas geradas e cargas nas 8 tabelas META_
-    ├── governanca_dados/                       # 📦 Schemas MongoDB, AWS SageMaker Catalog e Relatórios Gate 0.5
-    └── README.md                               # 📖 Catálogo de saídas da plataforma
+└── 📤 saida/                            # ARTEFATOS FINAIS GERADOS PARA IMPLANTAÇÃO
+    ├── planejador_dw/                   # 📦 Entregáveis do DW (11 subpastas canônicas)
+    │   ├── 01_controle_carga/           # Script TB_CONTROLE_CARGA
+    │   ├── 02_staging/                  # DDLs das tabelas STG_*
+    │   ├── 03_dimensoes/                # DDLs DIM_*, ODI_DIM_*, Sequences e linha -1
+    │   ├── 04_fatos/                    # DDLs FATO_* (Estratégia A ou B)
+    │   ├── 05_procedimentos_manutencao/ # Procedure PRC_POS_CARGA_FATO
+    │   ├── 06_pipelines_hop/            # Pipelines Hop (.hpl / .hwf)
+    │   ├── 07_extratores_python/        # Extratores Python modulares
+    │   ├── 08_datasets_bi/              # Guia do Analista de BI e Mock CSV
+    │   ├── 09_relatorio_estrategias/    # Relatório executivo e Guias ODI 12c
+    │   ├── 10_testes_integridade/       # Scripts SQL de auditoria pós-carga
+    │   └── 11_dicionario_dados/         # Dicionário de dados HTML interativo
+    ├── camada_semantica/                # 📦 Views analíticas e cargas nas 8 tabelas META_*
+    ├── governanca_dados/                # 📦 Schemas MongoDB, SageMaker e Gate 0.5
+    └── README.md                        # 📖 Catálogo de saídas da plataforma
 ```
 
 ---
@@ -150,12 +150,18 @@ NINHO /
 ## 🔄 Fluxo de Trabalho Integrado (Pipeline Contínuo de Ponta a Ponta)
 
 ```mermaid
-graph LR
-    A["1. FONTES BRUTAS<br/>entrega/planejador_dw/"] --> B["2. PLANEJADOR DW<br/>modulos/planejador_dw/"]
-    B --> C["3. ARTEFATOS DW<br/>saida/planejador_dw/"]
-    C -->|Handoff Continuo /concluir-dw| D["4. INSUMOS SEMANTICA<br/>entrega/camada_semantica/"]
-    D --> E["5. CAMADA SEMANTICA<br/>modulos/camada_semantica/"]
-    E --> F["6. POWER BI E IA<br/>Consumo Analitico"]
+graph TD
+    subgraph "Fase 1: Engenharia do Data Warehouse"
+        A["1. FONTES BRUTAS<br/>entrega/planejador_dw/"] --> B["2. PLANEJADOR DW<br/>modulos/planejador_dw/"]
+        B --> C["3. ARTEFATOS DW<br/>saida/planejador_dw/"]
+    end
+
+    subgraph "Fase 2: Camada Semantica e Consumo Analitico"
+        D["4. INSUMOS SEMANTICA<br/>entrega/camada_semantica/"] --> E["5. CAMADA SEMANTICA<br/>modulos/camada_semantica/"]
+        E --> F["6. POWER BI E IA<br/>Consumo Analitico"]
+    end
+
+    C -->|Handoff Continuo /concluir-dw| D
 ```
 
 1. **Depósito de Insumos (`entrega/planejador_dw/`):** Você deposita DDLs de origem, amostras CSV/Excel ou especificações de APIs.
