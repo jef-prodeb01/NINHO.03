@@ -2,31 +2,53 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-🧭 CENTRAL DE AJUDA INTERATIVA & CATÁLOGO DE COMANDOS (/help) — NINHO
+🧭 CENTRAL DE EXPERIÊNCIA DO USUÁRIO (UX), AJUDA, BÚSSOLA & ORÁCULO — NINHO
 ================================================================================
-Exibe todos os comandos rápidos do chat (/comando) e seus equivalentes CLI
-organizados por tópico, permitindo filtragem por categoria ou busca textual.
+Concentra os recursos de UX conversacional da plataforma NINHO:
+  1. `/help` (`/ajuda`, `/comandos`)    : Catálogo de comandos por tópico ou busca.
+  2. `/onde-estou` (`/status`)          : Bússola contextual com barra de progresso e próximo passo.
+  3. `/comecar` (`/onboarding`)         : Trilhas guiadas de 3 passos para os 5 cenários reais.
+  4. `/duvida <tema>` (`/explicar`)     : Oráculo interativo de arquitetura e FAQ técnico.
+  5. `/doctor` (`--corrigir`)           : Diagnóstico de saúde e corretor de arquivos na pasta errada.
+  6. `/demo` e `/limpar-demo`           : Modo Playground em 1 comando para demonstração prática.
 
 Exemplos de uso:
   python core/scripts_comuns/ajuda_ninho.py
   python core/scripts_comuns/ajuda_ninho.py --topico simulacao
-  python core/scripts_comuns/ajuda_ninho.py --topico micro
-  python core/scripts_comuns/ajuda_ninho.py --busca indices
+  python core/scripts_comuns/ajuda_ninho.py --onde-estou
+  python core/scripts_comuns/ajuda_ninho.py --onboarding
+  python core/scripts_comuns/ajuda_ninho.py --explicar estrategia-carga
+  python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir
+  python core/scripts_comuns/ajuda_ninho.py --demo
+  python core/scripts_comuns/ajuda_ninho.py --limpar-demo
 ================================================================================
 """
 
 import argparse
+import os
+import re
+import shutil
+import subprocess
 import sys
-from typing import Dict, List
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+ENTREGA_DIR = ROOT_DIR / "entrega"
+SAIDA_DIR = ROOT_DIR / "saida"
+
+
+# ==============================================================================
+# 1. CATÁLOGO DE COMANDOS (/help)
+# ==============================================================================
 
 CATALOGO_TOPICOS: Dict[str, Dict] = {
     "ajuda": {
-        "titulo": "🧭 0. Central de Ajuda & Status do Projeto",
-        "descricao": "Comandos para listar o catálogo de atalhos ou consultar o estado atual do workspace.",
+        "titulo": "🧭 0. Experiência Guiada, Bússola Contextual, Oráculo & Playground",
+        "descricao": "Comandos de UX para descobrir por onde começar, saber em que etapa o projeto está, tirar dúvidas técnicas ou rodar uma demonstração.",
         "comandos": [
             {
                 "chat": "`/help` (ou `/ajuda`, `/comandos`)",
@@ -35,8 +57,33 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
             },
             {
                 "chat": "`/help <topico>`",
-                "objetivo": "Filtra os comandos de um tópico específico (`simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`).",
+                "objetivo": "Filtra os comandos de um tópico específico (`ajuda`, `simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`).",
                 "cli": "`python core/scripts_comuns/ajuda_ninho.py --topico <topico>`",
+            },
+            {
+                "chat": "`/onde-estou` (ou `/status`)",
+                "objetivo": "Mostra a Bússola Contextual do projeto com barra de progresso (`[███░░]`), arquivos detectados e o próximo comando recomendado.",
+                "cli": "`python core/scripts_comuns/ajuda_ninho.py --onde-estou`",
+            },
+            {
+                "chat": "`/comecar` (ou `/onboarding`)",
+                "objetivo": "Exibe as 5 Trilhas Guiadas de Bolso (3 passos: onde soltar o arquivo -> qual comando rodar -> o que é gerado).",
+                "cli": "`python core/scripts_comuns/ajuda_ninho.py --onboarding`",
+            },
+            {
+                "chat": "`/duvida <tema>` (ou `/explicar <conceito>`)",
+                "objetivo": "Aciona o Oráculo Interativo do NINHO para explicar conceitos (`estrategia-carga`, `scd`, `linha-default`, `camadas-views`, `arquitetura-etl`, `gate-governanca`, `simulacao`, `fast-track`, `rls`).",
+                "cli": "`python core/scripts_comuns/ajuda_ninho.py --explicar <tema>`",
+            },
+            {
+                "chat": "`/doctor`",
+                "objetivo": "Diagnostica a saúde do workspace, detecta arquivos soltos na pasta errada e corrige automaticamente (`--corrigir`).",
+                "cli": "`python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir`",
+            },
+            {
+                "chat": "`/demo` e `/limpar-demo`",
+                "objetivo": "Cria e executa um projeto corporativo completo de demonstração em 1 comando (ou limpa tudo ao final).",
+                "cli": "`python core/scripts_comuns/ajuda_ninho.py --demo` | `--limpar-demo`",
             },
         ],
     },
@@ -104,6 +151,11 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
                 "chat": "`/gerar-guia-bi`",
                 "objetivo": "Gera apenas o Guia do Analista de BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`).",
                 "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-bi`",
+            },
+            {
+                "chat": "`/gerar-mock-bi`",
+                "objetivo": "Gera dados sintéticos CSV 100% dinâmicos a partir dos DDLs/Blueprints reais do projeto (com ~3% de chaves `-1` Kimball).",
+                "cli": "`python core/scripts_comuns/gerar_mock_dados.py --linhas 150`",
             },
             {
                 "chat": "`/gerar-selects-odi`",
@@ -242,13 +294,18 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
         ],
     },
     "qualidade": {
-        "titulo": "✅ 7. Qualidade, Diagnóstico de Erros & Empacotamento",
-        "descricao": "Validação automatizada de entregas, troubleshooting de erros de banco/ETL e exportação/limpeza do workspace.",
+        "titulo": "✅ 7. Qualidade, Testes E2E, Diagnóstico & Empacotamento",
+        "descricao": "Validação automatizada de entregas, suíte de regressão E2E, troubleshooting de erros de banco/ETL e exportação/limpeza do workspace.",
         "comandos": [
             {
                 "chat": "`/validar-entrega`",
                 "objetivo": "Executa a bateria de auditoria pré-voo (`all`, `dw`, `fast-track`, `semantica`, `governanca`) e pós-geração (`saida`).",
                 "cli": "`python core/scripts_comuns/validar_entrega.py {all,fast-track,saida}`",
+            },
+            {
+                "chat": "`/testar-ninho`",
+                "objetivo": "Executa a suíte automatizada de testes End-to-End (E2E) em todos os motores do NINHO e limpa o workspace ao final.",
+                "cli": "`python core/scripts_comuns/testar_ninho.py`",
             },
             {
                 "chat": "`/diagnosticar-erro-carga`",
@@ -265,13 +322,704 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
 }
 
 
+# ==============================================================================
+# 2. ORÁCULO INTERATIVO DE ARQUITETURA & FAQ (/duvida ou /explicar)
+# ==============================================================================
+
+BASE_CONHECIMENTO_ORACULO: Dict[str, Dict] = {
+    "estrategia-carga": {
+        "titulo": "⚡ Estratégia A (Truncate & Load + BITMAP) vs Estratégia B (MERGE Incremental + B-Tree)",
+        "aliases": ["bitmap", "btree", "b-tree", "truncate", "merge", "carga", "indices", "indice", "estrategia"],
+        "resumo": "No Oracle Data Warehouse, o tipo de índice da tabela Fato depende diretamente de como ela é carregada no ETL.",
+        "conteudo": [
+            "| Critério | Estratégia A (`Truncate & Load`) | Estratégia B (`MERGE Incremental`) |",
+            "| :--- | :--- | :--- |",
+            "| **Volume recomendado** | Fatos pequenas/médias (até ~5–10 milhões de linhas) ou recarga total rápida | Fatos grandes (>10 milhões de linhas) ou janela curta com carga contínua/CDC |",
+            "| **Índice nas FKs da Fato** | **`BITMAP INDEX`** (altíssima compressão e `BITMAP AND/OR` ultrarrápido no Star Schema) | **`B-TREE INDEX COMPRESS 1`** (evita *deadlocks* `ORA-00060` e degradação de Bitmap em `MERGE`) |",
+            "| **Rito de Carga (ODI)** | 1) Desabilita/Dropa Bitmaps (`PRC_POS_CARGA_FATO`) -> 2) `TRUNCATE` + `INSERT /*+ APPEND */` -> 3) Recria Bitmaps + `DBMS_STATS` | 1) `MERGE INTO FATO_*` filtrando janela incremental -> 2) Atualiza `DBMS_STATS` sem precisar dropar os índices B-Tree |",
+            "",
+            "💡 **Dica de Ouro do NINHO:** Nunca mantenha índices `BITMAP` ativos durante um `MERGE` ou `INSERT` concorrente sem antes marcá-los como `UNUSABLE`.",
+        ],
+        "proximos": [
+            ("`/gerar-indices`", "Gera automaticamente os scripts de índices e a `07_prc_pos_carga_fato.sql`."),
+            ("`/definir-estrategia-carga`", "Pede ao Agente para avaliar qual estratégia é melhor para a sua Fato."),
+        ],
+    },
+    "scd": {
+        "titulo": "🕰️ Dimensões SCD Tipo 1 vs SCD Tipo 2 (Histórico Temporal Kimball)",
+        "aliases": ["scd1", "scd2", "historico", "vigencia", "dtc_efetivacao", "dtc_expiracao", "hash", "dimensao"],
+        "resumo": "Define como o Data Warehouse reage quando um atributo cadastral muda no sistema de origem.",
+        "conteudo": [
+            "| Tipo SCD | O que acontece quando o dado muda na origem? | Colunas Técnicas Exigidas no NINHO | Quando usar? |",
+            "| :--- | :--- | :--- | :--- |",
+            "| **SCD Tipo 0** | Nunca muda (imutável) | Apenas Chave Natural (`ID_*` / `COD_*`) | Data de nascimento, CPF/CNPJ, código original |",
+            "| **SCD Tipo 1** | **Sobrescreve** o valor antigo sem guardar histórico | Nenhuma coluna extra de vigência | Correção de erro de digitação, telefone, e-mail |",
+            "| **SCD Tipo 2** | **Fecha a linha antiga** (`DTC_EXPIRACAO = SYSDATE`) e **abre nova versão** com nova `SK_*` e `DTC_EFETIVACAO = SYSDATE` | `DTC_EFETIVACAO`, `DTC_EXPIRACAO` (`NULL` = vigente) e `DES_HASH_SCD2` | Mudança de cargo, secretaria/órgão, faixa salarial, porte de empresa |",
+            "",
+            "💡 **Na Camada Semântica:** As Views de Camada 1 (`VW_<PROJETO>_DIM_*_ATUAL`) aplicam automaticamente `WHERE DTC_EXPIRACAO IS NULL` para entregar apenas a foto vigente ao Power BI.",
+        ],
+        "proximos": [
+            ("`/classificar-scd`", "Classifica interativamente os atributos das suas dimensões entre SCD1 e SCD2."),
+            ("`/gerar-views-dim`", "Gera as Views de Dimensão Vigente (`WHERE DTC_EXPIRACAO IS NULL`)."),
+        ],
+    },
+    "linha-default": {
+        "titulo": "🛡️ Por que o Registro Sentinela `-1` (`Não Informado`) é Obrigatório?",
+        "aliases": ["-1", "menos-um", "sentinela", "nao-informado", "kimball", "orfao", "inner-join"],
+        "resumo": "Regra clássica de Ralph Kimball para garantir integridade referencial 100% e zero perda de linhas em relatórios de BI.",
+        "conteudo": [
+            "1. **O Problema Real:** Sistemas transacionais frequentemente possuem chaves estrangeiras `NULL` (ex: um contrato ainda sem fornecedor homologado ou sem unidade vinculada).",
+            "2. **O Risco no BI:** Se a tabela Fato gravar `NULL` na coluna `SK_FORNECEDOR`, qualquer analista que fizer `INNER JOIN` entre `FATO_CONTRATO` e `DIM_FORNECEDOR` **perderá silenciosamente o valor financeiro daquele contrato**, fazendo o painel divergir da contabilidade oficial.",
+            "3. **A Solução do NINHO:**",
+            "   - Toda tabela `DIM_*` recebe no script `06_init_default_records.sql` (ou `91_patch_ajustes_dim.sql`) um registro idempotente (`MERGE INTO`) com **`SK = -1`** e descrições **`'Não Informado'`**.",
+            "   - Toda carga de Fato no ODI aplica **`NVL(LKP.SK_DIM, -1)`**, garantindo que 100% dos fatos apontem para uma chave válida.",
+        ],
+        "proximos": [
+            ("`/gerar-linha-default`", "Gera o script idempotente (`MERGE INTO`) da linha `-1` para todas as suas dimensões."),
+            ("`/gerar-mock-bi`", "Gera CSV sintético de BI incluindo ~3% de chaves `-1` para testar visuais no Power BI."),
+        ],
+    },
+    "camadas-views": {
+        "titulo": "🧠 Arquitetura em 3 Camadas de Views Semânticas + Catálogo Ativo `META_*`",
+        "aliases": ["semantica", "views", "vw_dim", "vw_evento", "vw_kpi", "meta", "catalogo", "ia", "text-to-sql"],
+        "resumo": "A Camada Semântica do NINHO isola o Power BI e os Agentes de IA da complexidade física do Star Schema em 3 níveis claros:",
+        "conteudo": [
+            "| Camada | Padrão de Nome | Grão e Papel Analítico | Quem Consome? |",
+            "| :--- | :--- | :--- | :--- |",
+            "| **Camada 1 (Dimensão Vigente)** | `VW_<PROJ>_DIM_<ENT>_ATUAL` | 1 linha por entidade ativa (`WHERE DTC_EXPIRACAO IS NULL` + `NVL('Não Informado')`, sem colunas técnicas de ETL) | Filtros/Slicers do Power BI e Lookups |",
+            "| **Camada 2 (Evento Detalhado)** | `VW_<PROJ>_EVENTO_<FATO>` | 1 linha por transação/evento da Fato já enriquecido com `LEFT JOIN` das dimensões principais e `IND_SITUACAO_EVENTO` | Tabelas detalhadas, drill-through e auditoria |",
+            "| **Camada 3 (KPI Consolidado)** | `VW_<PROJ>_KPI_<FATO>` | 1 linha por grupo dimensional pré-agregado com `COUNT`, `SUM`, `AVG` e taxas protegidas por **`NULLIF(denominador, 0)`** | Cards executivos, gráficos e Agentes Text-to-SQL |",
+            "",
+            "📚 **Catálogo `META_*` (8 Tabelas):** Junto com as Views, o NINHO gera `01_meta_glossario.sql` até `08_meta_valor_dominio.sql` (incluindo *Golden Queries* e 36 diretrizes de Prompt Engineering para LLMs).",
+        ],
+        "proximos": [
+            ("`/simular-semantica`", "Simula e permite editar todas as Views e KPIs antes de gerar o SQL."),
+            ("`/iniciar-semantica`", "Gera imediatamente as 3 camadas de Views + 8 tabelas `META_*` + RLS."),
+        ],
+    },
+    "arquitetura-etl": {
+        "titulo": "🔄 Separação de Responsabilidades no ETL: Apache Hop / Python vs Oracle ODI 12c",
+        "aliases": ["odi", "hop", "python", "ftps", "stg", "staging", "etl", "elt", "ikm", "lkm"],
+        "resumo": "Entenda onde atua cada ferramenta de integração dentro do padrão corporativo NINHO:",
+        "conteudo": [
+            "```",
+            "[APIs REST / Arquivos CSV / FTPS / Bancos Externos]",
+            "        │",
+            "        ▼  (Ingestão Bruta: Python Extrator, Apache Hop 2.x ou Carga CSV)",
+            "[Camada de Staging no Oracle: Tabelas STG_*]",
+            "        │",
+            "        ▼  (Transformação, Lookups, SCD Tipo 2 e Carga Fato: EXCLUSIVO no ODI 12c)",
+            "[Camada Dimensional no Oracle: ODI_DIM_* -> DIM_* e FATO_*]",
+            "```",
+            "",
+            "- **Por que `STG_* -> DIM_*/FATO_*` é exclusivamente no ODI 12c?**",
+            "  Porque o ODI utiliza arquitetura **ELT Pushdown** (executa todo o `MERGE`, cálculo de hash SCD2 e *lookups* dentro do próprio motor do banco Oracle via `IKM`), sem trafegar milhões de linhas pela rede como ferramentas ETL baseadas em memória.",
+        ],
+        "proximos": [
+            ("`/gerar-selects-odi`", "Gera as consultas SQL de `STG -> DIM` e `STG -> FATO` para o ODI 12c."),
+            ("`/auditar-mapa-odi`", "Audita XMLs do ODI 12c com as heurísticas preditivas `H1` a `H9`."),
+        ],
+    },
+    "gate-governanca": {
+        "titulo": "🏛️ Governança de Dados: Gate 0.5 (Qualidade na Origem), MongoDB PRODEB & AWS SageMaker",
+        "aliases": ["governanca", "lgpd", "lai", "mongodb", "prodeb", "sagemaker", "datazone", "glue", "gate"],
+        "resumo": "Na Governança de Dados, a curadoria do dicionário e dos dados brutos é responsabilidade exclusiva do cliente/órgão.",
+        "conteudo": [
+            "1. **🛑 Gate 0.5 (Devolução na Origem):**",
+            "   - O script `inspecionar_insumos_governanca.py` audita as planilhas `.xlsx` (`Dados - Insumos` e `Dicionário de Dados`) e amostras `.csv` enviadas pelo cliente.",
+            "   - Se houver colunas sem descrição, classificação LGPD/LAI em branco ou linhas fantasmas (`;;;`) no CSV, **a esteira bloqueia imediatamente** e gera o **Relatório de Devolução ao Cliente**.",
+            "2. **🗄️ As 5 Coleções MongoDB Padrão PRODEB:**",
+            "   - `tb_dataset` (Catálogo técnico + LGPD/LAI) | `tb_sem_dominios` | `tb_sem_conceitos` | `tb_auditoria_eventos` | `tb_quarentena`.",
+            "3. **☁️ Publicação Cloud:**",
+            "   - Transporte automatizado para o **AWS Glue Data Catalog** e **Amazon SageMaker Unified Studio / SageMaker Catalog** (substituto do antigo AWS DataZone).",
+        ],
+        "proximos": [
+            ("`/inspecionar-governanca`", "Roda a auditoria do Gate 0.5 nas planilhas `.xlsx` e `.csv` depositadas."),
+            ("`/gerar-governanca`", "Gera os artefatos MongoDB PRODEB e scripts AWS SageMaker Catalog."),
+        ],
+    },
+    "simulacao": {
+        "titulo": "🧪 Como Funciona a Simulação com Blueprint 100% Editável (`/simular-projeto`)",
+        "aliases": ["blueprint", "simular", "dry-run", "preview", "editar"],
+        "resumo": "Permite visualizar e customizar todo o projeto em um único arquivo Markdown antes de gerar qualquer script físico em `saida/`.",
+        "conteudo": [
+            "1. **Passo 1 — Gerar a Simulação (`/simular-projeto`):**",
+            "   - O NINHO lê seus DDLs de origem e cria `entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md` e `entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`.",
+            "2. **Passo 2 — Editar Livremente (O Engenheiro no Comando):**",
+            "   - Quer remover uma coluna? Basta mudar `| [x] |` para `| [ ] |`.",
+            "   - Quer mudar o nome de uma coluna, tipo Oracle, classificação SCD, descrição de negócio, fórmula de KPI ou escolher sugestões do **💡 Radar Consultivo da IA**? Basta editar o texto na tabela Markdown!",
+            "3. **Passo 3 — Aprovar e Executar (`/executar-simulacao`):**",
+            "   - Marque `- [x] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL` no topo da Blueprint e rode `/executar-simulacao`. O **Parser Reverso** lê todas as suas edições e gera os arquivos finais em `saida/`.",
+        ],
+        "proximos": [
+            ("`/simular-projeto`", "Gera agora as Blueprints editáveis de DW e Camada Semântica."),
+            ("`/executar-simulacao`", "Materializa as Blueprints aprovadas na pasta `saida/`."),
+        ],
+    },
+    "fast-track": {
+        "titulo": "⚡ Modo Fast-Track & Micro-Processos Independentes (Melhoria de DW Existente)",
+        "aliases": ["micro", "existente", "patch", "novalidate", "dicionario", "comentarios"],
+        "resumo": "Ideal quando você já construiu as tabelas `DIM_*` e `FATO_*` no banco e não quer refazer o processo completo nem mexer no ETL.",
+        "conteudo": [
+            "- **Dispensa preenchimento de `INTAKE_*.md`:** Basta colocar o `.sql` com os `CREATE TABLE` atuais em `entrega/planejador_dw/ddl/`.",
+            "- **100% Não-Destrutivo:**",
+            "  - Constraints usam `ENABLE NOVALIDATE` / `RELY DISABLE NOVALIDATE` para não travar tabelas já populadas.",
+            "  - A linha `-1` usa `MERGE INTO ... WHEN NOT MATCHED` para nunca duplicar registros.",
+            "  - Você pode rodar tudo de uma vez (`/melhorar-dw-existente`) ou apenas o recorte que precisa (`/gerar-dicionario`, `/gerar-comentarios`, `/gerar-indices`, `/gerar-selects-odi`, `/gerar-guia-bi`).",
+        ],
+        "proximos": [
+            ("`/melhorar-dw-existente`", "Executa o diagnóstico completo e gera todos os patches não-destrutivos."),
+            ("`/gerar-dicionario`", "Gera apenas o Dicionário de Dados HTML interativo."),
+        ],
+    },
+    "rls": {
+        "titulo": "🔒 Row-Level Security (RLS) & Virtual Private Database (VPD) no Oracle",
+        "aliases": ["vpd", "seguranca", "sys_context", "dbms_rls", "multi-tenant", "orgao"],
+        "resumo": "Garante isolamento multi-tenant nativo no banco Oracle para que cada usuário/órgão enxergue apenas as linhas autorizadas.",
+        "conteudo": [
+            "- **Arquitetura Fail-Closed (`1 = 0`):**",
+            "  - Se uma sessão conectar no banco sem inicializar o contexto `SYS_CONTEXT('CTX_<PROJETO>_RLS', 'VALOR_FILTRO')`, a função de predicado retorna `'1 = 0'` (bloqueia tudo por padrão).",
+            "- **Preservação do Sentinela `-1`:**",
+            "  - Quando o filtro está ativo, o predicado aplica `COLUNA_SEGREGACAO IN (<lista>, -1)`, permitindo que o usuário veja os registros do seu órgão e também identifique eventuais fatos não classificados (`-1`).",
+        ],
+        "proximos": [
+            ("`/gerar-rls`", "Gera o script `02_rls.sql` com `CONTEXT`, `PACKAGE` e `DBMS_RLS.ADD_POLICY`."),
+        ],
+    },
+}
+
+
+# ==============================================================================
+# 3. COMPONENTES VISUAIS DE UX (RODAPÉ BREADCRUMBS, ONBOARDING, BÚSSOLA, DOCTOR, DEMO)
+# ==============================================================================
+
+def formatar_rodape_proximos_passos(passos: List[Tuple[str, str]]) -> str:
+    """Formata um bloco visual padronizado de próximos passos sugeridos no chat."""
+    if not passos:
+        return ""
+    linhas = [
+        "",
+        "---",
+        "### 🧭 O que você pode fazer agora (Próximos Passos Sugeridos):",
+        "",
+        "| Digite no Chat | Ação que será executada |",
+        "| :--- | :--- |",
+    ]
+    for cmd, desc in passos:
+        linhas.append(f"| {cmd} | {desc} |")
+    linhas.append("")
+    return "\n".join(linhas)
+
+
+def renderizar_onboarding() -> str:
+    """Renderiza o Guia Rápido de Boas-Vindas (/comecar ou /onboarding) com as 5 Missões Reais."""
+    linhas = [
+        "# 🚀 Bem-vindo ao NINHO — Por Onde Você Quer Começar Hoje? (`/comecar`)",
+        "",
+        "> Escolha abaixo o seu **cenário atual**. Cada trilha tem apenas **3 passos simples**:",
+        "",
+        "---",
+        "",
+        "### 🏗️ Cenário 1: Quero criar um Data Warehouse novo a partir de tabelas de origem (DDL/CSV)",
+        "1. **Onde soltar o arquivo:** Coloque seu `.sql` (ou `.csv`) em [`entrega/planejador_dw/ddl/`](file:///"
+        + str(ENTREGA_DIR / "planejador_dw" / "ddl").replace("\\", "/")
+        + ")",
+        "2. **Comando para simular e editar:** Digite **`/simular-projeto`** no chat (gera as Blueprints editáveis de DW + Semântica com prévia de dados e Radar da IA).",
+        "3. **Comando para gerar tudo:** Após revisar/marcar `[x]` na Blueprint, digite **`/executar-simulacao`**.",
+        "",
+        "### ⚡ Cenário 2: Já construí meu DW (`DIM_*` e `FATO_*`) e quero apenas melhorá-lo (Fast-Track)",
+        "1. **Onde soltar o arquivo:** Coloque o `.sql` das suas tabelas `DIM_*` e `FATO_*` em [`entrega/planejador_dw/ddl/`](file:///"
+        + str(ENTREGA_DIR / "planejador_dw" / "ddl").replace("\\", "/")
+        + ")",
+        "2. **Comando para Raio-X completo:** Digite **`/melhorar-dw-existente`** (gera comentários, dicionário HTML, índices, linha `-1`, constraints `NOVALIDATE`, selects ODI e Guia BI sem tocar na sua carga).",
+        "3. **Ou rode só um micro-processo isolado:** `/gerar-dicionario`, `/gerar-comentarios`, `/gerar-indices`, `/gerar-selects-odi`, `/gerar-guia-bi` ou `/gerar-mock-bi`.",
+        "",
+        "### 🧠 Cenário 3: Quero criar a Camada Semântica (Views em 3 Camadas + Catálogo IA `META_*` + RLS)",
+        "1. **Onde soltar o arquivo:** Coloque os DDLs do DW em [`entrega/camada_semantica/sql_fontes/`](file:///"
+        + str(ENTREGA_DIR / "camada_semantica" / "sql_fontes").replace("\\", "/")
+        + ") *(ou use `/concluir-dw` se acabou de gerar o DW no NINHO)*.",
+        "2. **Comando para simular ou gerar:** Digite **`/simular-semantica`** (para revisar KPIs antes) ou **`/iniciar-semantica`** (para gerar direto em `saida/camada_semantica/`).",
+        "3. **Ou rode só uma parte:** `/gerar-views-kpi`, `/gerar-catalogo-meta` ou `/gerar-rls`.",
+        "",
+        "### 🔍 Cenário 4: Quero auditar Tuning no ODI 12c, Apache Hop 2.x ou Migrar um Power BI (`.pbix`)",
+        "1. **Para ODI 12c (`H1`..`H9`):** Solte os XMLs em `entrega/planejador_dw/odi/` e digite **`/auditar-mapa-odi`**.",
+        "2. **Para Apache Hop (`HOP-H1`..`H8`):** Solte os `.hpl`/`.hwf` em `entrega/planejador_dw/hop/` e digite **`/auditar-hop`**.",
+        "3. **Para Power BI (`.pbix`):** Solte o arquivo `.pbix` em `entrega/planejador_dw/pbix/` e digite **`/inspecionar-pbix`**.",
+        "",
+        "### 🛡️ Cenário 5: Quero validar Planilhas de Governança (Gate 0.5), MongoDB PRODEB & AWS SageMaker",
+        "1. **Onde soltar os arquivos:** Planilhas `.xlsx` em `entrega/governanca_dados/planilhas/` e amostras `.csv` em `entrega/governanca_dados/amostras/`.",
+        "2. **Comando de Auditoria (Gate 0.5):** Digite **`/inspecionar-governanca`** (emite o Relatório de Devolução ao Cliente se houver falhas ou aprova a Matriz DE/PARA).",
+        "3. **Comando de Geração:** Após aprovação no Gate 0.5, digite **`/gerar-governanca`**.",
+    ]
+    linhas.append(
+        formatar_rodape_proximos_passos(
+            [
+                ("`/demo`", "Não tem arquivos agora? Roda um projeto completo de demonstração em 3 segundos!"),
+                ("`/onde-estou`", "Verifica o que já existe nas suas pastas `entrega/` e `saida/` agora."),
+                ("`/duvida listar`", "Consulta o Oráculo para tirar dúvidas sobre SCD2, Bitmap, Linha -1, ODI ou RLS."),
+            ]
+        )
+    )
+    return "\n".join(linhas)
+
+
+def renderizar_explicacao(termo: str) -> str:
+    """Busca e renderiza uma explicação arquitetural didática do Oráculo (/duvida ou /explicar)."""
+    chave_busca = (termo or "").strip().lower()
+
+    if not chave_busca or chave_busca in ("listar", "todos", "all", "ajuda", "help", "?"):
+        linhas = [
+            "# 💡 Oráculo de Arquitetura & FAQ Interativo do NINHO (`/duvida`)",
+            "",
+            "> Escolha qualquer tema abaixo digitando **`/duvida <tema>`** no chat (ou `--explicar <tema>` no CLI):",
+            "",
+            "| Tema (`/duvida <tema>`) | O que o Oráculo Explica | Palavras-Chave Aceitas |",
+            "| :--- | :--- | :--- |",
+        ]
+        for k, info in BASE_CONHECIMENTO_ORACULO.items():
+            aliases_str = ", ".join(f"`{a}`" for a in info["aliases"][:4])
+            linhas.append(f"| **`/duvida {k}`** | {info['resumo']} | {aliases_str} |")
+        linhas.append(
+            formatar_rodape_proximos_passos(
+                [
+                    ("`/duvida estrategia-carga`", "Entenda quando usar BITMAP vs B-Tree na tabela Fato."),
+                    ("`/duvida linha-default`", "Veja por que a chave sentinela `-1` é obrigatória no Kimball."),
+                    ("`/comecar`", "Voltar para as 5 trilhas guiadas de início rápido."),
+                ]
+            )
+        )
+        return "\n".join(linhas)
+
+    # Busca exata ou por alias/substring
+    escolhido = BASE_CONHECIMENTO_ORACULO.get(chave_busca)
+    if not escolhido:
+        for k, info in BASE_CONHECIMENTO_ORACULO.items():
+            if chave_busca in k or any(chave_busca in al or al in chave_busca for al in info["aliases"]):
+                escolhido = info
+                break
+
+    if not escolhido:
+        return (
+            f"⚠️ Não encontrei um tópico exato para **`{termo}`** no Oráculo.\n\n"
+            + renderizar_explicacao("listar")
+        )
+
+    linhas = [
+        f"# 💡 Oráculo NINHO: {escolhido['titulo']}",
+        "",
+        f"> **Resumo Executivo:** {escolhido['resumo']}",
+        "",
+        *escolhido["conteudo"],
+        formatar_rodape_proximos_passos(escolhido.get("proximos", [])),
+    ]
+    return "\n".join(linhas)
+
+
+def detectar_arquivos_fora_do_lugar() -> List[Dict[str, Path]]:
+    """Detecta arquivos depositados diretamente na raiz de `entrega/` ou na pasta errada do módulo."""
+    achados: List[Dict[str, Path]] = []
+    if not ENTREGA_DIR.exists():
+        return achados
+
+    locais_observados = [
+        ENTREGA_DIR,
+        ENTREGA_DIR / "planejador_dw",
+        ENTREGA_DIR / "camada_semantica",
+        ENTREGA_DIR / "governanca_dados",
+    ]
+    arquivos_legitimos_modulos = {
+        "SIMULACAO_BLUEPRINT_DW.md",
+        "SIMULACAO_BLUEPRINT_SEMANTICA.md",
+        "RELATORIO_DEVOLUCAO_CLIENTE_GOVERNANCA.md",
+        "MATRIZ_DE_PARA_MONGODB_PRODEB.md",
+        ".gitkeep",
+        "README.md",
+    }
+
+    for pasta in locais_observados:
+        if not pasta.exists():
+            continue
+        for item in pasta.iterdir():
+            if not item.is_file() or item.name in arquivos_legitimos_modulos:
+                continue
+            ext = item.suffix.lower()
+            destino = None
+            motivo = ""
+            if ext == ".sql":
+                if pasta == ENTREGA_DIR / "camada_semantica":
+                    destino = ENTREGA_DIR / "camada_semantica" / "sql_fontes" / item.name
+                    motivo = "Scripts SQL para a Camada Semântica devem ficar em `entrega/camada_semantica/sql_fontes/`."
+                else:
+                    destino = ENTREGA_DIR / "planejador_dw" / "ddl" / item.name
+                    motivo = "Scripts DDL (.sql) para o Planejador DW devem ficar em `entrega/planejador_dw/ddl/`."
+            elif ext == ".pbix":
+                destino = ENTREGA_DIR / "planejador_dw" / "pbix" / item.name
+                motivo = "Arquivos Power BI (.pbix) devem ficar em `entrega/planejador_dw/pbix/`."
+            elif ext in (".hpl", ".hwf"):
+                destino = ENTREGA_DIR / "planejador_dw" / "hop" / item.name
+                motivo = "Pipelines/Workflows Apache Hop (.hpl/.hwf) devem ficar em `entrega/planejador_dw/hop/`."
+            elif ext == ".xlsx":
+                destino = ENTREGA_DIR / "governanca_dados" / "planilhas" / item.name
+                motivo = "Planilhas de Governança (.xlsx) devem ficar em `entrega/governanca_dados/planilhas/`."
+            elif ext == ".csv":
+                if pasta == ENTREGA_DIR / "governanca_dados":
+                    destino = ENTREGA_DIR / "governanca_dados" / "amostras" / item.name
+                    motivo = "Amostras CSV de Governança devem ficar em `entrega/governanca_dados/amostras/`."
+                else:
+                    destino = ENTREGA_DIR / "planejador_dw" / "dados_amostra" / item.name
+                    motivo = "Amostras CSV do DW devem ficar em `entrega/planejador_dw/dados_amostra/`."
+
+            if destino and destino != item:
+                achados.append({"origem": item, "destino": destino, "motivo": motivo})
+
+    return achados
+
+
+ARQUIVOS_PRESERVADOS_TEMPLATE = {".gitkeep", "README.md", "01_create_meta_tables.sql"}
+
+
+def renderizar_onde_estou() -> str:
+    """Escaneia o workspace e renderiza a Bússola Contextual (/onde-estou ou /status)."""
+    ddls_dw = list((ENTREGA_DIR / "planejador_dw" / "ddl").glob("*.sql")) if (ENTREGA_DIR / "planejador_dw" / "ddl").exists() else []
+    pbix_dw = list((ENTREGA_DIR / "planejador_dw" / "pbix").glob("*.pbix")) if (ENTREGA_DIR / "planejador_dw" / "pbix").exists() else []
+    gov_xlsx = [
+        p for p in (ENTREGA_DIR / "governanca_dados" / "planilhas").glob("*.xlsx")
+        if not p.name.startswith("~$")
+    ] if (ENTREGA_DIR / "governanca_dados" / "planilhas").exists() else []
+
+    bp_dw = ENTREGA_DIR / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md"
+    bp_sem = ENTREGA_DIR / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md"
+    bp_dw_existe = bp_dw.exists()
+    bp_sem_existe = bp_sem.exists()
+
+    bp_dw_aprovada = False
+    if bp_dw_existe:
+        bp_dw_aprovada = bool(
+            re.search(r"-\s*\[[xX]\]\s*\*\*SIMULAÇÃO 100% FECHADA E APROVADA", bp_dw.read_text(encoding="utf-8", errors="ignore"))
+        )
+    bp_sem_aprovada = False
+    if bp_sem_existe:
+        bp_sem_aprovada = bool(
+            re.search(r"-\s*\[[xX]\]\s*\*\*SIMULAÇÃO 100% FECHADA E APROVADA", bp_sem.read_text(encoding="utf-8", errors="ignore"))
+        )
+
+    arqs_saida_dw = [
+        p for p in (SAIDA_DIR / "planejador_dw").rglob("*") if p.is_file() and p.name not in ARQUIVOS_PRESERVADOS_TEMPLATE
+    ] if (SAIDA_DIR / "planejador_dw").exists() else []
+    arqs_saida_sem = [
+        p for p in (SAIDA_DIR / "camada_semantica").rglob("*") if p.is_file() and p.name not in ARQUIVOS_PRESERVADOS_TEMPLATE
+    ] if (SAIDA_DIR / "camada_semantica").exists() else []
+    arqs_saida_gov = [
+        p for p in (SAIDA_DIR / "governanca_dados").rglob("*") if p.is_file() and p.name not in ARQUIVOS_PRESERVADOS_TEMPLATE
+    ] if (SAIDA_DIR / "governanca_dados").exists() else []
+
+    fora_do_lugar = detectar_arquivos_fora_do_lugar()
+
+    # Determina a Fase Atual (0 a 5)
+    tem_insumos = bool(ddls_dw or pbix_dw or gov_xlsx)
+    tem_blueprints = bool(bp_dw_existe or bp_sem_existe)
+    tem_saida_dw = len(arqs_saida_dw) > 0
+    tem_saida_sem = len(arqs_saida_sem) > 0
+
+    if not tem_insumos and not tem_blueprints and not tem_saida_dw and not tem_saida_sem and not arqs_saida_gov:
+        fase_num = 0
+        barra = "[░░░░░] 0%"
+        status_titulo = "Fase 0/5 — Workspace Limpo (Aguardando Insumos ou Modo Playground)"
+        proximos = [
+            ("`/comecar`", "Ver onde depositar seus arquivos de acordo com a sua missão de hoje."),
+            ("`/demo`", "Rodar um projeto corporativo de demonstração completo em 1 comando."),
+        ]
+    elif tem_insumos and not tem_blueprints and not tem_saida_dw:
+        fase_num = 1
+        barra = "[█░░░░] 20%"
+        status_titulo = "Fase 1/5 — Insumos Depositados em `entrega/` (Pronto para Inspecionar ou Simular)"
+        proximos = [
+            ("`/simular-projeto`", "Gerar as Blueprints 100% editáveis de DW + Camada Semântica."),
+            ("`/melhorar-dw-existente`", "Se o DW já está construído no banco, gerar patches Fast-Track + Dicionário HTML."),
+            ("`/inspecionar-fontes`", "Inspecionar DDLs e ver o Radar Consultivo da IA."),
+        ]
+    elif tem_blueprints and not (bp_dw_aprovada or bp_sem_aprovada) and not tem_saida_dw:
+        fase_num = 2
+        barra = "[██░░░] 40%"
+        status_titulo = "Fase 2/5 — Blueprints de Simulação Geradas (Aguardando Revisão/Aprovação `[x]`)"
+        proximos = [
+            ("`/executar-simulacao`", "Após marcar `[x] SIMULAÇÃO 100% FECHADA E APROVADA` na Blueprint, gera os scripts reais."),
+            ("`/duvida simulacao`", "Ver como editar colunas, fórmulas e KPIs do Radar dentro da Blueprint."),
+        ]
+    elif (bp_dw_aprovada or bp_sem_aprovada) and not tem_saida_dw:
+        fase_num = 3
+        barra = "[███░░] 60%"
+        status_titulo = "Fase 3/5 — Blueprint Aprovada (`[x]`) e Pronta para Geração Física"
+        proximos = [
+            ("`/executar-status` -> `/executar-simulacao`", "Materializar todos os scripts em `saida/planejador_dw/` e `saida/camada_semantica/`."),
+        ]
+    elif tem_saida_dw and not tem_saida_sem:
+        fase_num = 4
+        barra = "[████░] 80%"
+        status_titulo = "Fase 4/5 — Artefatos do DW Gerados em `saida/planejador_dw/` (Pronto para Camada Semântica)"
+        proximos = [
+            ("`/iniciar-semantica`", "Gerar as 3 camadas de Views Semânticas + 8 tabelas `META_*` + RLS."),
+            ("`/gerar-mock-bi`", "Gerar dados sintéticos CSV com linha `-1` para o Analista de BI."),
+            ("`/validar-entrega`", "Auditar todos os scripts gerados em `saida/`."),
+        ]
+    else:
+        fase_num = 5
+        barra = "[█████] 100%"
+        status_titulo = "Fase 5/5 — Esteira Completa Gerada (`saida/planejador_dw/` + `saida/camada_semantica/`)"
+        proximos = [
+            ("`/validar-entrega`", "Executar o checklist automatizado de qualidade pós-geração."),
+            ("`/gerar-mock-bi`", "Gerar CSV sintético dinâmico para testes no Power BI."),
+            ("`/empacotar-projeto`", "Exportar a entrega completa em `.zip` ou limpar o workspace."),
+        ]
+
+    linhas = [
+        "# 🧭 Bússola Contextual do NINHO (`/onde-estou`)",
+        "",
+        f"### {barra} — **{status_titulo}**",
+        "",
+        "| Camada do Workspace | Estado Atual | Detalhes Detectados |",
+        "| :--- | :---: | :--- |",
+        f"| **1. Insumos DW (`entrega/planejador_dw/`)** | {'🟢 Ativo' if (ddls_dw or pbix_dw) else '⚪ Vazio'} | `{len(ddls_dw)}` arquivo(s) `.sql`, `{len(pbix_dw)}` arquivo(s) `.pbix` |",
+        f"| **2. Blueprint DW (`SIMULACAO_BLUEPRINT_DW.md`)** | {'🟢 Aprovada `[x]`' if bp_dw_aprovada else ('🟡 Pendente `[ ]`' if bp_dw_existe else '⚪ Não gerada')} | {'Pronta para `/executar-simulacao`' if bp_dw_aprovada else ('Aguardando revisão do engenheiro' if bp_dw_existe else 'Use `/simular-dw` para criar')} |",
+        f"| **3. Blueprint Semântica (`SIMULACAO_BLUEPRINT_SEMANTICA.md`)** | {'🟢 Aprovada `[x]`' if bp_sem_aprovada else ('🟡 Pendente `[ ]`' if bp_sem_existe else '⚪ Não gerada')} | {'Pronta para `/executar-simulacao`' if bp_sem_aprovada else ('Aguardando revisão do engenheiro' if bp_sem_existe else 'Use `/simular-semantica` para criar')} |",
+        f"| **4. Saída Física DW (`saida/planejador_dw/`)** | {'🟢 Populada' if arqs_saida_dw else '⚪ Vazia'} | `{len(arqs_saida_dw)}` artefato(s) gerado(s) |",
+        f"| **5. Saída Camada Semântica (`saida/camada_semantica/`)** | {'🟢 Populada' if arqs_saida_sem else '⚪ Vazia'} | `{len(arqs_saida_sem)}` artefato(s) gerado(s) |",
+        f"| **6. Governança (`entrega/` & `saida/governanca_dados/`)** | {'🟢 Ativo' if (gov_xlsx or arqs_saida_gov) else '⚪ Vazio'} | `{len(gov_xlsx)}` planilha(s) `.xlsx` na entrada, `{len(arqs_saida_gov)}` artefato(s) na saída |",
+    ]
+
+    if fora_do_lugar:
+        linhas.extend([
+            "",
+            "> [!WARNING]",
+            f"> 🩺 **Atenção:** Encontrei **{len(fora_do_lugar)} arquivo(s) fora da subpasta canônica** em `entrega/`. "
+            "Digite **`/doctor`** (ou `python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir`) para movê-los automaticamente para a pasta certa!",
+        ])
+
+    linhas.append(formatar_rodape_proximos_passos(proximos))
+    return "\n".join(linhas)
+
+
+def executar_doctor(corrigir: bool = False) -> str:
+    """Executa o diagnóstico de saúde do workspace e organiza arquivos fora do lugar se --corrigir."""
+    linhas = [
+        "# 🩺 Diagnóstico de Saúde do Workspace NINHO (`/doctor`)",
+        "",
+    ]
+
+    pastas_essenciais = [
+        ENTREGA_DIR / "planejador_dw" / "ddl",
+        ENTREGA_DIR / "camada_semantica" / "sql_fontes",
+        ENTREGA_DIR / "governanca_dados" / "planilhas",
+        SAIDA_DIR / "planejador_dw",
+        SAIDA_DIR / "camada_semantica",
+        SAIDA_DIR / "governanca_dados",
+    ]
+    for p in pastas_essenciais:
+        p.mkdir(parents=True, exist_ok=True)
+
+    fora_do_lugar = detectar_arquivos_fora_do_lugar()
+
+    linhas.append(f"- ✅ ** Versão do Python:** `{sys.version.split()[0]}`")
+    linhas.append(f"- ✅ **Estrutura Canônica de Pastas (`entrega/` e `saida/`):** Verificada e íntegra.")
+
+    if not fora_do_lugar:
+        linhas.append("- ✅ **Organização de Insumos:** Nenhum arquivo órfão ou fora da pasta correta foi detectado.")
+    else:
+        linhas.append(f"- ⚠️ **Arquivos Fora da Subpasta Canônica:** `{len(fora_do_lugar)}` encontrado(s):")
+        linhas.append("")
+        linhas.append("| Arquivo Encontrado | Destino Canônico Correto | Status |")
+        linhas.append("| :--- | :--- | :--- |")
+        for item in fora_do_lugar:
+            orig_rel = item["origem"].relative_to(ROOT_DIR)
+            dest_rel = item["destino"].relative_to(ROOT_DIR)
+            if corrigir:
+                item["destino"].parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(item["origem"]), str(item["destino"]))
+                status_acao = "✅ **Movido automaticamente**"
+            else:
+                status_acao = "🟡 Pendente (use `--corrigir`)"
+            linhas.append(f"| `{orig_rel}` | `{dest_rel}` | {status_acao} |")
+
+    linhas.append(
+        formatar_rodape_proximos_passos(
+            [
+                ("`/onde-estou`", "Conferir a Bússola de Progresso do projeto após o check-up."),
+                ("`/testar-ninho`", "Rodar a bateria automatizada E2E para certificar todos os motores."),
+            ]
+        )
+    )
+    return "\n".join(linhas)
+
+
+DDL_DEMO_PLAYGROUND = """
+-- =============================================================================
+-- PROJETO DE DEMONSTRAÇÃO NINHO (PLAYGROUND): COMPRAS E CONTRATOS PÚBLICOS (SAEB)
+-- =============================================================================
+
+CREATE TABLE SAEB_ORIGEM.TB_ORGAO_PUBLICO (
+    ID_ORGAO          NUMBER(10)     NOT NULL,
+    COD_UNIDADE_GEST  VARCHAR2(20)   NOT NULL,
+    NOM_ORGAO         VARCHAR2(150)  NOT NULL,
+    SGL_ORGAO         VARCHAR2(20),
+    DES_PODER_ESFERA  VARCHAR2(40),
+    FLG_ATIVO         CHAR(1)        DEFAULT 'S',
+    DTC_CADASTRO      DATE           DEFAULT SYSDATE,
+    CONSTRAINT PK_TB_ORGAO_PUBLICO PRIMARY KEY (ID_ORGAO)
+);
+
+CREATE TABLE SAEB_ORIGEM.TB_FORNECEDOR (
+    ID_FORNECEDOR     NUMBER(12)     NOT NULL,
+    NUM_CNPJ_CPF      VARCHAR2(18)   NOT NULL,
+    NOM_RAZAO_SOCIAL  VARCHAR2(200)  NOT NULL,
+    DES_PORTE_EMPRESA VARCHAR2(40),
+    SGL_UF_FORNECEDOR CHAR(2),
+    DTC_ATUALIZACAO   DATE           DEFAULT SYSDATE,
+    CONSTRAINT PK_TB_FORNECEDOR PRIMARY KEY (ID_FORNECEDOR)
+);
+
+CREATE TABLE SAEB_ORIGEM.TB_LICITACAO_CONTRATO (
+    ID_CONTRATO            NUMBER(15)     NOT NULL,
+    ID_ORGAO               NUMBER(10)     NOT NULL,
+    ID_FORNECEDOR          NUMBER(12)     NOT NULL,
+    NUM_PROCESSO_SEI       VARCHAR2(40)   NOT NULL,
+    DES_MODALIDADE         VARCHAR2(60)   NOT NULL,
+    DES_STATUS_CONTRATO    VARCHAR2(30)   NOT NULL,
+    DTC_ASSINATURA         DATE           NOT NULL,
+    DTC_VIGENCIA_FIM       DATE,
+    QTD_ITENS_CONTRATO     NUMBER(8)      DEFAULT 1,
+    VAL_ESTIMADO           NUMBER(18,2)   DEFAULT 0,
+    VAL_CONTRATO           NUMBER(18,2)   NOT NULL,
+    VAL_PAGO_ACUMULADO     NUMBER(18,2)   DEFAULT 0,
+    CONSTRAINT PK_TB_LICITACAO_CONTRATO PRIMARY KEY (ID_CONTRATO)
+);
+"""
+
+
+def limpar_demo() -> str:
+    """Remove os arquivos de demonstração de `entrega/` e `saida/` preservando `.gitkeep`, `README.md` e base DDL."""
+    removidos = 0
+    for pasta_raiz in (ENTREGA_DIR, SAIDA_DIR):
+        if not pasta_raiz.exists():
+            continue
+        for arq in list(pasta_raiz.rglob("*")):
+            if arq.is_file() and arq.name not in ARQUIVOS_PRESERVADOS_TEMPLATE:
+                try:
+                    arq.unlink()
+                    removidos += 1
+                except OSError:
+                    pass
+    return (
+        "# 🧹 Modo Playground Encerrado (`/limpar-demo`)\n\n"
+        f"- Foram removidos **`{removidos}` arquivos de demonstração** de `entrega/` e `saida/`.\n"
+        "- Seu workspace está **100% limpo** e pronto para receber um projeto real!\n"
+        + formatar_rodape_proximos_passos(
+            [
+                ("`/comecar`", "Ver as 5 trilhas guiadas para iniciar seu projeto real."),
+                ("`/onde-estou`", "Confirmar que o workspace está na Fase 0/5 (limpo)."),
+            ]
+        )
+    )
+
+
+def executar_demo() -> str:
+    """Popula um projeto completo de demonstração e gera Blueprints, DW, Semântica, Dicionário HTML e Mock BI."""
+    pasta_ddl = ENTREGA_DIR / "planejador_dw" / "ddl"
+    pasta_ddl.mkdir(parents=True, exist_ok=True)
+    arq_demo = pasta_ddl / "01_demo_licitacao_saeb.sql"
+    arq_demo.write_text(DDL_DEMO_PLAYGROUND.strip() + "\n", encoding="utf-8")
+
+    env_utf8 = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+
+    # 1. Gera as Blueprints de Simulação
+    subprocess.run(
+        [sys.executable, str(ROOT_DIR / "core" / "scripts_comuns" / "simular_projeto.py"), "--modulo", "ambos", "--acao", "simular"],
+        cwd=str(ROOT_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env_utf8,
+        check=True,
+    )
+
+    # 2. Marca ambas as Blueprints como aprovadas e executa a geração física
+    for bp_path in (
+        ENTREGA_DIR / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md",
+        ENTREGA_DIR / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md",
+    ):
+        if bp_path.exists():
+            txt = bp_path.read_text(encoding="utf-8")
+            bp_path.write_text(
+                txt.replace(
+                    "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                    "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                ),
+                encoding="utf-8",
+            )
+
+    subprocess.run(
+        [sys.executable, str(ROOT_DIR / "core" / "scripts_comuns" / "simular_projeto.py"), "--modulo", "ambos", "--acao", "executar"],
+        cwd=str(ROOT_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env_utf8,
+        check=True,
+    )
+
+    # 3. Gera o Mock CSV dinâmico para BI
+    subprocess.run(
+        [sys.executable, str(ROOT_DIR / "core" / "scripts_comuns" / "gerar_mock_dados.py"), "--linhas", "50"],
+        cwd=str(ROOT_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=env_utf8,
+        check=True,
+    )
+
+    bp_dw_url = "file:///" + str(ENTREGA_DIR / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md").replace("\\", "/")
+    bp_sem_url = "file:///" + str(ENTREGA_DIR / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md").replace("\\", "/")
+    dic_html_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "11_dicionario_dados" / "dicionario_dados.html").replace("\\", "/")
+    mock_csv_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "08_datasets_bi" / "mock_dados_bi.csv").replace("\\", "/")
+    vw_kpi_url = "file:///" + str(SAIDA_DIR / "camada_semantica" / "vw_analiticas" / "03_vw_kpis.sql").replace("\\", "/")
+
+    linhas = [
+        "# 🎮 Projeto de Demonstração do NINHO Criado com Sucesso (`/demo`)",
+        "",
+        "> Um projeto completo de **Licitações & Contratos Públicos (`SAEB`)** foi simulado e gerado de ponta a ponta para você explorar na prática!",
+        "",
+        "### 📂 Artefatos Gerados para Você Abrir e Explorar Agora:",
+        "",
+        "| O que Explorar | Arquivo Gerado | O que observar nele |",
+        "| :--- | :--- | :--- |",
+        f"| **1. Blueprint Editável do DW** | [SIMULACAO_BLUEPRINT_DW.md]({bp_dw_url}) | Matriz De/Para com `[x]`/`[ ]`, amostra de 3 linhas + linha `-1` e Radar da IA |",
+        f"| **2. Blueprint da Camada Semântica** | [SIMULACAO_BLUEPRINT_SEMANTICA.md]({bp_sem_url}) | Views em 3 camadas, catálogo `META_METRICA` e KPIs sugeridos pela IA |",
+        f"| **3. Dicionário de Dados HTML** | [dicionario_dados.html]({dic_html_url}) | Página interativa com busca em tempo real, badges PK/FK e grão das tabelas |",
+        f"| **4. Views de KPIs Consolidados** | [03_vw_kpis.sql]({vw_kpi_url}) | Fórmulas oficiais + KPIs do Radar (`TICKET_MEDIO_*`, `TAXA_QUALID_*`) com `NULLIF` |",
+        f"| **5. Mock CSV Dinâmico para BI** | [mock_dados_bi.csv]({mock_csv_url}) | 50 linhas sintéticas das colunas reais + chaves sentinelas `-1` (`NAO INFORMADO`) |",
+    ]
+    linhas.append(
+        formatar_rodape_proximos_passos(
+            [
+                ("`/onde-estou`", "Veja como a Bússola Contextual exibe o projeto em 100% (Fase 5/5)."),
+                ("`/validar-entrega`", "Rode o auditor de qualidade sobre os arquivos gerados na demonstração."),
+                ("`/limpar-demo`", "Quando terminar de explorar, zere tudo para começar seu projeto real."),
+            ]
+        )
+    )
+    return "\n".join(linhas)
+
+
 def renderizar_catalogo(topico: str = "todos", busca: str = "") -> str:
     linhas: List[str] = []
     linhas.append("# 🧭 Central de Comandos do NINHO (`/help`)")
     linhas.append("")
     linhas.append(
-        "> Digite qualquer **`/comando`** diretamente aqui no chat ou execute o comando **CLI** correspondente no terminal. "
-        "Para filtrar por categoria, digite `/help <topico>` (`simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`)."
+        "> Digite qualquer **`/comando`** diretamente aqui no chat ou execute o comando **CLI** correspondente no terminal.\n"
+        "> 💡 **Novo por aqui?** Digite **`/comecar`** para ver as 5 trilhas guiadas, **`/onde-estou`** para ver o status do projeto ou **`/duvida listar`** para consultar o Oráculo de Arquitetura!"
     )
     linhas.append("")
 
@@ -328,24 +1076,86 @@ def renderizar_catalogo(topico: str = "todos", busca: str = "") -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Exibe a Central de Comandos (/help) do NINHO organizada por tópicos."
+        description="Central de Experiência Conversacional (/help, /onde-estou, /comecar, /duvida, /doctor, /demo) do NINHO."
     )
     parser.add_argument(
         "--topico",
         default="todos",
         choices=["todos", "ajuda", "simulacao", "micro", "auditoria", "dw", "semantica", "governanca", "qualidade"],
-        help="Filtra os comandos por tópico específico (default: todos).",
+        help="Filtra os comandos do /help por tópico específico (default: todos).",
     )
     parser.add_argument(
         "--busca",
         default="",
-        help="Filtra comandos que contenham a palavra-chave informada.",
+        help="Filtra comandos do /help que contenham a palavra-chave informada.",
     )
+    parser.add_argument(
+        "--onboarding",
+        "--comecar",
+        action="store_true",
+        dest="onboarding",
+        help="Exibe o Guia Rápido de Boas-Vindas (/comecar) com as 5 trilhas de bolso.",
+    )
+    parser.add_argument(
+        "--onde-estou",
+        "--status",
+        action="store_true",
+        dest="onde_estou",
+        help="Exibe a Bússola Contextual do workspace (/onde-estou) com barra de progresso e próximo passo.",
+    )
+    parser.add_argument(
+        "--explicar",
+        "--duvida",
+        default="",
+        dest="explicar",
+        help="Aciona o Oráculo Interativo do NINHO para explicar um conceito arquitetural (use 'listar' para ver todos).",
+    )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help="Executa o diagnóstico de saúde do workspace e detecta arquivos fora da subpasta canônica.",
+    )
+    parser.add_argument(
+        "--corrigir",
+        action="store_true",
+        help="Usado junto com --doctor para mover automaticamente arquivos fora do lugar para a subpasta correta.",
+    )
+    parser.add_argument(
+        "--demo",
+        action="store_true",
+        help="Popula e executa um projeto completo de demonstração (Playground) em 1 comando.",
+    )
+    parser.add_argument(
+        "--limpar-demo",
+        action="store_true",
+        dest="limpar_demo",
+        help="Remove todos os arquivos de demonstração de entrega/ e saida/.",
+    )
+
     args = parser.parse_args()
+
+    if args.onboarding:
+        print(renderizar_onboarding())
+        return 0
+    if args.onde_estou:
+        print(renderizar_onde_estou())
+        return 0
+    if args.explicar:
+        print(renderizar_explicacao(args.explicar))
+        return 0
+    if args.doctor:
+        print(executar_doctor(corrigir=args.corrigir))
+        return 0
+    if args.demo:
+        print(executar_demo())
+        return 0
+    if args.limpar_demo:
+        print(limpar_demo())
+        return 0
+
     print(renderizar_catalogo(topico=args.topico, busca=args.busca))
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
-

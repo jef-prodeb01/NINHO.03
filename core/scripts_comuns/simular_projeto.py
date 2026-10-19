@@ -563,6 +563,57 @@ def gerar_blueprint_simulacao_semantica(
         "- [x] **RADAR_SEM_03 (Isolamento Multi-Projeto via `MERGE INTO`):** Utilizar `MERGE INTO` com chave composta `(SGL_PROJETO, ...)` nas 8 tabelas `META_*`, garantindo convivência segura com outros projetos no mesmo schema.",
         "- [x] **RADAR_SEM_04 (Política VPD Fail-Closed):** Configurar `PKG_SECURITY_*` para retornar predicado `'1 = 0'` caso o `SYS_CONTEXT` não tenha sido inicializado na sessão.",
         "",
+        "### 6.1. Novos KPIs Executivos Sugeridos pelo Radar da IA",
+        "",
+        "Marque `[x]` nos KPIs consultivos abaixo para injetá-los automaticamente em `03_vw_kpis.sql` e `02_meta_metrica.sql`:",
+        "",
+        "| Ativo | Código do KPI Radar | Nome Executivo Sugerido | Fórmula SQL Sugerida | View Alvo | Formato |",
+        "| :---: | :--- | :--- | :--- | :--- | :--- |",
+    ])
+
+    for f in fatos:
+        ent = _nome_entidade_curto(f["nome_tabela"])
+        vw_kpi = f"VW_{projeto}_KPI_{ent}"
+        cols_val = [c["nome_dw"] for c in f["colunas"] if c["nome_dw"].startswith(("VLR_", "VAL_", "QTD_", "QT_"))]
+        if cols_val:
+            c0 = cols_val[0]
+            linhas.append(
+                f"| [x] | `TICKET_MEDIO_{ent}` | Ticket / Valor Médio de {c0} em {ent.title()} | `ROUND(SUM(NVL(e.{c0}, 0)) / NULLIF(COUNT(1), 0), 2)` | `{vw_kpi}` | `MOEDA` |"
+            )
+        fks_f = identificar_fks_fato(f, nomes_dims)
+        if fks_f:
+            fk0 = fks_f[0]["coluna"]
+            linhas.append(
+                f"| [x] | `TAXA_QUALID_{ent}` | Taxa de Identificação Completa ({fk0} <> -1) | `ROUND((SUM(CASE WHEN e.{fk0} <> -1 THEN 1 ELSE 0 END) * 100.0) / NULLIF(COUNT(1), 0), 2)` | `{vw_kpi}` | `PERCENTUAL` |"
+            )
+        else:
+            linhas.append(
+                f"| [x] | `DENSIDADE_{ent}` | Densidade Média de Eventos de {ent.title()} | `ROUND(COUNT(1) * 1.0 / NULLIF(COUNT(DISTINCT 1), 0), 2)` | `{vw_kpi}` | `NUMERICO` |"
+            )
+
+    linhas.extend([
+        "",
+        "### 6.2. Novas Perguntas de Negócio (Golden Queries) Sugeridas pelo Radar da IA",
+        "",
+        "Marque `[x]` nas perguntas executivas abaixo para cadastrá-las em `06_meta_pergunta_negocio.sql`:",
+        "",
+        "| Ativo | Código da Pergunta | Pergunta Executiva de Negócio | SQL de Referência (Golden Query) | View Recomendada |",
+        "| :---: | :--- | :--- | :--- | :--- |",
+    ])
+
+    for idx_f, f in enumerate(fatos, start=1):
+        ent = _nome_entidade_curto(f["nome_tabela"])
+        vw_ev = f"VW_{projeto}_EVENTO_{ent}"
+        vw_kpi = f"VW_{projeto}_KPI_{ent}"
+        linhas.append(
+            f"| [x] | `PN_{projeto}_RAD_{idx_f:02d}A` | Quais grupos lideram o Top 5 de volume em {ent.title()} (Curva de Pareto)? | `SELECT * FROM {schema}.{vw_kpi} ORDER BY QTD_TOTAL_REGISTROS DESC FETCH FIRST 5 ROWS ONLY` | `{vw_kpi}` |"
+        )
+        linhas.append(
+            f"| [x] | `PN_{projeto}_RAD_{idx_f:02d}B` | Quantos eventos ativos existem detalhados em {ent.title()}? | `SELECT COUNT(1) AS QTD_ATIVOS FROM {schema}.{vw_ev} WHERE IND_SITUACAO_EVENTO = 'ATIVO'` | `{vw_ev}` |"
+        )
+
+    linhas.extend([
+        "",
         "---",
         "",
         "## 7. 📦 Escopo de Entregáveis Físicos na Esteira Real (`saida/camada_semantica/`)",
@@ -609,6 +660,144 @@ def verificar_aprovacao_blueprint(caminho_bp: Path) -> tuple[bool, dict[str, str
             entregaveis_ativos.add(m.group(2).strip())
 
     return aprovado, parametros, entregaveis_ativos
+
+
+def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
+    """
+    Lê as edições feitas pelo Engenheiro de Dados em `SIMULACAO_BLUEPRINT_SEMANTICA.md`:
+      - Seção 2: Parâmetros globais (`PROJETO_SIGLA`, `SCHEMA_SEMANTICA`, `COLUNA_SEGREGACAO_RLS`, etc.)
+      - Seção 4: Matriz de Views Semânticas (`[x]`/`[ ]`, renomeação de View, grão customizado)
+      - Seção 5: Catálogo de Indicadores `META_METRICA` (`[x]`/`[ ]`, fórmulas customizadas, novos KPIs)
+      - Seção 6: Radar Consultivo da IA (`RADAR_SEM_01`..`04`, KPIs sugeridos em 6.1 e Perguntas em 6.2)
+    """
+    resultado: dict = {
+        "parametros": {},
+        "views": {},
+        "metricas_definidas_bp": False,
+        "metricas_ativas": [],
+        "radar_ativos": {},
+        "radar_kpis": [],
+        "perguntas_radar": [],
+    }
+    if not caminho_bp.exists():
+        return resultado
+
+    _, params, _ = verificar_aprovacao_blueprint(caminho_bp)
+    resultado["parametros"] = params
+
+    txt = caminho_bp.read_text(encoding="utf-8", errors="replace")
+    secao = ""
+    evento_to_fato: dict[str, str] = {}
+
+    for raw_line in txt.splitlines():
+        line = raw_line.strip()
+        if line.startswith("## 4."):
+            secao = "4"
+            continue
+        elif line.startswith("## 5."):
+            secao = "5"
+            continue
+        elif line.startswith("## 6."):
+            secao = "6"
+            continue
+        elif line.startswith("### 6.1"):
+            secao = "6.1"
+            continue
+        elif line.startswith("### 6.2"):
+            secao = "6.2"
+            continue
+        elif line.startswith("## 7."):
+            secao = "7"
+            continue
+
+        if secao == "4":
+            m_vw = re.match(
+                r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$",
+                line,
+            )
+            if m_vw:
+                ativo = m_vw.group(1).upper() == "X"
+                camada_raw = m_vw.group(2).strip().upper()
+                nome_view = m_vw.group(3).strip().upper()
+                tabela_base = m_vw.group(4).strip().upper()
+                grao = m_vw.group(5).strip()
+                regra = m_vw.group(6).strip()
+
+                if "DIM" in camada_raw:
+                    camada_key = "DIM"
+                elif "EVENTO" in camada_raw:
+                    camada_key = "EVENTO"
+                else:
+                    camada_key = "KPI"
+
+                cfg = {
+                    "ativo": ativo,
+                    "nome_view": nome_view,
+                    "tabela_base": tabela_base,
+                    "grao": grao,
+                    "regra": regra,
+                }
+                resultado["views"][(camada_key, tabela_base)] = cfg
+                resultado["views"][(camada_key, nome_view)] = cfg
+                if camada_key == "EVENTO":
+                    evento_to_fato[nome_view] = tabela_base
+                    # Também mapeia o nome default de evento para a tabela fato
+                    ent_f = _nome_entidade_curto(tabela_base)
+                    proj_s = params.get("PROJETO_SIGLA", "").upper()
+                    if proj_s:
+                        evento_to_fato[f"VW_{proj_s}_EVENTO_{ent_f}"] = tabela_base
+                elif camada_key == "KPI" and tabela_base in evento_to_fato:
+                    resultado["views"][("KPI", evento_to_fato[tabela_base])] = cfg
+
+        elif secao == "5":
+            m_met = re.match(
+                r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
+                line,
+            )
+            if m_met:
+                resultado["metricas_definidas_bp"] = True
+                if m_met.group(1).upper() == "X":
+                    resultado["metricas_ativas"].append({
+                        "cod_metrica": m_met.group(2).strip(),
+                        "nom_metrica": m_met.group(3).strip(),
+                        "formula_sql": m_met.group(4).strip(),
+                        "view_recomendada": m_met.group(5).strip().upper(),
+                        "tip_formato": m_met.group(6).strip().upper(),
+                    })
+
+        elif secao in ("6", "6.1", "6.2"):
+            m_rad_chk = re.match(r"^-\s*\[([xX ])\]\s*\*\*(RADAR_SEM_\d+)", line)
+            if m_rad_chk:
+                resultado["radar_ativos"][m_rad_chk.group(2).upper()] = m_rad_chk.group(1).upper() == "X"
+                continue
+
+            if secao == "6.1":
+                m_rkpi = re.match(
+                    r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
+                    line,
+                )
+                if m_rkpi and m_rkpi.group(1).upper() == "X":
+                    resultado["radar_kpis"].append({
+                        "cod_metrica": m_rkpi.group(2).strip(),
+                        "nom_metrica": m_rkpi.group(3).strip(),
+                        "formula_sql": m_rkpi.group(4).strip(),
+                        "view_recomendada": m_rkpi.group(5).strip().upper(),
+                        "tip_formato": m_rkpi.group(6).strip().upper(),
+                    })
+            elif secao == "6.2":
+                m_rpn = re.match(
+                    r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
+                    line,
+                )
+                if m_rpn and m_rpn.group(1).upper() == "X":
+                    resultado["perguntas_radar"].append({
+                        "cod_pergunta": m_rpn.group(2).strip(),
+                        "des_pergunta": m_rpn.group(3).strip(),
+                        "sql_referencia": m_rpn.group(4).strip(),
+                        "view_recomendada": m_rpn.group(5).strip().upper(),
+                    })
+
+    return resultado
 
 
 def parse_tabelas_editadas_blueprint_dw(caminho_bp: Path, tabelas_base: list[dict]) -> list[dict]:
@@ -998,6 +1187,7 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
         sys.exit(1)
 
     tabelas = parse_tabelas_editadas_blueprint_dw(BLUEPRINT_DW_PATH, tabelas_base)
+    edicoes_sem = parse_edicoes_blueprint_semantica(BLUEPRINT_SEM_PATH)
     schema_det, projeto_det, _, _ = extrair_schema_e_projeto(tabelas)
     projeto = params.get("PROJETO_SIGLA", projeto_det).upper()
     schema = params.get("SCHEMA_SEMANTICA", schema_det).upper()
@@ -1012,17 +1202,17 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
 
     if "views_dim" in entregaveis:
         p = vw_dir / "01_vw_dim_atuais.sql"
-        p.write_text(construir_views_dim_atuais(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_views_dim_atuais(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     if "views_evento" in entregaveis:
         p = vw_dir / "02_vw_eventos.sql"
-        p.write_text(construir_views_eventos(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_views_eventos(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     if "views_kpi" in entregaveis:
         p = vw_dir / "03_vw_kpis.sql"
-        p.write_text(construir_views_kpis(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_views_kpis(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     if "catalogo_meta" in entregaveis:
@@ -1032,24 +1222,24 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
             shutil.copy2(tpl_meta, dst_meta)
             gerados.append(dst_meta)
 
-        for nome_m, cont_m in construir_catalogo_meta(tabelas, schema, projeto).items():
+        for nome_m, cont_m in construir_catalogo_meta(tabelas, schema, projeto, edicoes_sem=edicoes_sem).items():
             pm = meta_dir / nome_m
             pm.write_text(cont_m, encoding="utf-8")
             gerados.append(pm)
 
     if "seguranca_rls" in entregaveis and ativar_rls:
         p = meta_dir / "02_rls.sql"
-        p.write_text(construir_script_rls(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_script_rls(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     if "validacoes" in entregaveis:
         p = meta_dir / "09_validacoes.sql"
-        p.write_text(construir_script_validacoes_semantica(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_script_validacoes_semantica(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     if "documento_entendimento" in entregaveis:
         p = meta_dir / f"DOCUMENTO_ENTENDIMENTO_{projeto}.md"
-        p.write_text(construir_documento_entendimento(tabelas, schema, projeto), encoding="utf-8")
+        p.write_text(construir_documento_entendimento(tabelas, schema, projeto, edicoes_sem=edicoes_sem), encoding="utf-8")
         gerados.append(p)
 
     print("=" * 80)
@@ -1057,6 +1247,7 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
     print("=" * 80)
     print(f"  📋 Blueprint Lida     : {BLUEPRINT_SEM_PATH.relative_to(ROOT_DIR)}")
     print(f"  🏛️  Schema / Projeto   : {schema} / {projeto}")
+    print(f"  📊 Métricas & KPIs IA : {len(edicoes_sem.get('metricas_ativas', []))} base + {len(edicoes_sem.get('radar_kpis', []))} Radar IA")
     print(f"  📦 Arquivos Gerados   : {len(gerados)} em saida/camada_semantica/")
     for g in gerados:
         print(f"     - {g.relative_to(ROOT_DIR)}")
@@ -1178,10 +1369,11 @@ def main() -> None:
         for bp in gerados_bp:
             print(f"  📝 Blueprint Editável        : {bp.relative_to(ROOT_DIR)}")
         print("-" * 80)
-        print("  👉 PRÓXIMO PASSO:")
-        print("     1. Revise e edite livremente a(s) Blueprint(s) acima.")
-        print("     2. Marque `- [x] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL`.")
-        print(f"     3. Execute: python core/scripts_comuns/simular_projeto.py --modulo {args.modulo} --acao executar")
+        print("  🧭 O QUE VOCÊ PODE FAZER AGORA (PRÓXIMOS PASSOS):")
+        print("     • Revisar e editar livremente a(s) Blueprint(s) gerada(s) acima")
+        print("     • `/executar-simulacao` ➔ Materializar os scripts reais em `saida/` após aprovar `[x]`")
+        print("     • `/duvida simulacao`   ➔ Entender como o parser reverso lê suas edições na Blueprint")
+        print("     • `/onde-estou`         ➔ Consultar a bússola de progresso do projeto")
         print("=" * 80)
 
     elif args.acao == "executar":
@@ -1189,6 +1381,12 @@ def main() -> None:
             executar_simulacao_aprovada_dw(tabelas, forcar=args.forcar)
         if args.modulo in ("semantica", "ambos"):
             executar_simulacao_aprovada_semantica(tabelas, forcar=args.forcar)
+        print("🧭 O QUE VOCÊ PODE FAZER AGORA (PRÓXIMOS PASSOS):")
+        print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética 100% fiel às suas tabelas para Power BI")
+        print("  • `/validar-entrega`    ➔ Auditar sintaxe Oracle, linha -1 e integridade dos scripts em `saida/`")
+        print("  • `/empacotar-projeto`  ➔ Exportar a entrega consolidada em arquivo `.zip`")
+        print("  • `/onde-estou`         ➔ Ver o resumo completo do projeto")
+        print("=" * 80)
 
 
 if __name__ == "__main__":

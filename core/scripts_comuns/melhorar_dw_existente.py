@@ -326,23 +326,46 @@ def gerar_comentario_coluna(col: dict, tab: dict, categoria: str) -> str:
 def identificar_fks_fato(tab: dict, nomes_dimensoes: set) -> list:
     """Retorna a lista de colunas de FK em uma tabela Fato (declaradas ou inferidas por convenção)."""
     fks_map = {}
+    nomes_dims_up = {d.upper() for d in (nomes_dimensoes or set())}
+
+    def _resolver_dim(radical: str) -> str | None:
+        alvo_exato = f"DIM_{radical}"
+        if alvo_exato in nomes_dims_up:
+            return alvo_exato
+        for d in sorted(nomes_dims_up):
+            ent_d = re.sub(r"^(DIM|FATO|FAT)_", "", d)
+            if ent_d == radical or ent_d.startswith(radical + "_") or radical.startswith(ent_d + "_"):
+                return d
+        return None
+
     for fk in tab.get("fks", []):
-        fks_map[fk["coluna"].upper()] = fk["tabela_ref"].upper()
+        ref_up = fk["tabela_ref"].upper()
+        rad_ref = re.sub(r"^(TB|TAB|DIM)_", "", ref_up)
+        fks_map[fk["coluna"].upper()] = _resolver_dim(rad_ref) or ref_up
+
+    pks_up = [p.upper() for p in tab.get("pks", [])]
+    first_col_up = tab["colunas"][0]["nome_dw"].upper() if tab.get("colunas") else ""
 
     for c in tab["colunas"]:
         cn = c["nome_dw"].upper()
         if cn in fks_map:
             continue
-        if cn in tab.get("pks", []) and len(tab.get("pks", [])) == 1 and not cn.startswith("DIM_"):
+        if cn in pks_up and len(pks_up) == 1 and not cn.startswith("DIM_"):
             continue
         if cn.startswith("DIM_"):
-            ref = cn if cn in nomes_dimensoes else (cn if cn == "DIM_TEMPO" else cn)
-            fks_map[cn] = ref
+            rad = cn[4:]
+            fks_map[cn] = _resolver_dim(rad) or cn
         elif cn.startswith("SK_"):
-            possivel_dim = "DIM_" + cn[3:]
-            fks_map[cn] = possivel_dim
+            rad = cn[3:]
+            fks_map[cn] = _resolver_dim(rad) or ("DIM_" + rad)
         elif cn.endswith("_KEY") and cn != "DIMENSION_KEY":
-            fks_map[cn] = "DIM_" + cn[:-4]
+            rad = cn[:-4]
+            fks_map[cn] = _resolver_dim(rad) or ("DIM_" + rad)
+        elif cn.startswith(("ID_", "COD_", "SEQ_")) and cn != first_col_up and cn != "COD_EXECUCAO_CARGA":
+            rad = re.sub(r"^(ID|COD|SEQ)_", "", cn)
+            dim_match = _resolver_dim(rad)
+            if dim_match:
+                fks_map[cn] = dim_match
 
     return [{"coluna": k, "tabela_ref": v} for k, v in fks_map.items()]
 
@@ -1574,7 +1597,12 @@ def executar_melhoria_rapida(
     arquivos_gerados.append(str(p_rel.relative_to(base_dir).as_posix()))
     print(f"  {VERDE}[OK]{RESET} Relatório Diagnóstico -> {p_rel.relative_to(base_dir)}")
 
-    print(f"\n{VERDE}{NEGRITO}✅ Micro-processo '{modo_norm}' concluído com sucesso! {len(arquivos_gerados)} artefato(s) gerado(s) em 'saida/planejador_dw/'.{RESET}\n")
+    print(f"\n{VERDE}{NEGRITO}✅ Micro-processo '{modo_norm}' concluído com sucesso! {len(arquivos_gerados)} artefato(s) gerado(s) em 'saida/planejador_dw/'.{RESET}")
+    print(f"{CIANO}🧭 O que você pode fazer agora:{RESET}")
+    print("  • `/iniciar-semantica`  ➔ Gerar as 3 camadas de Views Semânticas + Catálogo META_* sobre este DW")
+    print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética para testar dashboards no Power BI")
+    print("  • `/validar-entrega`    ➔ Rodar o auditor de qualidade Fast-Track (`validar_entrega.py fast-track`)")
+    print("  • `/onde-estou`         ➔ Consultar o status completo do workspace\n")
     return {"erros": 0, "arquivos_gerados": arquivos_gerados}
 
 

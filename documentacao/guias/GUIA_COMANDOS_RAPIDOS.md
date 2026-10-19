@@ -25,6 +25,7 @@ Clique em qualquer tópico ou comando abaixo para navegar diretamente para a ins
   - [1.11 Motor de Micro-Processos e Fast-Track para DW e ODI (`melhorar_dw_existente.py`)](#111-melhorar-dw-existente)
   - [1.12 Motor de Micro-Processos da Camada Semântica (`modular_semantica.py`)](#112-modular-semantica)
   - [1.13 Gerador de Simulações e Blueprint 100% Editável antes da Execução Real (`simular_projeto.py`)](#113-simular-projeto)
+  - [1.14 Central de UX Conversacional, Bússola, Onboarding, Oráculo de Dúvidas, Doctor e Playground (`ajuda_ninho.py`)](#114-ux-conversacional)
 - [2. Comandos Operacionais do Planejador de DW (Oracle)](#2-comandos-planejador-dw)
   - [2.1 Ordem Canônica de Execução dos DDLs Físicos](#21-ordem-execucao-ddls)
   - [2.2 Gerenciamento de Sequences e Surrogate Keys](#22-sequences-surrogate-keys)
@@ -336,6 +337,32 @@ python core/scripts_comuns/simular_projeto.py --acao status
 
 # 5. Executar a esteira real em saida/ após aprovar [x] a Blueprint (/executar-simulacao)
 python core/scripts_comuns/simular_projeto.py --modulo ambos --acao executar
+```
+
+---
+
+<a id="114-ux-conversacional"></a>
+### 1.14 Central de UX Conversacional, Bússola, Onboarding, Oráculo de Dúvidas, Doctor e Playground (`ajuda_ninho.py`)
+> **Cenário:** Fornece uma experiência conversacional guiada tanto no Chat quanto na CLI: mostra **onde você está** no projeto (`/onde-estou`), **como começar** cada tipo de demanda em 3 passos (`/comecar`), **tira dúvidas arquiteturais** sobre conceitos do NINHO (`/duvida <tema>`), **organiza arquivos soltos** nas pastas certas (`/doctor`) e **roda uma demonstração completa** em 5 segundos (`/demo`).
+
+```bash
+# 1. Assistente de Boas-Vindas e Trilhas de Início Rápido (/comecar ou /onboarding)
+python core/scripts_comuns/ajuda_ninho.py --onboarding
+
+# 2. Bússola Contextual do Projeto com Barra de Progresso (/onde-estou ou /status)
+python core/scripts_comuns/ajuda_ninho.py --onde-estou
+
+# 3. Oráculo de Dúvidas Arquiteturais (/duvida <tema> ou /explicar <tema>)
+python core/scripts_comuns/ajuda_ninho.py --explicar listar
+python core/scripts_comuns/ajuda_ninho.py --explicar estrategia-carga
+python core/scripts_comuns/ajuda_ninho.py --explicar scd
+
+# 4. Check-up de Saúde e Auto-Organização de Pastas (/doctor)
+python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir
+
+# 5. Modo Playground: gera projeto completo de demonstração e limpa ao final (/demo e /limpar-demo)
+python core/scripts_comuns/ajuda_ninho.py --demo
+python core/scripts_comuns/ajuda_ninho.py --limpar-demo
 ```
 
 ---

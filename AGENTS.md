@@ -37,14 +37,20 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 4. **Alinhamento Técnico Mandatório & Radar Consultivo da IA (Copiloto Consultivo — Não Gere no Escuro):** Como os projetos de dados são altamente diversos e muitas vezes o cliente não percebe de imediato todo o potencial analítico da sua base, o agente NUNCA deve tomar decisões arquiteturais críticas no escuro e DEVE atuar proativamente:
    - Se faltar informação crítica, se houver ambiguidade de domínio ou múltiplos caminhos viáveis (ex: estratégia de CDC, grão dimensional, tuning de IKM, janelas de carga, enquadramento LGPD/LAI), pause a geração física e abra discussão técnica com o Engenheiro de Dados.
    - No **Planejador de DW**, na **Camada Semântica** e na **Governança de Dados**, apresente sempre o **💡 Radar Consultivo da IA** separado do escopo original do cliente, sugerindo novos KPIs de alto valor, conceitos semânticos, regras implícitas de sanitização/qualidade e novas perguntas de negócio para o engenheiro aprovar antes da codificação.
+   - **🧭 Breadcrumbs de Próximos Passos (UX Conversacional):** Ao final de qualquer comando ou entrega no chat, exiba sempre um bloco conciso **"🧭 O que você pode fazer agora:"** com 2 a 4 comandos sugeridos contextualmente (ex: `/onde-estou`, `/duvida <tema>`, `/executar-simulacao`, `/validar-entrega`).
 
 ---
 
 ## 🚀 Comandos Rápidos de Orquestração (Dicionário do Chat — Digite `/help` a qualquer momento)
 
-- **🧭 Central de Ajuda Interativa no Chat (`/help`, `/ajuda` ou `/comandos`):**
-  - `/help` (ou `/ajuda`, `/comandos`): **Exibe imediatamente aqui no chat** o catálogo completo de todos os comandos do NINHO organizado em tabelas por tópico (1. Simulação Editável, 2. Micro-Processos & Fast-Track, 3. Inspeção & Auditoria, 4. Modelagem DW Completo, 5. Camada Semântica, 6. Governança Cloud, 7. Qualidade & Empacotamento), com as colunas `Comando no Chat | O que Faz | Equivalente CLI` (`python core/scripts_comuns/ajuda_ninho.py`).
-  - `/help <topico>`: Exibe no chat apenas a tabela do tópico desejado (`simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`) (`python core/scripts_comuns/ajuda_ninho.py --topico <topico>`).
+- **🧭 Experiência Conversacional, Onboarding, Bússola & Oráculo de Dúvidas (`/help`, `/comecar`, `/onde-estou`, `/duvida`, `/doctor`, `/demo`):**
+  - `/help` (ou `/ajuda`, `/comandos`): **Exibe imediatamente aqui no chat** o catálogo completo de todos os comandos do NINHO organizado em tabelas por tópico (`ux`, `simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`), com as colunas `Comando no Chat | O que Faz | Equivalente CLI` (`python core/scripts_comuns/ajuda_ninho.py`).
+  - `/help <topico>`: Exibe no chat apenas a tabela do tópico desejado (`python core/scripts_comuns/ajuda_ninho.py --topico <topico>`).
+  - `/comecar` (ou `/onboarding`): Exibe o **Assistente de Boas-Vindas** com 5 trilhas guiadas em 3 passos para escolher o cenário ideal (`python core/scripts_comuns/ajuda_ninho.py --onboarding`).
+  - `/onde-estou` (ou `/status`): Exibe a **Bússola Contextual do Projeto** com barra visual de progresso (`[███░░] Fase X/5`), arquivos detectados em `entrega/` e `saida/` e recomendações do próximo passo (`python core/scripts_comuns/ajuda_ninho.py --onde-estou`).
+  - `/duvida <tema>` (ou `/explicar <conceito>`): Consulta o **Oráculo Arquitetural Interativo** sobre conceitos do NINHO (`estrategia-carga`, `scd`, `linha-default`, `camadas-views`, `arquitetura-etl`, `gate-governanca`, `simulacao`, `fast-track`, `rls` ou `listar`) (`python core/scripts_comuns/ajuda_ninho.py --explicar <tema>`).
+  - `/doctor`: Audita a saúde das pastas de `entrega/`, detecta arquivos soltos fora da subpasta canônica e os organiza automaticamente com `--corrigir` (`python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir`).
+  - `/demo` e `/limpar-demo`: Roda um **Projeto Playground Completo** (DDL + Simulação + DW + Camada Semântica + Dicionário HTML + Mock CSV BI) em 5 segundos para demonstração, e limpa o ambiente com `/limpar-demo` (`python core/scripts_comuns/ajuda_ninho.py --demo` / `--limpar-demo`).
 - **🧪 Simulação Ponta a Ponta & Blueprint 100% Editável (Dry-Run antes da Execução Real):**
   - `/simular-dw`: Gera a simulação completa e editável do Data Warehouse (`entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md`) com parâmetros globais, matriz De/Para de colunas (`[x]`/`[ ]`), amostra Dry-Run de 3 linhas (incluindo linha `-1`), Radar Consultivo e escopo de entregáveis (`python core/scripts_comuns/simular_projeto.py --modulo dw --acao simular`).
   - `/simular-semantica`: Gera a simulação completa e editável da Camada Semântica (`entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`) com as 3 camadas de Views (`VW_DIM`, `VW_EVENTO`, `VW_KPI`), catálogo de indicadores e escopo de entregáveis (`python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular`).
@@ -58,6 +64,7 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
   - `/gerar-constraints`: Gera apenas as constraints `PK`/`FK` não-destrutivas (`ENABLE NOVALIDATE` / `RELY DISABLE NOVALIDATE`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo constraints`).
   - `/gerar-testes-dw`: Gera apenas a suíte SQL de auditoria de integridade (`10_testes_integridade/13_testes_integridade.sql`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo testes`).
   - `/gerar-guia-bi`: Gera apenas o Guia do Analista de BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-bi`).
+  - `/gerar-mock-bi`: Gera dados sintéticos CSV 100% dinâmicos a partir dos DDLs/Blueprints reais do projeto com ~3% de chaves `-1` Kimball (`python core/scripts_comuns/gerar_mock_dados.py --linhas 150`).
   - `/gerar-selects-odi`: Gera apenas as tabelas auxiliares `ODI_DIM_*` e as consultas SQL de carga do ODI (`03_selects_odi_dimensoes.sql` e `04_select_odi_fato.sql`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo selects-odi`).
   - `/gerar-guia-odi`: Gera apenas os guias passo a passo de construção no Canvas do ODI 12c (`09_relatorio_estrategias/guia_estrategias_odi_*.md`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-odi`).
   - `/melhorar-dw-existente`: Executa o Raio-X não-destrutivo completo do DW já construído (`DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md`) e gera todos os patches sem tocar na carga (`python core/scripts_comuns/melhorar_dw_existente.py --modo tudo`).
@@ -81,7 +88,8 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
   - `/concluir-dw` (ou `/transicionar-semantica`): Realiza o handoff e a transição contínua para a Camada Semântica (`python core/scripts_comuns/transicionar_dw_para_semantica.py`).
   - `/iniciar-semantica`: Gera as Views semânticas em 3 camadas (`VW_DIM_*_ATUAL`, `VW_EVENTO_*`, `VW_KPI_*`), políticas RLS/VPD e scripts das 8 tabelas `META_*` em `saida/camada_semantica/`.
   - `/gerar-governanca`: Gera os artefatos das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e scripts para AWS Glue & SageMaker Catalog em `saida/governanca_dados/` (após aprovação no Gate 0.5).
-- **Qualidade, Diagnóstico e Empacotamento:**
+- **Qualidade, Testes E2E, Diagnóstico e Empacotamento:**
   - `/validar-entrega`: Executa o checklist pré-voo e a auditoria pós-geração da pasta `saida/` (`python core/scripts_comuns/validar_entrega.py all`, `python core/scripts_comuns/validar_entrega.py fast-track` ou `python core/scripts_comuns/validar_entrega.py saida`).
+  - `/testar-ninho`: Executa a suíte automatizada de testes End-to-End (E2E) em todos os motores do NINHO e limpa o workspace ao final (`python core/scripts_comuns/testar_ninho.py`).
   - `/diagnosticar-erro-carga`: Diagnostica falhas de execução no Oracle (`ORA-*`), ODI ou Hop e fornece script de remediação idempotente.
   - `/empacotar-projeto`: Exporta a entrega completa em `.zip` ou limpa o workspace para um novo projeto (`python core/scripts_comuns/gerenciar_projeto.py --status`).
