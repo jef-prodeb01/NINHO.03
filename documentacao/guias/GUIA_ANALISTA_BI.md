@@ -38,22 +38,22 @@ Este guia estabelece os padrões corporativos de Business Intelligence que o **E
 O ecossistema analítico disponibiliza duas camadas estruturadas no Oracle para consumo das ferramentas de BI:
 
 ```mermaid
-flowchart TD
-    subgraph DW[Camada 1 e 2: Data Warehouse Físico]
-        DIM[Dimensões SCD2: DIM_*]
-        FATO[Fatos: FATO_*]
-        TEMPO[Dimensão Calendário: DIM_TEMPO]
+graph TD
+    subgraph "Camada 1 e 2: Data Warehouse Físico"
+        DIM["Dimensões SCD2: DIM_*"]
+        FATO["Fatos: FATO_*"]
+        TEMPO["Dimensão Calendário: DIM_TEMPO"]
     end
 
-    subgraph SEM[Camada Semântica & Governança]
-        VWDIM[Views Vigentes: VW_DIM_*_ATUAL]
-        VWEV[View Unificada de Fato: VW_EVENTO]
-        VWKPI[Views Pré-Agregadas: VW_KPI_*]
-        META[Tabelas de Metas: META_*]
+    subgraph "Camada Semântica & Governança"
+        VWDIM["Views Vigentes: VW_DIM_*_ATUAL"]
+        VWEV["View Unificada de Fato: VW_EVENTO"]
+        VWKPI["Views Pré-Agregadas: VW_KPI_*"]
+        META["Tabelas de Metas: META_*"]
     end
 
-    subgraph BI[Ferramentas de Consumo Analítico]
-        PBI[Microsoft Power BI<br/>Import Mode / VertiPaq]
+    subgraph "Ferramentas de Consumo Analítico"
+        PBI["Microsoft Power BI<br/>Import Mode / VertiPaq"]
     end
 
     DIM -->|Expirações Filtradas| VWDIM

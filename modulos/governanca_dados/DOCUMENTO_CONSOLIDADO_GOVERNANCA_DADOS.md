@@ -32,53 +32,64 @@ O modelo conecta os órgãos produtores de dados ao catálogo corporativo e ao r
 ### 1.1. Diagrama de Fluxo Operacional Ponta a Ponta com Camadas do Data Lake
 
 ```mermaid
-flowchart TD
-    subgraph Fontes ["1. SISTEMAS DE ORIGEM NOS ÓRGÃOS"]
+graph TD
+    subgraph "1. SISTEMAS DE ORIGEM NOS ÓRGÃOS"
         S1["Portal BA.GOV.BR (Identidade)"]
         S2["DETRAN (RENACH / CNH)"]
         S3["RH BAHIA (Folha / Servidores)"]
         S4["PLANSERV (Assistência Médica)"]
     end
     
-    subgraph Ingestao ["2. MOTOR DE INGESTÃO"]
+    subgraph "2. MOTOR DE INGESTÃO"
         ODI1["Extrator ODI 12c / Apache Hop"]
     end
     
-    subgraph LakeRaw ["3. DATA LAKE: CAMADA RAW (Bronze / Bruta)"]
-        R1[("tb_raw_cidadao_identidade")]
-        R2[("tb_raw_detran_renach")]
-        R3[("tb_raw_rh_servidores")]
-        RMeta["• Dados brutos as-is\n• Schema original preservado\n• Imutabilidade e carimbo dth_ingestao\n• Acesso estrito a engenharia de dados"]
+    subgraph "3. DATA LAKE: CAMADA RAW (Bronze / Bruta)"
+        R1["tb_raw_cidadao_identidade"]
+        R2["tb_raw_detran_renach"]
+        R3["tb_raw_rh_servidores"]
+        RMeta["Dados brutos as-is e carimbo dth_ingestao"]
     end
     
-    subgraph PipelineQualidade ["4. MOTOR DE GOVERNANÇA & VALIDAÇÃO (ODI)"]
-        Val{"Barreira em 4 Etapas:\n1. Técnica | 2. Metadados\n3. Qualidade | 4. LGPD"}
-        Quarentena["QUARNTENA / DLQ\n(Registros Inconsistentes)\n+ Alerta ao Data Steward"]
+    subgraph "4. MOTOR DE GOVERNANÇA & VALIDAÇÃO (ODI)"
+        Val{"Barreira em 4 Etapas:<br/>1. Técnica | 2. Metadados<br/>3. Qualidade | 4. LGPD"}
+        Quarentena["QUARENTENA / DLQ<br/>(Registros Inconsistentes)"]
     end
     
-    subgraph LakeTrusted ["5. DATA LAKE: CAMADA TRUSTED (Silver / Governada no MongoDB)"]
-        T1[("tb_dataset\n(Catálogo Corporativo de Ativos)")]
-        T2[("Repositórios Governados\n(Dados Limpos, Tipados BSON)")]
-        T3[("tb_auditoria_eventos\n(Histórico de Cargas & TTL 5 Anos)")]
+    subgraph "5. DATA LAKE: CAMADA TRUSTED (Silver / Governada no MongoDB)"
+        T1["tb_dataset<br/>(Catálogo Corporativo de Ativos)"]
+        T2["Repositórios Governados<br/>(Dados Limpos, Tipados BSON)"]
+        T3["tb_auditoria_eventos<br/>(Histórico de Cargas & TTL 5 Anos)"]
     end
     
-    subgraph Semantica ["6. CAMADA SEMÂNTICA CORPORATIVA"]
-        SemConceitos[("tb_sem_conceitos\n(Conceitos Canônicos, Termos, Ontologia)")]
+    subgraph "6. CAMADA SEMÂNTICA CORPORATIVA"
+        SemConceitos["tb_sem_conceitos<br/>(Conceitos Canônicos, Termos, Ontologia)"]
     end
     
-    subgraph Consumo ["7. CAMADA REFINED & CONSUMO SEGURO"]
+    subgraph "7. CAMADA REFINED & CONSUMO SEGURO"
         API["APIs Seguras (Gateway)"]
         BI["Painéis Power BI / Analytics"]
         Interorg["Compartilhamento Intersecretarias (LGPD)"]
     end
     
-    Fontes --> Ingestao
-    Ingestao --> LakeRaw
-    LakeRaw --> Val
-    Val -- Reprovados (Falhas Parciais) --> Quarentena
-    Val -- Aprovados (Dados Saneados) --> LakeTrusted
-    LakeTrusted <--> SemConceitos
-    LakeTrusted & SemConceitos --> Consumo
+    S1 --> ODI1
+    S2 --> ODI1
+    S3 --> ODI1
+    S4 --> ODI1
+    ODI1 --> R1
+    ODI1 --> R2
+    ODI1 --> R3
+    R1 --> Val
+    R2 --> Val
+    R3 --> Val
+    Val -->|Reprovados| Quarentena
+    Val -->|Aprovados| T1
+    Val -->|Aprovados| T2
+    Val -->|Aprovados| T3
+    T1 --> SemConceitos
+    SemConceitos --> API
+    T2 --> BI
+    T2 --> Interorg
 ```
 
 ---
@@ -814,14 +825,15 @@ Com base no cruzamento das especificações de modelagem e das rotinas reais de 
 A construção do **Catálogo Semântico Governamental do Estado da Bahia** deve ocorrer de forma faseada e pragmática:
 
 ```mermaid
-flowchart LR
-    F1["FASE 1: Fundação & Piloto\n(Mês 1 e 2)\n• Coleções tb_sem_* no MongoDB\n• Homologação do Portal BA.GOV.BR\n• Dicionários de Qualidade e LGPD"]
+graph LR
+    F1["FASE 1: Fundação & Piloto<br/>(Mês 1 e 2)<br/>- Coleções tb_sem_* no MongoDB<br/>- Homologação do Portal BA.GOV.BR<br/>- Dicionários de Qualidade e LGPD"]
     
-    F2["FASE 2: Expansão Interórgãos\n(Mês 3 a 5)\n• Integração DETRAN, PLANSERV, RH\n• Mapeamento de Conceitos e Sinônimos\n• Comitê Semântico de Governança"]
+    F2["FASE 2: Expansão Interórgãos<br/>(Mês 3 a 5)<br/>- Integração DETRAN, PLANSERV, RH<br/>- Mapeamento de Conceitos e Sinônimos<br/>- Comitê Semântico de Governança"]
     
-    F3["FASE 3: Grafo Semântico Ativo\n(Mês 6 em diante)\n• Consultas Federadas em Grafo\n• API de Descoberta Semântica\n• Políticas Públicas Orientadas a Dados"]
+    F3["FASE 3: Grafo Semântico Ativo<br/>(Mês 6 em diante)<br/>- Consultas Federadas em Grafo<br/>- API de Descoberta Semântica<br/>- Políticas Públicas Orientadas a Dados"]
     
-    F1 --> F2 --> F3
+    F1 --> F2
+    F2 --> F3
 ```
 
 ### 9.1. Cinco Argumentos-Chave para Apresentação ao Coordenador

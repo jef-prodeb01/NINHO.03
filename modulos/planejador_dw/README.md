@@ -22,40 +22,34 @@ Módulo corporativo para **planejamento, arquitetura e modelagem dimensional aut
 O planejamento segue a esteira corporativa onde o **Oracle Data Integrator (ODI)** atua como maestro geral do pacote de cargas:
 
 ```mermaid
-flowchart TD
-    subgraph INGEST["1. Ingestão Híbrida Externa"]
-        F_DB["Bancos Relacionais (OLTP)"] -->|ODI Mapping Direto| STG["Tabelas STG_*<br/>(Oracle Staging)"]
-        F_FTP["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop (.hpl / .hwf)| STG
-        F_API["APIs Web / JSON REST"] -->|Python Extractor (.py)| STG
+graph TD
+    subgraph "1. Ingestao Hibrida Externa"
+        F_DB["Bancos Relacionais OLTP"] -->|ODI Mapping Direto| STG["Tabelas STG_*<br/>Oracle Staging"]
+        F_FTP["Arquivos CSV/Excel SFTP"] -->|Apache Hop .hpl / .hwf| STG
+        F_API["APIs Web / JSON REST"] -->|Python Extractor .py| STG
     end
 
-    subgraph ORCH["2. Orquestração Centralizada (ODI)"]
-        ODI_CMD["OdiOSCommand (SSH)<br/>Dispara Hop / Python no servidor remoto"]
+    subgraph "2. Orquestracao Centralizada ODI"
+        ODI_CMD["OdiOSCommand SSH<br/>Dispara Hop / Python no servidor remoto"]
         ODI_CMD -.->|Disparo Remoto| F_FTP
         ODI_CMD -.->|Disparo Remoto| F_API
     end
 
-    subgraph CORE_DW["3. Modelagem Dimensional In-Database (Oracle)"]
-        STG -->|Módulo Dimensões & Cubos| ODI_DIM["Tabelas Auxiliares<br/>ODI_DIM_*"]
-        ODI_DIM -->|IKM Slowly Changing Dimension| DIM["Dimensões Oficiais<br/>DIM_* (B-Tree + Linha -1)"]
-        STG -->|Lookup de SKs com NVL(-1)| FATO["Fatos Oficiais<br/>FATO_* (Estratégia A ou B)"]
-        FATO -.->|Truncate & Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + Stats)"]
+    subgraph "3. Modelagem Dimensional In-Database Oracle"
+        STG -->|Modulo Dimensoes e Cubos| ODI_DIM["Tabelas Auxiliares<br/>ODI_DIM_*"]
+        ODI_DIM -->|IKM Slowly Changing Dimension| DIM["Dimensoes Oficiais<br/>DIM_* B-Tree + Linha -1"]
+        STG -->|Lookup de SKs com NVL -1| FATO["Fatos Oficiais<br/>FATO_* Estrategia A ou B"]
+        FATO -.->|Truncate e Load| PRC["PRC_POS_CARGA_FATO<br/>Rebuild NOLOGGING + Stats"]
     end
 
-    subgraph AUDIT["4. Auditoria & Liberação"]
-        FATO --> CTRL["TB_CONTROLE_CARGA<br/>(ID_CARGA, NOME_PROJETO, STATUS)"]
+    subgraph "4. Auditoria e Liberacao"
+        FATO --> CTRL["TB_CONTROLE_CARGA<br/>ID_CARGA, NOME_PROJETO, STATUS"]
     end
 
-    subgraph CONSUMO["5. Camada Analítica de Consumo"]
-        FATO --> BI_PBI["Power BI (Import Mode / Star Schema)"]
-        FATO --> SEM_MOD["Módulo Camada Semântica (8 Tabelas META_*)"]
+    subgraph "5. Camada Analitica de Consumo"
+        FATO --> BI_PBI["Power BI Import Mode / Star Schema"]
+        FATO --> SEM_MOD["Modulo Camada Semantica 8 Tabelas META_*"]
     end
-
-    style INGEST fill:#f0f7ff,stroke:#0066cc,stroke-width:2px
-    style ORCH fill:#fff0f6,stroke:#eb2f96,stroke-width:2px
-    style CORE_DW fill:#fffbe6,stroke:#faad14,stroke-width:2px
-    style AUDIT fill:#e6fffb,stroke:#13c2c2,stroke-width:2px
-    style CONSUMO fill:#f6ffed,stroke:#52c41a,stroke-width:2px
 ```
 
 ---

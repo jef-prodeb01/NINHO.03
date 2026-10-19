@@ -31,51 +31,58 @@
 ## 2. Topologia Ponta a Ponta (Origem ➔ Gate 0.5 ➔ MongoDB ➔ AWS SageMaker Catalog)
 
 ```mermaid
-flowchart TD
-    subgraph CLIENTE["1. Órgão Cliente (Responsável pelo Saneamento na Origem)"]
-        INS["Planilha PRODEB (.xlsx)<br/>• Aba 'Dados - Insumos'<br/>• Aba 'Dicionário de Dados'"]
-        DADOS["Fontes de Dados (CSV, API, BD)<br/>(Ex: SAP RH Bahia, Planserv, Detran, BA.GOV.BR)"]
+graph TD
+    subgraph "1. Órgão Cliente (Saneamento na Origem)"
+        INS["Planilha PRODEB (.xlsx)<br/>- Aba Dados - Insumos<br/>- Aba Dicionário de Dados"]
+        DADOS["Fontes de Dados (CSV, API, BD)<br/>(SAP RH Bahia, Planserv, Detran, BA.GOV.BR)"]
     end
 
-    subgraph GATE["2. Gate 0.5 — Auditoria de Entrada (inspecionar_insumos_governanca.py)"]
+    subgraph "2. Gate 0.5 - Auditoria de Entrada"
         AUD{"Dados e Metadados<br/>100% Completos?"}
-        DEV["🛑 BLOQUEIO E DEVOLUÇÃO AO CLIENTE<br/>(relatorio_devolucao_cliente.md)<br/>• Registros vazios / NULL em chaves<br/>• Colunas fantasmas (;;;) no CSV<br/>• Falta de Tipo, Descrição ou LGPD"]
+        DEV["BLOQUEIO E DEVOLUÇÃO AO CLIENTE<br/>(relatorio_devolucao_cliente.md)<br/>- Registros vazios / NULL em chaves<br/>- Colunas fantasmas no CSV<br/>- Falta de Tipo, Descrição ou LGPD"]
     end
 
-    subgraph TRANSPORTE["3. Camada de Transporte (Apenas Dados Aprovados)"]
-        ODI["👑 ODI 12c<br/>(Bancos Relacionais)"]
-        HOP["🔄 Apache Hop<br/>(Arquivos CSV / Excel Saneados)"]
-        PY["🐍 Python<br/>(APIs REST & Automação)"]
+    subgraph "3. Camada de Transporte"
+        ODI["ODI 12c (Bancos Relacionais)"]
+        HOP["Apache Hop (Arquivos CSV / Excel Saneados)"]
+        PY["Python (APIs REST & Automação)"]
     end
 
-    subgraph MONGO["4. MongoDB Enterprise (Persistência & Governança PRODEB)"]
-        COL_DADOS["Coleções de Negócio (RAW / TRUSTED)<br/>• Validação $jsonSchema Strict<br/>• Envelope _org e _governance"]
-        COL_CAT["Catálogo & Semântica Ativa:<br/>• tb_dataset (Metadados e Linhagem)<br/>• tb_sem_dominios (Domínios Corporativos)<br/>• tb_sem_conceitos (Conceitos Canônicos)"]
-        COL_AUD["Auditoria & Quarentena:<br/>• tb_auditoria_eventos (TTL 5 anos)<br/>• tb_quarentena_<tema>_<yyyymmdd>"]
+    subgraph "4. MongoDB Enterprise (Padrão PRODEB)"
+        COL_DADOS["Coleções de Negócio (RAW / TRUSTED)<br/>- Validação jsonSchema Strict<br/>- Envelope _org e _governance"]
+        COL_CAT["Catálogo & Semântica Ativa:<br/>- tb_dataset<br/>- tb_sem_dominios<br/>- tb_sem_conceitos"]
+        COL_AUD["Auditoria & Quarentena:<br/>- tb_auditoria_eventos<br/>- tb_quarentena"]
     end
 
-    subgraph AWS["5. Governança Corporativa na AWS"]
-        GLUE["⚙️ AWS Glue Data Catalog<br/>• Glue Connection / Crawler MongoDB<br/>• Tabelas Técnicas & Tipos BSON"]
-        subgraph SAGEMAKER["🌐 Amazon SageMaker Unified Studio / SageMaker Catalog (ex-DataZone)"]
-            SM_DOM["Domain Units por Órgão<br/>(SAEB, SEFAZ, SSP, DETRAN, PLANSERV)"]
-            SM_GLOSS["Business Glossary<br/>(Sincronizado com tb_sem_dominios / tb_sem_conceitos)"]
-            SM_FORMS["Metadata Forms<br/>• lgpd_compliance_form<br/>• lai_transparency_form<br/>• prodeb_provenance_form"]
-            SM_LAKE["SageMaker Lakehouse & Data Sharing<br/>(Assinatura governada entre Secretarias)"]
-        end
+    subgraph "5. Governança Corporativa na AWS"
+        GLUE["AWS Glue Data Catalog<br/>- Glue Connection / Crawler MongoDB<br/>- Tabelas Técnicas & Tipos BSON"]
+        SM_DOM["SageMaker Catalog: Domain Units por Órgão<br/>(SAEB, SEFAZ, SSP, DETRAN, PLANSERV)"]
+        SM_GLOSS["SageMaker Catalog: Business Glossary<br/>(Sincronizado com tb_sem_dominios / tb_sem_conceitos)"]
+        SM_FORMS["SageMaker Catalog: Metadata Forms<br/>(lgpd_compliance, lai_transparency, prodeb_provenance)"]
+        SM_LAKE["SageMaker Lakehouse & Data Sharing<br/>(Assinatura governada entre Secretarias)"]
     end
 
     INS --> AUD
     DADOS --> AUD
-    AUD -->|Reprovado (Dados/Metadados Vazios)| DEV
-    DEV -.->|Cliente corrige na fonte| CLIENTE
-    AUD -->|Aprovado| TRANSPORTE
-    ODI & HOP & PY --> COL_DADOS
-    ODI & HOP & PY --> COL_CAT
-    ODI & HOP & PY --> COL_AUD
+    AUD -->|Reprovado| DEV
+    DEV -.->|Cliente corrige na fonte| INS
+    AUD -->|Aprovado| ODI
+    AUD -->|Aprovado| HOP
+    AUD -->|Aprovado| PY
+    ODI --> COL_DADOS
+    HOP --> COL_DADOS
+    PY --> COL_DADOS
+    ODI --> COL_CAT
+    HOP --> COL_CAT
+    PY --> COL_CAT
+    ODI --> COL_AUD
+    HOP --> COL_AUD
+    PY --> COL_AUD
     COL_DADOS -.->|Glue Crawler / JDBC| GLUE
     COL_CAT -->|Sync via boto3| SM_GLOSS
     COL_CAT -->|Sync via boto3| SM_FORMS
-    GLUE --> SM_DOM --> SM_LAKE
+    GLUE --> SM_DOM
+    SM_DOM --> SM_LAKE
     SM_GLOSS --> SM_LAKE
     SM_FORMS --> SM_LAKE
 ```

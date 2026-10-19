@@ -35,12 +35,12 @@ Este guia orienta o **Engenheiro de Dados** a utilizar o **Planejador de DW** pa
 ## 1. Visão Geral do Processo
 
 ```mermaid
-flowchart LR
-    ENG[Você, Engenheiro] -->|1. Preenche INTAKE_DW.md<br/>e coloca amostras em entrada/| IA[IA - Arquiteto DW]
+graph LR
+    ENG["Você, Engenheiro"] -->|1. Preenche INTAKE_DW.md<br/>e coloca amostras em entrega/| IA["IA - Arquiteto DW"]
     IA -->|2. Entende grão, regras e fontes<br/>Apresenta Blueprint e Star Schema| ENG
     ENG -->|3. Valida e aprova modelo| IA
     IA -->|4. Gera DDLs, Procedures e Relatório<br/>em saida/planejador_dw/01_... a 11_...| ENG
-    ENG -->|5. Executa DDLs no Oracle<br/>Configura Pacotes no ODI| DB[(Oracle DW)]
+    ENG -->|5. Executa DDLs no Oracle<br/>Configura Pacotes no ODI| DB["Oracle DW"]
 ```
 
 O processo é colaborativo e ágil:
@@ -126,27 +126,27 @@ Preencha o arquivo [`modulos/planejador_dw/INTAKE_DW.md`](../../modulos/planejad
 ## 3. Entendendo a Arquitetura Corporativa Híbrida & Dual Strategy
 
 ```mermaid
-flowchart TD
-    subgraph INGEST["1. Ingestão Híbrida Externa"]
-        F_ARQ["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop (.hpl / .hwf)| STG["Tabelas STG_*<br/>(Oracle Staging)"]
-        F_API["APIs Web (REST/JSON)"] -->|Python Extractor (.py)| STG
+graph TD
+    subgraph "1. Ingestão Híbrida Externa"
+        F_ARQ["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop .hpl / .hwf| STG["Tabelas STG_*<br/>(Oracle Staging)"]
+        F_API["APIs Web (REST/JSON)"] -->|Python Extractor .py| STG
         F_BANCO["Bancos OLTP"] -->|ODI Mapping Direto| STG
     end
 
-    subgraph ODI_ORCH["2. Orquestração Centralizada no ODI"]
+    subgraph "2. Orquestração Centralizada no ODI"
         CMD["OdiOSCommand (SSH)<br/>Chama Hop e Python no servidor remoto"]
         CMD -.->|Dispara| F_ARQ
         CMD -.->|Dispara| F_API
     end
 
-    subgraph DW_CORE["3. Modelagem Dimensional In-Database (Oracle)"]
-        STG -->|Módulo Dimensões & Cubos| ODI_DIM["Tabelas Auxiliares<br/>ODI_DIM_*"]
+    subgraph "3. Modelagem Dimensional In-Database (Oracle)"
+        STG -->|Módulo Dimensões e Cubos| ODI_DIM["Tabelas Auxiliares<br/>ODI_DIM_*"]
         ODI_DIM -->|IKM SCD Tipo 2| DIM["Dimensões Oficiais<br/>DIM_* (B-Tree + Linha -1)"]
-        STG -->|Lookup com NVL(-1)| FATO["Fatos Oficiais<br/>FATO_* (Estratégia A ou B)"]
-        FATO -.->|Truncate & Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + Stats)"]
+        STG -->|Lookup com NVL -1| FATO["Fatos Oficiais<br/>FATO_* (Estratégia A ou B)"]
+        FATO -.->|Truncate e Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + Stats)"]
     end
 
-    subgraph AUDIT["4. Auditoria"]
+    subgraph "4. Auditoria"
         FATO --> CTRL["TB_CONTROLE_CARGA<br/>(ID_CARGA, DATA_INICIO, DATA_FIM, STATUS)"]
     end
 ```

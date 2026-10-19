@@ -34,9 +34,9 @@ O **NINHO** é uma plataforma corporativa criada para **Engenheiros de Dados**. 
 Para usar o NINHO no dia a dia, você só precisa entender a **Regra das 3 Pastas**:
 
 ```mermaid
-flowchart LR
-    E["📥 1. entrega/<br/>(O que você TEM)"] --> M["⚙️ 2. modulos/ ou Blueprint<br/>(O que você QUER)"]
-    M --> S["📤 3. saida/<br/>(O que sai PRONTO)"]
+graph LR
+    E["1. entrega/<br/>O que voce TEM"] --> M["2. modulos/ ou Blueprint<br/>O que voce QUER"]
+    M --> S["3. saida/<br/>O que sai PRONTO"]
 ```
 
 1. **📥 Pasta [`entrega/`](../../entrega/README.md) (Entrada):** É onde você solta os arquivos brutos do seu projeto (tabelas SQL/DDL de origem, planilhas Excel/CSV, arquivos `.pbix` do Power BI, XMLs do ODI ou pipelines `.hpl`/`.hwf` do Apache Hop).

@@ -150,12 +150,12 @@ NINHO /
 ## 🔄 Fluxo de Trabalho Integrado (Pipeline Contínuo de Ponta a Ponta)
 
 ```mermaid
-flowchart LR
-    A["1. FONTES BRUTAS<br/>(entrega/planejador_dw/)"] --> B["2. PLANEJADOR DW<br/>(modulos/planejador_dw/)"]
-    B --> C["3. ARTEFATOS DW<br/>(saida/planejador_dw/)"]
-    C -->|"Handoff Contínuo<br/>(/concluir-dw)"| D["4. INSUMOS SEMÂNTICA<br/>(entrega/camada_semantica/)"]
-    D --> E["5. CAMADA SEMÂNTICA<br/>(modulos/camada_semantica/)"]
-    E --> F["6. POWER BI & IA<br/>(Consumo Analítico)"]
+graph LR
+    A["1. FONTES BRUTAS<br/>entrega/planejador_dw/"] --> B["2. PLANEJADOR DW<br/>modulos/planejador_dw/"]
+    B --> C["3. ARTEFATOS DW<br/>saida/planejador_dw/"]
+    C -->|Handoff Continuo /concluir-dw| D["4. INSUMOS SEMANTICA<br/>entrega/camada_semantica/"]
+    D --> E["5. CAMADA SEMANTICA<br/>modulos/camada_semantica/"]
+    E --> F["6. POWER BI E IA<br/>Consumo Analitico"]
 ```
 
 1. **Depósito de Insumos (`entrega/planejador_dw/`):** Você deposita DDLs de origem, amostras CSV/Excel ou especificações de APIs.

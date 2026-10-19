@@ -21,10 +21,10 @@ Ative esta skill quando:
 ## 🔍 Método de Engenharia Reversa em 4 Passos
 
 ```mermaid
-flowchart TD
-    A["1. Descompactação / Inspeção do PBIX<br>(Report/Layout, DataModelSchema)"] --> B["2. Mapeamento de Regras & Filtros Implícitos<br>(Filtros de Página, Visuais, id_tarefa)"]
-    B --> C["3. Modelagem Dimensional DW (Kimball)<br>(Normalização de Fatos e Dimensões)"]
-    C --> D["4. Geração do Guia de BI & DAX<br>(Relacionamentos 1:* e Medidas DAX)"]
+graph TD
+    A["1. Descompactação / Inspeção do PBIX<br/>(Report/Layout, DataModelSchema)"] --> B["2. Mapeamento de Regras & Filtros Implícitos<br/>(Filtros de Página, Visuais, id_tarefa)"]
+    B --> C["3. Modelagem Dimensional DW (Kimball)<br/>(Normalização de Fatos e Dimensões)"]
+    C --> D["4. Geração do Guia de BI & DAX<br/>(Relacionamentos 1:* e Medidas DAX)"]
 ```
 
 ### 1. Extração Determinística Automatizada via CLI (`inspecionar_pbix.py`)

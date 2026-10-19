@@ -415,23 +415,29 @@ Abaixo está o documento JSON real que integra o Portal **BA.GOV.BR**, o **DETRA
 A grande entrega de valor para o Estado da Bahia é transformar buscas técnicas e isoladas em **consultas federadas orientadas ao significado**:
 
 ```mermaid
-flowchart LR
-    subgraph Negocio ["CAMADA SEMÂNTICA CORPORATIVA (PRODEB)"]
-        CNC["Conceito Canônico:\nCIDADÃO (CPF)"]
+graph LR
+    subgraph "CAMADA SEMÂNTICA CORPORATIVA (PRODEB)"
+        CNC["Conceito Canônico:<br/>CIDADÃO (CPF)"]
         REL1["é_um"]
         REL2["é_um"]
         REL3["possui"]
+        CND["Condutor (DETRAN)"]
+        SRV["Servidor (RH BAHIA)"]
+        BNF["Beneficiário (PLANSERV)"]
         
-        CNC --> REL1 --> CND["Condutor (DETRAN)"]
-        CNC --> REL2 --> SRV["Servidor (RH BAHIA)"]
-        CNC --> REL3 --> BNF["Beneficiário (PLANSERV)"]
+        CNC --> REL1
+        REL1 --> CND
+        CNC --> REL2
+        REL2 --> SRV
+        CNC --> REL3
+        REL3 --> BNF
     end
     
-    subgraph Fisico ["DATASETS FÍSICOS NOS ÓRGÃOS"]
-        DS1[("BA.GOV.BR\nidentificador")]
-        DS2[("DETRAN RENACH\nnum_cpf_condutor")]
-        DS3[("RH BAHIA\nnum_cpf")]
-        DS4[("PLANSERV\ncpf_titular")]
+    subgraph "DATASETS FÍSICOS NOS ÓRGÃOS"
+        DS1["BA.GOV.BR<br/>identificador"]
+        DS2["DETRAN RENACH<br/>num_cpf_condutor"]
+        DS3["RH BAHIA<br/>num_cpf"]
+        DS4["PLANSERV<br/>cpf_titular"]
     end
     
     CNC -.->|Mapeado| DS1

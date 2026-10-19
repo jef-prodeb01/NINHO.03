@@ -11,38 +11,38 @@ O trabalho já desenvolvido solucionou um dos maiores gargalos da governança de
 A meta agora é transformar essa estrutura em um **framework modular corporativo** composto por 4 pilares:
 
 ```mermaid
-flowchart TD
-    subgraph CORE["Core: Metadados Centrais & Catálogo de Ativos"]
+graph TD
+    subgraph "Core: Metadados Centrais & Catálogo de Ativos"
         OBJ["Catálogo Unificado de Ativos (CORE_ATIVO)"]
         OWNER["Gestão de Stakeholders & Curadoria (CORE_STAKEHOLDER)"]
     end
 
-    subgraph MOD_SEM["1. Módulo Camada Semântica (Atual)"]
+    subgraph "1. Módulo Camada Semântica (Atual)"
         META["8 Tabelas META_*<br/>(Glossário, Métricas, Regras, Consultas)"]
-        VIEWS["Views Analíticas em 3 Camadas<br/>(DIM_ATUAL → EVENTO → KPI)"]
+        VIEWS["Views Analíticas em 3 Camadas<br/>(DIM_ATUAL -> EVENTO -> KPI)"]
     end
 
-    subgraph MOD_DQ["2. Módulo Qualidade de Dados (Data Quality)"]
+    subgraph "2. Módulo Qualidade de Dados (Data Quality)"
         REGRAS["Motor de Regras (6 Dimensões DAMA-DMBOK)"]
         RUNS["Histórico de Execuções & Falhas"]
         SCORE["Scorecard de Qualidade por Ativo/Domínio"]
     end
 
-    subgraph MOD_GOV["3. Módulo Governança, Segurança & LGPD"]
+    subgraph "3. Módulo Governança, Segurança & LGPD"
         CLASS["Classificação de Dados (LGPD, PII, Sigilo)"]
         RLS["Políticas de Acesso & RLS Dinâmico"]
-        LINEAGE["Linhagem de Dados (Origem → DW → View → BI)"]
+        LINEAGE["Linhagem de Dados (Origem -> DW -> View -> BI)"]
     end
 
-    subgraph MOD_OPS["4. Módulo Observabilidade & Auditoria"]
+    subgraph "4. Módulo Observabilidade & Auditoria"
         FRESH["Monitoramento de Freshness & Volumetria"]
         DRIFT["Detecção de Schema Drift & Auditoria DDL"]
     end
 
-    CORE --> MOD_SEM
-    CORE --> MOD_DQ
-    CORE --> MOD_GOV
-    CORE --> MOD_OPS
+    OBJ --> META
+    OBJ --> REGRAS
+    OBJ --> CLASS
+    OBJ --> FRESH
 ```
 
 ---

@@ -13,27 +13,27 @@
 O Oracle Data Integrator (ODI) atua como maestro geral do pacote de cargas do projeto. Abaixo estão as especificações exatas para cada ferramenta de ingestão e os comandos para os componentes `OdiOSCommand`:
 
 ```mermaid
-flowchart TD
-    subgraph INGEST["1. Ingestão Híbrida Externa"]
+graph TD
+    subgraph "1. Ingestão Híbrida Externa"
         F_DB["Bancos Relacionais (OLTP)"] -->|ODI Mapping Direto| STG["Tabelas STG_*<br/>(Oracle Staging)"]
-        F_FILE["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop Pipeline (.hpl)| STG
-        F_API["APIs Web / JSON REST"] -->|Python Extractor (.py)| STG
+        F_FILE["Arquivos CSV/Excel (SFTP)"] -->|Apache Hop Pipeline .hpl| STG
+        F_API["APIs Web / JSON REST"] -->|Python Extractor .py| STG
     end
 
-    subgraph ORCH["2. Orquestração no ODI"]
+    subgraph "2. Orquestração no ODI"
         ODI_CMD["OdiOSCommand (SSH)<br/>Dispara Hop / Python no servidor remoto"]
         ODI_CMD -.->|Disparo Remoto| F_FILE
         ODI_CMD -.->|Disparo Remoto| F_API
     end
 
-    subgraph CORE_DW["3. Carga Dimensional & Fato (Oracle)"]
-        STG -->|Módulo Dimensões & Cubos| ODI_DIM["ODI_DIM_* (SCD2 Auxiliar)"]
+    subgraph "3. Carga Dimensional & Fato (Oracle)"
+        STG -->|Módulo Dimensões e Cubos| ODI_DIM["ODI_DIM_* (SCD2 Auxiliar)"]
         ODI_DIM -->|IKM Slowly Changing Dimension| DIM["DIM_* (B-Tree + Linha -1)"]
-        STG -->|Lookup com NVL(-1)| FATO["FATO_* (Estratégia A ou B)"]
-        FATO -.->|Truncate & Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + DBMS_STATS)"]
+        STG -->|Lookup com NVL -1| FATO["FATO_* (Estratégia A ou B)"]
+        FATO -.->|Truncate e Load| PRC["PRC_POS_CARGA_FATO<br/>(Rebuild NOLOGGING + DBMS_STATS)"]
     end
 
-    subgraph AUDIT["4. Auditoria"]
+    subgraph "4. Auditoria"
         FATO --> CTRL["TB_CONTROLE_CARGA<br/>(ID_CARGA, STATUS, LINHAS)"]
     end
 ```
