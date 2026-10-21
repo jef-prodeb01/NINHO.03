@@ -888,10 +888,34 @@ def validar_saida_gerada(base_dir: Path) -> dict:
 
     # 4. Auditoria de SQLs gerados na Camada Semântica
     ddl_meta_base = saida_sem / "meta_projeto" / "01_create_meta_tables.sql"
+    esquema_meta_ddl = {}
     if saida_sem.exists():
         if ddl_meta_base.exists():
             print_ok("Script base '01_create_meta_tables.sql' presente em 'saida/camada_semantica/meta_projeto/'.")
             results["sucessos"] += 1
+            txt_ddl_meta = ddl_meta_base.read_text(encoding="utf-8", errors="ignore")
+            for m_tab in re.finditer(
+                r"CREATE\s+TABLE\s+(?:[A-Z0-9_]+\.)?(META_[A-Z0-9_]+)\s*\((.*?)\)\s*;",
+                txt_ddl_meta,
+                re.IGNORECASE | re.DOTALL,
+            ):
+                nome_tab_meta = m_tab.group(1).upper()
+                corpo_tab_meta = m_tab.group(2)
+                cols_meta = set()
+                for linha_col in corpo_tab_meta.splitlines():
+                    linha_limpa = re.sub(r"--.*$", "", linha_col).strip().rstrip(",")
+                    if not linha_limpa:
+                        continue
+                    if re.match(
+                        r"^(CONSTRAINT|PRIMARY\s+KEY|UNIQUE|CHECK|FOREIGN\s+KEY)\b",
+                        linha_limpa,
+                        re.IGNORECASE,
+                    ):
+                        continue
+                    m_c = re.match(r"^([A-Z0-9_]+)\s+[A-Z0-9_]+", linha_limpa, re.IGNORECASE)
+                    if m_c:
+                        cols_meta.add(m_c.group(1).upper())
+                esquema_meta_ddl[nome_tab_meta] = cols_meta
         else:
             print_err("Script base '01_create_meta_tables.sql' ausente em 'saida/camada_semantica/meta_projeto/'!")
             results["erros"] += 1
@@ -940,6 +964,38 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     f"[{f_sql.name}] Valor de TIPO_ADITIVIDADE fora do padrao ('{adit_invalida[0]}'). Use estritamente 'ADITIVA', 'SEMI_ADITIVA' ou 'NAO_ADITIVA'."
                 )
                 results["erros"] += 1
+
+            # Validação de aderência estrutural dos scripts 01_meta_*.sql .. 08_meta_*.sql ao DDL 01_create_meta_tables.sql
+            if esquema_meta_ddl and re.match(r"^0[1-8]_meta_.*\.sql$", f_sql.name, re.IGNORECASE):
+                alvos_dml = re.findall(
+                    r"\b(?:MERGE\s+INTO|INSERT\s+INTO)\s+(?:[A-Z0-9_]+\.)?(META_[A-Z0-9_]+)\b",
+                    txt,
+                    re.IGNORECASE,
+                )
+                for tab_alvo in set(t.upper() for t in alvos_dml):
+                    if tab_alvo not in esquema_meta_ddl:
+                        print_err(
+                            f"[{f_sql.name}] Tabela '{tab_alvo}' referenciada no DML nao existe em '01_create_meta_tables.sql'!"
+                        )
+                        results["erros"] += 1
+                    else:
+                        cols_validas = esquema_meta_ddl[tab_alvo]
+                        for m_ins in re.finditer(
+                            r"\bINSERT\s*\(\s*([^)]+)\s*\)\s*VALUES",
+                            txt,
+                            re.IGNORECASE | re.DOTALL,
+                        ):
+                            cols_ins = [
+                                c.strip().split(".")[-1].upper()
+                                for c in m_ins.group(1).split(",")
+                                if c.strip()
+                            ]
+                            cols_inexistentes = [c for c in cols_ins if c not in cols_validas]
+                            if cols_inexistentes:
+                                print_err(
+                                    f"[{f_sql.name}] Coluna(s) {cols_inexistentes} no INSERT de '{tab_alvo}' nao existem em '01_create_meta_tables.sql'!"
+                                )
+                                results["erros"] += 1
 
             # COMMENT ON TABLE com "Uma linha representa" nas views analíticas
             if "vw_analiticas" in f_sql.parts and re.search(r"CREATE\s+(?:OR\s+REPLACE\s+)?(?:FORCE\s+)?VIEW", txt, re.IGNORECASE):
@@ -1021,6 +1077,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-

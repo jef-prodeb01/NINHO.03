@@ -41,55 +41,19 @@ Para garantir máxima fidelidade técnica e evitar sobrecarga de contexto, os pr
 
 ---
 
-## 🚀 Comandos Rápidos de Orquestração (Dicionário do Chat — Digite `/help` a qualquer momento)
+## 🚀 Execução Determinística de Comandos (`ninho.py` & Skills Nativas)
 
-- **🧭 Experiência Conversacional, Onboarding, Bússola & Oráculo de Dúvidas (`/help`, `/comecar`, `/onde-estou`, `/duvida`, `/doctor`, `/demo`):**
-  - `/help` (ou `/ajuda`, `/comandos`): **Exibe imediatamente aqui no chat** o catálogo completo de todos os comandos do NINHO organizado em tabelas por tópico (`ux`, `simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`), com as colunas `Comando no Chat | O que Faz | Equivalente CLI` (`python core/scripts_comuns/ajuda_ninho.py`).
-  - `/help <topico>`: Exibe no chat apenas a tabela do tópico desejado (`python core/scripts_comuns/ajuda_ninho.py --topico <topico>`).
-  - `/comecar` (ou `/onboarding`): Exibe o **Assistente de Boas-Vindas** com 5 trilhas guiadas em 3 passos para escolher o cenário ideal (`python core/scripts_comuns/ajuda_ninho.py --onboarding`).
-  - `/onde-estou` (ou `/status`): Exibe a **Bússola Contextual do Projeto** com barra visual de progresso (`[███░░] Fase X/5`), arquivos detectados em `entrega/` e `saida/` e recomendações do próximo passo (`python core/scripts_comuns/ajuda_ninho.py --onde-estou`).
-  - `/duvida <tema>` (ou `/explicar <conceito>`): Consulta o **Oráculo Arquitetural Interativo** sobre conceitos do NINHO (`estrategia-carga`, `scd`, `linha-default`, `camadas-views`, `arquitetura-etl`, `gate-governanca`, `simulacao`, `fast-track`, `rls` ou `listar`) (`python core/scripts_comuns/ajuda_ninho.py --explicar <tema>`).
-  - `/doctor`: Audita a saúde das pastas de `entrega/`, detecta arquivos soltos fora da subpasta canônica e os organiza automaticamente com `--corrigir` (`python core/scripts_comuns/ajuda_ninho.py --doctor --corrigir`).
-  - `/demo` e `/limpar-demo`: Roda um **Projeto Playground Completo** (DDL + Simulação + DW + Camada Semântica + Dicionário HTML + Mock CSV BI) em 5 segundos para demonstração, e limpa o ambiente com `/limpar-demo` (`python core/scripts_comuns/ajuda_ninho.py --demo` / `--limpar-demo`).
-- **🧪 Simulação Ponta a Ponta & Blueprint 100% Editável (Dry-Run antes da Execução Real):**
-  - `/simular-dw`: Gera a simulação completa e editável do Data Warehouse (`entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md`) com parâmetros globais, matriz De/Para de colunas (`[x]`/`[ ]`), amostra Dry-Run de 3 linhas (incluindo linha `-1`), Radar Consultivo e escopo de entregáveis (`python core/scripts_comuns/simular_projeto.py --modulo dw --acao simular`).
-  - `/simular-semantica`: Gera a simulação completa e editável da Camada Semântica (`entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`) com as 3 camadas de Views (`VW_DIM`, `VW_EVENTO`, `VW_KPI`), catálogo de indicadores e escopo de entregáveis (`python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular`).
-  - `/simular-projeto`: Gera simultaneamente as Blueprints editáveis de Simulação do **Planejador DW** e da **Camada Semântica** (`python core/scripts_comuns/simular_projeto.py --modulo ambos --acao simular`).
-  - `/executar-simulacao`: Lê todas as edições feitas pelo engenheiro nas Blueprints aprovadas (`SIMULACAO_BLUEPRINT_DW.md` e/ou `SIMULACAO_BLUEPRINT_SEMANTICA.md`) e executa a geração física real em `saida/planejador_dw/` e `saida/camada_semantica/` (`python core/scripts_comuns/simular_projeto.py --modulo ambos --acao executar`).
-- **⚡ Micro-Processos Independentes & Fast-Track (DW, ODI e Semântica — Sem Impactar o Processo Completo):**
-  - `/gerar-comentarios`: Gera apenas `COMMENT ON TABLE` / `COMMENT ON COLUMN` (`90_patch_comentarios_*.sql`) e o Dicionário HTML (`python core/scripts_comuns/melhorar_dw_existente.py --modo comentarios`).
-  - `/gerar-dicionario`: Gera exclusivamente o Dicionário de Dados HTML interativo (`11_dicionario_dados/dicionario_dados.html`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo dicionario`).
-  - `/gerar-indices`: Gera apenas os índices faltantes (`BITMAP` ou `B-TREE COMPRESS 1` nas FKs da Fato, B-Tree SCD2 nas Dimensões, `DBMS_STATS`) + `07_prc_pos_carga_fato.sql` (`python core/scripts_comuns/melhorar_dw_existente.py --modo indices`).
-  - `/gerar-linha-default`: Gera apenas o script idempotente (`MERGE INTO`) do registro sentinela `-1` (`91_patch_ajustes_dim.sql`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo linha-default`).
-  - `/gerar-constraints`: Gera apenas as constraints `PK`/`FK` não-destrutivas (`ENABLE NOVALIDATE` / `RELY DISABLE NOVALIDATE`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo constraints`).
-  - `/gerar-testes-dw`: Gera apenas a suíte SQL de auditoria de integridade (`10_testes_integridade/13_testes_integridade.sql`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo testes`).
-  - `/gerar-guia-bi`: Gera apenas o Guia do Analista de BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-bi`).
-  - `/gerar-mock-bi`: Gera dados sintéticos CSV 100% dinâmicos a partir dos DDLs/Blueprints reais do projeto com ~3% de chaves `-1` Kimball (`python core/scripts_comuns/gerar_mock_dados.py --linhas 150`).
-  - `/gerar-selects-odi`: Gera apenas as tabelas auxiliares `ODI_DIM_*` e as consultas SQL de carga do ODI (`03_selects_odi_dimensoes.sql` e `04_select_odi_fato.sql`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo selects-odi`).
-  - `/gerar-guia-odi`: Gera apenas os guias passo a passo de construção no Canvas do ODI 12c (`09_relatorio_estrategias/guia_estrategias_odi_*.md`) (`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-odi`).
-  - `/melhorar-dw-existente`: Executa o Raio-X não-destrutivo completo do DW já construído (`DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md`) e gera todos os patches sem tocar na carga (`python core/scripts_comuns/melhorar_dw_existente.py --modo tudo`).
-  - `/gerar-views-semantica`: Gera apenas os scripts das Views analíticas da Camada Semântica (`--modo views-semantica`, ou individualmente `--modo views-dim`, `--modo views-evento`, `--modo views-kpi` via `python core/scripts_comuns/modular_semantica.py`).
-  - `/gerar-catalogo-meta`: Gera apenas os scripts idempotentes (`MERGE INTO`) das 8 tabelas `META_*` da Camada Semântica (`python core/scripts_comuns/modular_semantica.py --modo catalogo-meta`).
-  - `/gerar-rls`: Gera apenas o script de segurança Row-Level Security / VPD (`02_rls.sql`) (`python core/scripts_comuns/modular_semantica.py --modo rls`).
-- **Inspeção, Engenharia Reversa e Auditoria Técnica:**
-  - `/inspecionar-fontes`: Audita arquivos depositados nas pastas de entrega e executa o extrator determinístico de DDLs e Radar Consultivo de KPIs (`python core/scripts_comuns/inspecionar_ddl_origem.py`).
-  - `/inspecionar-pbix`: Descompacta e audita arquivos `.pbix` do Power BI (`Report/Layout`, `DiagramLayout`, `Connections`), traduz filtros AST e executa as heurísticas `PBIX-H1` a `PBIX-H5` (`python core/scripts_comuns/inspecionar_pbix.py`).
-  - `/auditar-mapa-odi`: Executa o motor preditivo de tuning (`H1` a `H9`) em arquivos XML ou pastas completas do ODI 12c (`Mapas`, `Cenas`, `Pacotes`, `Procedures`, `Variaveis`) (`python core/scripts_comuns/auditar_mapa_odi.py`).
-  - `/auditar-hop`: Executa o motor determinístico de auditoria e segurança (`HOP-H1` a `HOP-H8`) em projetos Apache Hop 2.x (`.hpl`, `.hwf`, `.json`) e extratores Python/FTPS (`python core/scripts_comuns/auditar_esteira_hop.py`).
-  - `/inspecionar-governanca`: Audita planilhas `.xlsx` (`Dados - Insumos` / `Dicionário de Dados`) e amostras `.csv` do cliente no Gate 0.5, gerando a Matriz DE/PARA MongoDB PRODEB ou o Relatório de Devolução ao Cliente (`python core/scripts_comuns/inspecionar_insumos_governanca.py`).
-- **Modelagem Dimensional & Construção do DW:**
-  - `/desafiar-grao`: Propõe e avalia alternativas de granularidade da tabela Fato contra as perguntas de negócio.
-  - `/classificar-scd`: Classifica cada atributo das dimensões entre Chave Natural (`ID_*`), SCD Tipo 1 e SCD Tipo 2.
-  - `/definir-estrategia-carga`: Compara e define entre Estratégia A (Truncate & Load + Bitmap) e Estratégia B (MERGE Incremental + B-Tree).
-  - `/gerar-blueprint`: Compila o Blueprint técnico com a Matriz De/Para de colunas 100% fiel à origem e o Radar Consultivo da IA (Novos KPIs, Regras e Perguntas Sugeridas).
-  - `/aprovar-blueprint`: Autoriza o início da geração física dos scripts DDL, procedures, esteiras ETL e Guia de BI em `saida/planejador_dw/`.
-  - `/auditar-ddl`: Audita a sintaxe Oracle, linha `-1`, sequences e índices dos scripts gerados.
-- **Handoff, Camada Semântica e Governança Cloud:**
-  - `/concluir-dw` (ou `/transicionar-semantica`): Realiza o handoff e a transição contínua para a Camada Semântica (`python core/scripts_comuns/transicionar_dw_para_semantica.py`).
-  - `/iniciar-semantica`: Gera as Views semânticas em 3 camadas (`VW_DIM_*_ATUAL`, `VW_EVENTO_*`, `VW_KPI_*`), políticas RLS/VPD e scripts das 8 tabelas `META_*` em `saida/camada_semantica/`.
-  - `/gerar-governanca`: Gera os artefatos das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e scripts para AWS Glue & SageMaker Catalog em `saida/governanca_dados/` (após aprovação no Gate 0.5).
-- **Qualidade, Testes E2E, Diagnóstico e Empacotamento:**
-  - `/validar-entrega`: Executa o checklist pré-voo e a auditoria pós-geração da pasta `saida/` (`python core/scripts_comuns/validar_entrega.py all`, `python core/scripts_comuns/validar_entrega.py fast-track` ou `python core/scripts_comuns/validar_entrega.py saida`).
-  - `/testar-ninho`: Executa a suíte automatizada de testes End-to-End (E2E) em todos os motores do NINHO e limpa o workspace ao final (`python core/scripts_comuns/testar_ninho.py`).
-  - `/diagnosticar-erro-carga`: Diagnostica falhas de execução no Oracle (`ORA-*`), ODI ou Hop e fornece script de remediação idempotente.
-  - `/empacotar-projeto`: Exporta a entrega completa em `.zip` ou limpa o workspace para um novo projeto (`python core/scripts_comuns/gerenciar_projeto.py --status`).
+Todos os comandos com `/` estão registrados como **Skills nativas** em `.agents/skills/<comando>/SKILL.md` (aparecendo no autocompletar da IDE ao digitar `/`) e também possuem um **Dispatcher CLI unificado** na raiz do projeto ([`ninho.py`](ninho.py) / `ninho.bat`).
+
+> [!TIP]
+> **Dica importante sobre `/ajuda` vs `/help`:** Em IDEs agênticas (Antigravity, Claude Code, Cursor), `/help` e `/status` costumam ser comandos reservados da própria IDE. Use **`/ajuda`** (ou `/ninho-help`) e **`/onde-estou`** no menu `/` da IDE, ou execute `python ninho.py <comando>` direto no terminal.
+
+**Regra para o Agente:** Sempre que o engenheiro acionar qualquer comando `/<comando>` no chat, execute imediatamente `python ninho.py <comando> [argumentos]` via `run_command`:
+
+| Categoria | Comandos Nativo (Chat `/` ou `python ninho.py <cmd>`) | O que Executa |
+| :--- | :--- | :--- |
+| **Setup & UX** | `/instalar-comandos` (`/setup`), `/ajuda` (`/help`), `/onde-estou`, `/comecar`, `/duvida <tema>`, `/doctor`, `/demo`, `/limpar-demo` | Instalador de skills de comando, catálogo de comandos, bússola de progresso, onboarding, FAQ arquitetural, auto-organização de pastas e projeto Playground. |
+| **Simulação Editável** | `/simular-dw`, `/simular-semantica`, `/simular-projeto`, `/executar-simulacao` | Gera Blueprints 100% editáveis em `entrega/` (`--acao simular`) e gera os scripts físicos em `saida/` após aprovação (`--acao executar`). |
+| **Fast-Track & Micro** | `/melhorar-dw-existente`, `/gerar-comentarios`, `/gerar-dicionario`, `/gerar-indices`, `/gerar-linha-default`, `/gerar-constraints`, `/gerar-testes-dw`, `/gerar-guia-bi`, `/gerar-mock-bi`, `/gerar-selects-odi`, `/gerar-guia-odi`, `/gerar-views-semantica`, `/gerar-catalogo-meta`, `/gerar-rls` | Executa recortes isolados sem exigir `INTAKE_*.md` e sem alterar o processo de carga existente. |
+| **Inspeção & Auditoria** | `/inspecionar-fontes`, `/inspecionar-pbix`, `/auditar-mapa-odi`, `/auditar-hop`, `/inspecionar-governanca` | Audita DDLs de origem, arquivos `.pbix`, XMLs do ODI 12c (`H1..H9`), projetos Apache Hop 2.x (`HOP-H1..H8`) e insumos de Governança (Gate 0.5). |
+| **Qualidade & Entrega** | `/validar-entrega`, `/auditar-ddl`, `/testar-ninho`, `/empacotar-projeto`, `/concluir-dw`, `/iniciar-semantica` | Valida pré-voo/saída, roda a suíte E2E (`T01..T10`), faz handoff DW -> Semântica e exporta `.zip`. |

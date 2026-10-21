@@ -44,6 +44,7 @@ from melhorar_dw_existente import (
     identificar_fks_fato,
     parse_ddl_text,
 )
+from inspecionar_ddl_origem import ler_texto_sql
 
 ROOT_DIR = SCRIPT_DIR.parent.parent
 ENTREGA_SEM_DDL_DIR = ROOT_DIR / "entrega" / "camada_semantica" / "ddl"
@@ -98,7 +99,7 @@ def carregar_tabelas_dw(arquivos_sql: list[Path]) -> list[dict]:
     """Lê todos os arquivos SQL e retorna apenas tabelas DIM_* e FATO_* deduplicadas."""
     por_nome: dict[str, dict] = {}
     for arq in arquivos_sql:
-        txt = arq.read_text(encoding="utf-8", errors="replace")
+        txt = ler_texto_sql(arq)
         for t in parse_ddl_text(txt, arq.name):
             papel = classificar_tabela_dw(t)
             if papel in ("DIM", "FATO"):
@@ -460,16 +461,20 @@ def construir_catalogo_meta(
         ativa, vw_ref, _ = _obter_cfg_view_semantica(edicoes_sem, camada_key, tname, vw_default, "Uma linha representa um registro.")
         if not ativa:
             continue
-        termo = f"{papel_label} {ent}".title()
+        identificador = f"{papel_label}_{ent}"[:200].replace("'", "''")
+        dominio = ent[:100].replace("'", "''")
         definicao = (t.get("comentario_tabela") or f"Entidade oficial de {papel_label.lower()} para {ent} no projeto {projeto}.").replace("'", "''")
+        sinonimos = f"{tname}, {vw_ref}"[:300].replace("'", "''")
+        regra_uso = f"Consultar preferencialmente via view semântica {vw_ref}."[:1000].replace("'", "''")
         linhas_01.append(
             f"MERGE INTO {schema}.META_GLOSSARIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, '{termo}' AS NOM_TERMO, '{definicao}' AS DES_DEFINICAO, "
-            f"'{papel_label}' AS IND_CATEGORIA, '{vw_ref}' AS NOM_OBJETO_FISICO, 'ATIVO' AS IND_STATUS FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.NOM_TERMO = src.NOM_TERMO)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_DEFINICAO = src.DES_DEFINICAO, dst.NOM_OBJETO_FISICO = src.NOM_OBJETO_FISICO\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, NOM_TERMO, DES_DEFINICAO, IND_CATEGORIA, NOM_OBJETO_FISICO, IND_STATUS)\n"
-            f"VALUES (src.SGL_PROJETO, src.NOM_TERMO, src.DES_DEFINICAO, src.IND_CATEGORIA, src.NOM_OBJETO_FISICO, src.IND_STATUS);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, '{dominio}' AS DOMINIO, '{identificador}' AS IDENTIFICADOR, "
+            f"'{definicao}' AS DESCRICAO, '{sinonimos}' AS SINONIMOS, 'Ver catálogo de domínio' AS EXEMPLOS_VALORES, "
+            f"'{regra_uso}' AS REGRA_USO, '{papel_label}' AS CLASSIFICACAO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.DOMINIO = src.DOMINIO AND dst.IDENTIFICADOR = src.IDENTIFICADOR)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.DESCRICAO = src.DESCRICAO, dst.SINONIMOS = src.SINONIMOS, dst.REGRA_USO = src.REGRA_USO, dst.CLASSIFICACAO = src.CLASSIFICACAO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, DOMINIO, IDENTIFICADOR, DESCRICAO, SINONIMOS, EXEMPLOS_VALORES, REGRA_USO, CLASSIFICACAO)\n"
+            f"VALUES (src.PROJETO, src.DOMINIO, src.IDENTIFICADOR, src.DESCRICAO, src.SINONIMOS, src.EXEMPLOS_VALORES, src.REGRA_USO, src.CLASSIFICACAO);\n"
         )
     linhas_01.append("COMMIT;\n")
     arquivos["01_meta_glossario.sql"] = "\n".join(linhas_01)
@@ -485,25 +490,31 @@ def construir_catalogo_meta(
         metricas_para_inserir = list(edicoes_sem.get("metricas_ativas", [])) + list(edicoes_sem.get("radar_kpis", []))
         cods_inseridos: set[str] = set()
         for m_bp in metricas_para_inserir:
-            cod_m = m_bp["cod_metrica"].upper()[:30].replace("'", "''")
+            cod_m = m_bp["cod_metrica"].upper()[:100].replace("'", "''")
             if cod_m in cods_inseridos:
                 continue
             cods_inseridos.add(cod_m)
             nom_m = m_bp["nom_metrica"].replace("'", "''")
-            des_m = m_bp.get("des_metrica", m_bp["nom_metrica"]).replace("'", "''")
+            des_m = f"{nom_m} — {m_bp.get('des_metrica', m_bp['nom_metrica'])}".replace("'", "''")
             form_m = m_bp["formula_sql"].replace("'", "''")
             vw_m = m_bp["view_recomendada"].replace("'", "''")
             fmt_m = m_bp.get("tip_formato", "NUMERICO").replace("'", "''")
+            form_upper = form_m.upper()
+            if any(tok in form_upper for tok in ("AVG(", "ROUND(", "/", "NULLIF(", "DISTINCT")):
+                aditividade = "NAO_ADITIVA"
+            else:
+                aditividade = "ADITIVA"
             linhas_02.append(
                 f"MERGE INTO {schema}.META_METRICA dst\n"
-                f"USING (SELECT '{projeto}' AS SGL_PROJETO, '{cod_m}' AS COD_METRICA, "
-                f"'{nom_m}' AS NOM_METRICA, "
-                f"'{des_m}' AS DES_METRICA, "
-                f"'{form_m}' AS DES_FORMULA_SQL, '{vw_m}' AS NOM_VIEW_ORIGEM, '{fmt_m}' AS TIP_FORMATO FROM DUAL) src\n"
-                f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_METRICA = src.COD_METRICA)\n"
-                f"WHEN MATCHED THEN UPDATE SET dst.NOM_METRICA = src.NOM_METRICA, dst.DES_FORMULA_SQL = src.DES_FORMULA_SQL, dst.NOM_VIEW_ORIGEM = src.NOM_VIEW_ORIGEM\n"
-                f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_METRICA, NOM_METRICA, DES_METRICA, DES_FORMULA_SQL, NOM_VIEW_ORIGEM, TIP_FORMATO)\n"
-                f"VALUES (src.SGL_PROJETO, src.COD_METRICA, src.NOM_METRICA, src.DES_METRICA, src.DES_FORMULA_SQL, src.NOM_VIEW_ORIGEM, src.TIP_FORMATO);\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, '{cod_m}' AS NOME_METRICA, "
+                f"'{des_m}' AS DESCRICAO_NEGOCIO, "
+                f"'{form_m}' AS FORMULA_SQL, '{aditividade}' AS TIPO_ADITIVIDADE, "
+                f"'DTC_REFERENCIA' AS DATA_REFERENCIA, 'Nenhum' AS FILTROS_OBRIGATORIOS, "
+                f"'{vw_m}' AS DIMENSOES_PERMITIDAS, '{fmt_m}' AS UNIDADE FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_METRICA = src.NOME_METRICA)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.DESCRICAO_NEGOCIO = src.DESCRICAO_NEGOCIO, dst.FORMULA_SQL = src.FORMULA_SQL, dst.TIPO_ADITIVIDADE = src.TIPO_ADITIVIDADE, dst.DIMENSOES_PERMITIDAS = src.DIMENSOES_PERMITIDAS, dst.UNIDADE = src.UNIDADE\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_METRICA, DESCRICAO_NEGOCIO, FORMULA_SQL, TIPO_ADITIVIDADE, DATA_REFERENCIA, FILTROS_OBRIGATORIOS, DIMENSOES_PERMITIDAS, UNIDADE)\n"
+                f"VALUES (src.PROJETO, src.NOME_METRICA, src.DESCRICAO_NEGOCIO, src.FORMULA_SQL, src.TIPO_ADITIVIDADE, src.DATA_REFERENCIA, src.FILTROS_OBRIGATORIOS, src.DIMENSOES_PERMITIDAS, src.UNIDADE);\n"
             )
     else:
         for f in fatos:
@@ -513,58 +524,96 @@ def construir_catalogo_meta(
             _, vw_kpi, _ = _obter_cfg_view_semantica(edicoes_sem, "KPI", fname, vw_kpi_default, "Uma linha representa um grupo.")
             linhas_02.append(
                 f"MERGE INTO {schema}.META_METRICA dst\n"
-                f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'QTD_TOTAL_{ent}' AS COD_METRICA, "
-                f"'Volume Total de {ent.title()}' AS NOM_METRICA, "
-                f"'Contagem total de registros na fato {fname}' AS DES_METRICA, "
-                f"'COUNT(1)' AS DES_FORMULA_SQL, '{vw_kpi}' AS NOM_VIEW_ORIGEM, 'INTEIRO' AS TIP_FORMATO FROM DUAL) src\n"
-                f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_METRICA = src.COD_METRICA)\n"
-                f"WHEN MATCHED THEN UPDATE SET dst.DES_FORMULA_SQL = src.DES_FORMULA_SQL, dst.NOM_VIEW_ORIGEM = src.NOM_VIEW_ORIGEM\n"
-                f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_METRICA, NOM_METRICA, DES_METRICA, DES_FORMULA_SQL, NOM_VIEW_ORIGEM, TIP_FORMATO)\n"
-                f"VALUES (src.SGL_PROJETO, src.COD_METRICA, src.NOM_METRICA, src.DES_METRICA, src.DES_FORMULA_SQL, src.NOM_VIEW_ORIGEM, src.TIP_FORMATO);\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, 'QTD_TOTAL_{ent}' AS NOME_METRICA, "
+                f"'Volume Total de {ent.title()} — Contagem total de registros na fato {fname}' AS DESCRICAO_NEGOCIO, "
+                f"'COUNT(1)' AS FORMULA_SQL, 'ADITIVA' AS TIPO_ADITIVIDADE, "
+                f"'DTC_REFERENCIA' AS DATA_REFERENCIA, 'Nenhum' AS FILTROS_OBRIGATORIOS, "
+                f"'{vw_kpi}' AS DIMENSOES_PERMITIDAS, 'INTEIRO' AS UNIDADE FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_METRICA = src.NOME_METRICA)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.FORMULA_SQL = src.FORMULA_SQL, dst.DIMENSOES_PERMITIDAS = src.DIMENSOES_PERMITIDAS\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_METRICA, DESCRICAO_NEGOCIO, FORMULA_SQL, TIPO_ADITIVIDADE, DATA_REFERENCIA, FILTROS_OBRIGATORIOS, DIMENSOES_PERMITIDAS, UNIDADE)\n"
+                f"VALUES (src.PROJETO, src.NOME_METRICA, src.DESCRICAO_NEGOCIO, src.FORMULA_SQL, src.TIPO_ADITIVIDADE, src.DATA_REFERENCIA, src.FILTROS_OBRIGATORIOS, src.DIMENSOES_PERMITIDAS, src.UNIDADE);\n"
             )
             for c in f["colunas"]:
                 cname = c["nome_dw"]
                 if cname.startswith(("QTD_", "VLR_", "VAL_", "QT_")):
                     linhas_02.append(
                         f"MERGE INTO {schema}.META_METRICA dst\n"
-                        f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'SUM_{cname}' AS COD_METRICA, "
-                        f"'Somatório de {cname}' AS NOM_METRICA, "
-                        f"'Soma consolidada da coluna {cname} em {fname}' AS DES_METRICA, "
-                        f"'SUM(NVL({cname}, 0))' AS DES_FORMULA_SQL, '{vw_kpi}' AS NOM_VIEW_ORIGEM, 'NUMERICO' AS TIP_FORMATO FROM DUAL) src\n"
-                        f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_METRICA = src.COD_METRICA)\n"
-                        f"WHEN MATCHED THEN UPDATE SET dst.DES_FORMULA_SQL = src.DES_FORMULA_SQL\n"
-                        f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_METRICA, NOM_METRICA, DES_METRICA, DES_FORMULA_SQL, NOM_VIEW_ORIGEM, TIP_FORMATO)\n"
-                        f"VALUES (src.SGL_PROJETO, src.COD_METRICA, src.NOM_METRICA, src.DES_METRICA, src.DES_FORMULA_SQL, src.NOM_VIEW_ORIGEM, src.TIP_FORMATO);\n"
+                        f"USING (SELECT '{projeto}' AS PROJETO, 'SUM_{cname}' AS NOME_METRICA, "
+                        f"'Somatório de {cname} — Soma consolidada da coluna {cname} em {fname}' AS DESCRICAO_NEGOCIO, "
+                        f"'SUM(NVL({cname}, 0))' AS FORMULA_SQL, 'ADITIVA' AS TIPO_ADITIVIDADE, "
+                        f"'DTC_REFERENCIA' AS DATA_REFERENCIA, 'Nenhum' AS FILTROS_OBRIGATORIOS, "
+                        f"'{vw_kpi}' AS DIMENSOES_PERMITIDAS, 'NUMERICO' AS UNIDADE FROM DUAL) src\n"
+                        f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_METRICA = src.NOME_METRICA)\n"
+                        f"WHEN MATCHED THEN UPDATE SET dst.FORMULA_SQL = src.FORMULA_SQL\n"
+                        f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_METRICA, DESCRICAO_NEGOCIO, FORMULA_SQL, TIPO_ADITIVIDADE, DATA_REFERENCIA, FILTROS_OBRIGATORIOS, DIMENSOES_PERMITIDAS, UNIDADE)\n"
+                        f"VALUES (src.PROJETO, src.NOME_METRICA, src.DESCRICAO_NEGOCIO, src.FORMULA_SQL, src.TIPO_ADITIVIDADE, src.DATA_REFERENCIA, src.FILTROS_OBRIGATORIOS, src.DIMENSOES_PERMITIDAS, src.UNIDADE);\n"
                     )
     linhas_02.append("COMMIT;\n")
     arquivos["02_meta_metrica.sql"] = "\n".join(linhas_02)
 
-    # 03_meta_hierarquia.sql
+    # 03_meta_objeto.sql
     linhas_03 = [
         "-- =============================================================================",
-        f"-- NINHO — CATÁLOGO SEMÂNTICO: 03_meta_hierarquia.sql (PROJETO: {projeto})",
+        f"-- NINHO — CATÁLOGO SEMÂNTICO: 03_meta_objeto.sql (PROJETO: {projeto})",
         "-- =============================================================================",
         "",
     ]
     for d in dims:
-        ent = _nome_entidade_curto(d["nome_tabela"])
+        tname = d["nome_tabela"]
+        ent = _nome_entidade_curto(tname)
+        nk = _obter_nk_dim(d)
         vw_dim_default = f"VW_{projeto}_DIM_{ent}_ATUAL"
-        ativa, vw_dim, _ = _obter_cfg_view_semantica(edicoes_sem, "DIM", d["nome_tabela"], vw_dim_default, "Uma linha representa um registro.")
+        grao_default = f"Uma linha representa 1 {nk} vigente"
+        ativa, vw_dim, grao = _obter_cfg_view_semantica(edicoes_sem, "DIM", tname, vw_dim_default, grao_default)
         if not ativa:
             continue
-        nk = _obter_nk_dim(d)
+        grao_esc = grao.replace("'", "''")[:500]
         linhas_03.append(
-            f"MERGE INTO {schema}.META_HIERARQUIA dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'HIER_{ent}' AS COD_HIERARQUIA, "
-            f"'Hierarquia Analítica de {ent.title()}' AS NOM_HIERARQUIA, "
-            f"'{vw_dim}' AS NOM_VIEW_DIMENSAO, 1 AS NUM_NIVEL, '{nk}' AS NOM_COLUNA_NIVEL FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_HIERARQUIA = src.COD_HIERARQUIA AND dst.NUM_NIVEL = src.NUM_NIVEL)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.NOM_COLUNA_NIVEL = src.NOM_COLUNA_NIVEL\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_HIERARQUIA, NOM_HIERARQUIA, NOM_VIEW_DIMENSAO, NUM_NIVEL, NOM_COLUNA_NIVEL)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_HIERARQUIA, src.NOM_HIERARQUIA, src.NOM_VIEW_DIMENSAO, src.NUM_NIVEL, src.NOM_COLUNA_NIVEL);\n"
+            f"MERGE INTO {schema}.META_OBJETO dst\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, '{vw_dim}' AS NOME_OBJETO, "
+            f"'DIMENSAO' AS TIPO_OBJETO, '{ent[:100]}' AS DOMINIO, '{grao_esc}' AS GRAO, "
+            f"'{schema}' AS SCHEMA_ORIGEM, '{tname}' AS OBJETO_FISICO, 'S' AS IND_GOVERNADO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.TIPO_OBJETO = src.TIPO_OBJETO, dst.GRAO = src.GRAO, dst.OBJETO_FISICO = src.OBJETO_FISICO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, TIPO_OBJETO, DOMINIO, GRAO, SCHEMA_ORIGEM, OBJETO_FISICO, IND_GOVERNADO, IND_ATIVO, DT_INICIO_VIGENCIA)\n"
+            f"VALUES (src.PROJETO, src.NOME_OBJETO, src.TIPO_OBJETO, src.DOMINIO, src.GRAO, src.SCHEMA_ORIGEM, src.OBJETO_FISICO, src.IND_GOVERNADO, src.IND_ATIVO, SYSDATE);\n"
         )
+    for f in fatos:
+        fname = f["nome_tabela"]
+        ent = _nome_entidade_curto(fname)
+        vw_ev_default = f"VW_{projeto}_EVENTO_{ent}"
+        grao_ev_default = f"Uma linha representa 1 evento em {fname}"
+        ativa_ev, vw_ev, grao_ev = _obter_cfg_view_semantica(edicoes_sem, "EVENTO", fname, vw_ev_default, grao_ev_default)
+        if ativa_ev:
+            grao_ev_esc = grao_ev.replace("'", "''")[:500]
+            linhas_03.append(
+                f"MERGE INTO {schema}.META_OBJETO dst\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, '{vw_ev}' AS NOME_OBJETO, "
+                f"'EVENTO' AS TIPO_OBJETO, '{ent[:100]}' AS DOMINIO, '{grao_ev_esc}' AS GRAO, "
+                f"'{schema}' AS SCHEMA_ORIGEM, '{fname}' AS OBJETO_FISICO, 'S' AS IND_GOVERNADO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.TIPO_OBJETO = src.TIPO_OBJETO, dst.GRAO = src.GRAO, dst.OBJETO_FISICO = src.OBJETO_FISICO\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, TIPO_OBJETO, DOMINIO, GRAO, SCHEMA_ORIGEM, OBJETO_FISICO, IND_GOVERNADO, IND_ATIVO, DT_INICIO_VIGENCIA)\n"
+                f"VALUES (src.PROJETO, src.NOME_OBJETO, src.TIPO_OBJETO, src.DOMINIO, src.GRAO, src.SCHEMA_ORIGEM, src.OBJETO_FISICO, src.IND_GOVERNADO, src.IND_ATIVO, SYSDATE);\n"
+            )
+        vw_kpi_default = f"VW_{projeto}_KPI_{ent}"
+        grao_kpi_default = "Uma linha representa 1 eixo dimensional agrupado"
+        ativa_kpi, vw_kpi, grao_kpi = _obter_cfg_view_semantica(edicoes_sem, "KPI", fname, vw_kpi_default, grao_kpi_default)
+        if ativa_kpi:
+            grao_kpi_esc = grao_kpi.replace("'", "''")[:500]
+            linhas_03.append(
+                f"MERGE INTO {schema}.META_OBJETO dst\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, '{vw_kpi}' AS NOME_OBJETO, "
+                f"'KPI' AS TIPO_OBJETO, '{ent[:100]}' AS DOMINIO, '{grao_kpi_esc}' AS GRAO, "
+                f"'{schema}' AS SCHEMA_ORIGEM, '{vw_ev if ativa_ev else fname}' AS OBJETO_FISICO, 'S' AS IND_GOVERNADO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.TIPO_OBJETO = src.TIPO_OBJETO, dst.GRAO = src.GRAO, dst.OBJETO_FISICO = src.OBJETO_FISICO\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, TIPO_OBJETO, DOMINIO, GRAO, SCHEMA_ORIGEM, OBJETO_FISICO, IND_GOVERNADO, IND_ATIVO, DT_INICIO_VIGENCIA)\n"
+                f"VALUES (src.PROJETO, src.NOME_OBJETO, src.TIPO_OBJETO, src.DOMINIO, src.GRAO, src.SCHEMA_ORIGEM, src.OBJETO_FISICO, src.IND_GOVERNADO, src.IND_ATIVO, SYSDATE);\n"
+            )
     linhas_03.append("COMMIT;\n")
-    arquivos["03_meta_hierarquia.sql"] = "\n".join(linhas_03)
+    arquivos["03_meta_objeto.sql"] = "\n".join(linhas_03)
 
     # 04_meta_relacionamento.sql
     linhas_04 = [
@@ -587,15 +636,17 @@ def construir_catalogo_meta(
             if not ativa_dim:
                 continue
             col_pk_dim = _obter_sk_dim(dims_map[dim_ref]) if dim_ref in dims_map else "DIMENSION_KEY"
+            obs = f"Join dimensional N:1 entre {vw_ev} e {vw_dim} com fallback sentinela (-1).".replace("'", "''")
             linhas_04.append(
                 f"MERGE INTO {schema}.META_RELACIONAMENTO dst\n"
-                f"USING (SELECT '{projeto}' AS SGL_PROJETO, '{vw_ev}' AS NOM_OBJETO_ORIGEM, "
-                f"'{fk['coluna']}' AS NOM_COLUNA_ORIGEM, '{vw_dim}' AS NOM_OBJETO_DESTINO, "
-                f"'{col_pk_dim}' AS NOM_COLUNA_DESTINO, 'N:1' AS IND_CARDINALIDADE FROM DUAL) src\n"
-                f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.NOM_OBJETO_ORIGEM = src.NOM_OBJETO_ORIGEM AND dst.NOM_COLUNA_ORIGEM = src.NOM_COLUNA_ORIGEM)\n"
-                f"WHEN MATCHED THEN UPDATE SET dst.NOM_OBJETO_DESTINO = src.NOM_OBJETO_DESTINO\n"
-                f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, NOM_OBJETO_ORIGEM, NOM_COLUNA_ORIGEM, NOM_OBJETO_DESTINO, NOM_COLUNA_DESTINO, IND_CARDINALIDADE)\n"
-                f"VALUES (src.SGL_PROJETO, src.NOM_OBJETO_ORIGEM, src.NOM_COLUNA_ORIGEM, src.NOM_OBJETO_DESTINO, src.NOM_COLUNA_DESTINO, src.IND_CARDINALIDADE);\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, '{vw_ev}' AS OBJETO_ORIGEM, "
+                f"'{fk['coluna']}' AS COLUNA_ORIGEM, '{vw_dim}' AS OBJETO_DESTINO, "
+                f"'{col_pk_dim}' AS COLUNA_DESTINO, 'LEFT' AS TIPO_JOIN, 'N:1' AS CARDINALIDADE, "
+                f"'{obs}' AS OBSERVACAO FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.OBJETO_ORIGEM = src.OBJETO_ORIGEM AND dst.COLUNA_ORIGEM = src.COLUNA_ORIGEM AND dst.OBJETO_DESTINO = src.OBJETO_DESTINO AND dst.COLUNA_DESTINO = src.COLUNA_DESTINO)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.TIPO_JOIN = src.TIPO_JOIN, dst.CARDINALIDADE = src.CARDINALIDADE, dst.OBSERVACAO = src.OBSERVACAO\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, OBJETO_ORIGEM, COLUNA_ORIGEM, OBJETO_DESTINO, COLUNA_DESTINO, TIPO_JOIN, CARDINALIDADE, OBSERVACAO)\n"
+                f"VALUES (src.PROJETO, src.OBJETO_ORIGEM, src.COLUNA_ORIGEM, src.OBJETO_DESTINO, src.COLUNA_DESTINO, src.TIPO_JOIN, src.CARDINALIDADE, src.OBSERVACAO);\n"
             )
     linhas_04.append("COMMIT;\n")
     arquivos["04_meta_relacionamento.sql"] = "\n".join(linhas_04)
@@ -610,58 +661,58 @@ def construir_catalogo_meta(
     if radar_ativos.get("RADAR_SEM_01", True):
         linhas_05.append(
             f"MERGE INTO {schema}.META_REGRA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'RN_{projeto}_001' AS COD_REGRA, "
-            f"'Filtro Obrigatório de Vigência SCD Tipo 2' AS NOM_REGRA, "
-            f"'Toda consulta em dimensão histórica para estado atual deve filtrar DTC_EXPIRACAO IS NULL.' AS DES_REGRA, "
-            f"'DTC_EXPIRACAO IS NULL' AS DES_EXPRESSAO_SQL FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_REGRA = src.COD_REGRA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_REGRA = src.DES_REGRA\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_REGRA, NOM_REGRA, DES_REGRA, DES_EXPRESSAO_SQL)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_REGRA, src.NOM_REGRA, src.DES_REGRA, src.DES_EXPRESSAO_SQL);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, "
+            f"'RN_{projeto}_001: Toda consulta em dimensão histórica para estado atual deve filtrar DTC_EXPIRACAO IS NULL.' AS REGRA, "
+            f"'ALTA' AS SEVERIDADE, 'ATIVA' AS STATUS_REGRA, 'FILTRO_SCD2' AS CONTEXTO, "
+            f"'Expressão SQL padrão: DTC_EXPIRACAO IS NULL' AS OBSERVACAO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.REGRA = src.REGRA)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.SEVERIDADE = src.SEVERIDADE, dst.STATUS_REGRA = src.STATUS_REGRA, dst.OBSERVACAO = src.OBSERVACAO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, REGRA, SEVERIDADE, STATUS_REGRA, CONTEXTO, OBSERVACAO)\n"
+            f"VALUES (src.PROJETO, src.REGRA, src.SEVERIDADE, src.STATUS_REGRA, src.CONTEXTO, src.OBSERVACAO);\n"
         )
     if radar_ativos.get("RADAR_SEM_02", True):
         linhas_05.append(
             f"MERGE INTO {schema}.META_REGRA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'RN_{projeto}_002' AS COD_REGRA, "
-            f"'Tratamento de Chave Surrogate Sentinela (-1)' AS NOM_REGRA, "
-            f"'Chaves estrangeiras não informadas na origem são mapeadas para SK = -1 (Não Informado) evitando perda de fatos em INNER JOIN.' AS DES_REGRA, "
-            f"'NVL(SK_DIM, -1)' AS DES_EXPRESSAO_SQL FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_REGRA = src.COD_REGRA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_REGRA = src.DES_REGRA\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_REGRA, NOM_REGRA, DES_REGRA, DES_EXPRESSAO_SQL)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_REGRA, src.NOM_REGRA, src.DES_REGRA, src.DES_EXPRESSAO_SQL);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, "
+            f"'RN_{projeto}_002: Chaves estrangeiras não informadas na origem são mapeadas para SK = -1 (Não Informado) evitando perda de fatos em INNER JOIN.' AS REGRA, "
+            f"'ALTA' AS SEVERIDADE, 'ATIVA' AS STATUS_REGRA, 'INTEGRIDADE_DIMENSIONAL' AS CONTEXTO, "
+            f"'Expressão SQL padrão: NVL(SK_DIM, -1)' AS OBSERVACAO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.REGRA = src.REGRA)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.SEVERIDADE = src.SEVERIDADE, dst.STATUS_REGRA = src.STATUS_REGRA, dst.OBSERVACAO = src.OBSERVACAO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, REGRA, SEVERIDADE, STATUS_REGRA, CONTEXTO, OBSERVACAO)\n"
+            f"VALUES (src.PROJETO, src.REGRA, src.SEVERIDADE, src.STATUS_REGRA, src.CONTEXTO, src.OBSERVACAO);\n"
         )
     if radar_ativos.get("RADAR_SEM_03", False):
         linhas_05.append(
             f"MERGE INTO {schema}.META_REGRA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'RN_{projeto}_003' AS COD_REGRA, "
-            f"'Divisão Segura Obrigatória (NULLIF)' AS NOM_REGRA, "
-            f"'Toda métrica de proporção ou taxa deve proteger o denominador com NULLIF(denominador, 0) para impedir ORA-01476.' AS DES_REGRA, "
-            f"'ROUND(NUMERADOR / NULLIF(DENOMINADOR, 0), 2)' AS DES_EXPRESSAO_SQL FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_REGRA = src.COD_REGRA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_REGRA = src.DES_REGRA\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_REGRA, NOM_REGRA, DES_REGRA, DES_EXPRESSAO_SQL)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_REGRA, src.NOM_REGRA, src.DES_REGRA, src.DES_EXPRESSAO_SQL);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, "
+            f"'RN_{projeto}_003: Toda métrica de proporção ou taxa deve proteger o denominador com NULLIF(denominador, 0) para impedir ORA-01476.' AS REGRA, "
+            f"'MEDIA' AS SEVERIDADE, 'ATIVA' AS STATUS_REGRA, 'DIVISAO_SEGURA' AS CONTEXTO, "
+            f"'Expressão SQL padrão: ROUND(NUMERADOR / NULLIF(DENOMINADOR, 0), 2)' AS OBSERVACAO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.REGRA = src.REGRA)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.SEVERIDADE = src.SEVERIDADE, dst.STATUS_REGRA = src.STATUS_REGRA, dst.OBSERVACAO = src.OBSERVACAO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, REGRA, SEVERIDADE, STATUS_REGRA, CONTEXTO, OBSERVACAO)\n"
+            f"VALUES (src.PROJETO, src.REGRA, src.SEVERIDADE, src.STATUS_REGRA, src.CONTEXTO, src.OBSERVACAO);\n"
         )
     if radar_ativos.get("RADAR_SEM_04", False):
         linhas_05.append(
             f"MERGE INTO {schema}.META_REGRA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'RN_{projeto}_004' AS COD_REGRA, "
-            f"'Isolamento Multi-Tenant Fail-Closed (Oracle VPD)' AS NOM_REGRA, "
-            f"'Sessões sem contexto inicializado em SYS_CONTEXT recebem predicado 1=0 (Fail-Closed).' AS DES_REGRA, "
-            f"'SYS_CONTEXT(''CTX_{projeto}_RLS'', ''VALOR_FILTRO'') IS NOT NULL' AS DES_EXPRESSAO_SQL FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_REGRA = src.COD_REGRA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_REGRA = src.DES_REGRA\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_REGRA, NOM_REGRA, DES_REGRA, DES_EXPRESSAO_SQL)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_REGRA, src.NOM_REGRA, src.DES_REGRA, src.DES_EXPRESSAO_SQL);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, "
+            f"'RN_{projeto}_004: Sessões sem contexto inicializado em SYS_CONTEXT recebem predicado 1=0 (Fail-Closed).' AS REGRA, "
+            f"'ALTA' AS SEVERIDADE, 'ATIVA' AS STATUS_REGRA, 'SEGURANCA_RLS' AS CONTEXTO, "
+            f"'Expressão SQL padrão: SYS_CONTEXT(''CTX_{projeto}_RLS'', ''VALOR_FILTRO'') IS NOT NULL' AS OBSERVACAO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.REGRA = src.REGRA)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.SEVERIDADE = src.SEVERIDADE, dst.STATUS_REGRA = src.STATUS_REGRA, dst.OBSERVACAO = src.OBSERVACAO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, REGRA, SEVERIDADE, STATUS_REGRA, CONTEXTO, OBSERVACAO)\n"
+            f"VALUES (src.PROJETO, src.REGRA, src.SEVERIDADE, src.STATUS_REGRA, src.CONTEXTO, src.OBSERVACAO);\n"
         )
     linhas_05.append("COMMIT;\n")
     arquivos["05_meta_regra_negocio.sql"] = "\n".join(linhas_05)
 
-    # 06_meta_pergunta_negocio.sql
+    # 06_meta_consulta_negocio.sql
     linhas_06 = [
         "-- =============================================================================",
-        f"-- NINHO — CATÁLOGO SEMÂNTICO: 06_meta_pergunta_negocio.sql (PROJETO: {projeto})",
+        f"-- NINHO — CATÁLOGO SEMÂNTICO: 06_meta_consulta_negocio.sql (PROJETO: {projeto})",
         "-- =============================================================================",
         "",
     ]
@@ -669,51 +720,68 @@ def construir_catalogo_meta(
         ent = _nome_entidade_curto(f["nome_tabela"])
         vw_kpi_default = f"VW_{projeto}_KPI_{ent}"
         _, vw_kpi, _ = _obter_cfg_view_semantica(edicoes_sem, "KPI", f["nome_tabela"], vw_kpi_default, "Uma linha representa um grupo.")
+        id_cons = f"PN_{projeto}_{idx_f:03d}"[:50]
         linhas_06.append(
-            f"MERGE INTO {schema}.META_PERGUNTA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'PN_{projeto}_{idx_f:03d}' AS COD_PERGUNTA, "
-            f"'Qual é o volume total e a participação percentual de {ent.title()} por categoria?' AS DES_PERGUNTA, "
-            f"'SELECT * FROM {schema}.{vw_kpi} ORDER BY QTD_TOTAL_REGISTROS DESC' AS DES_SQL_REFERENCIA, "
-            f"'{vw_kpi}' AS NOM_VIEW_RECOMENDADA FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_PERGUNTA = src.COD_PERGUNTA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.DES_SQL_REFERENCIA = src.DES_SQL_REFERENCIA\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_PERGUNTA, DES_PERGUNTA, DES_SQL_REFERENCIA, NOM_VIEW_RECOMENDADA)\n"
-            f"VALUES (src.SGL_PROJETO, src.COD_PERGUNTA, src.DES_PERGUNTA, src.DES_SQL_REFERENCIA, src.NOM_VIEW_RECOMENDADA);\n"
+            f"MERGE INTO {schema}.META_CONSULTA_NEGOCIO dst\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, '{id_cons}' AS ID_CONSULTA, "
+            f"'Qual é o volume total e a participação percentual de {ent.title()} por categoria?' AS PERGUNTA_LINGUAGEM_NATURAL, "
+            f"'PAINEL_{projeto}' AS PAINEL_RELACIONADO, 'Golden Query oficial da camada KPI' AS OBSERVACOES, "
+            f"'SELECT * FROM {schema}.{vw_kpi} ORDER BY QTD_TOTAL_REGISTROS DESC' AS SQL_VALIDADO_INTERPRETACAO, "
+            f"'{vw_kpi}' AS OBJETOS_CHAVE FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.ID_CONSULTA = src.ID_CONSULTA)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.PERGUNTA_LINGUAGEM_NATURAL = src.PERGUNTA_LINGUAGEM_NATURAL, dst.SQL_VALIDADO_INTERPRETACAO = src.SQL_VALIDADO_INTERPRETACAO, dst.OBJETOS_CHAVE = src.OBJETOS_CHAVE\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, ID_CONSULTA, PERGUNTA_LINGUAGEM_NATURAL, PAINEL_RELACIONADO, OBSERVACOES, SQL_VALIDADO_INTERPRETACAO, OBJETOS_CHAVE)\n"
+            f"VALUES (src.PROJETO, src.ID_CONSULTA, src.PERGUNTA_LINGUAGEM_NATURAL, src.PAINEL_RELACIONADO, src.OBSERVACOES, src.SQL_VALIDADO_INTERPRETACAO, src.OBJETOS_CHAVE);\n"
         )
     if edicoes_sem:
         for pn_rad in edicoes_sem.get("perguntas_radar", []):
-            cod_pn = pn_rad["cod_pergunta"].replace("'", "''")
+            cod_pn = pn_rad["cod_pergunta"].replace("'", "''")[:50]
             des_pn = pn_rad["des_pergunta"].replace("'", "''")
             sql_pn = pn_rad["sql_referencia"].replace("'", "''")
             vw_pn = pn_rad["view_recomendada"].replace("'", "''")
             linhas_06.append(
-                f"MERGE INTO {schema}.META_PERGUNTA_NEGOCIO dst\n"
-                f"USING (SELECT '{projeto}' AS SGL_PROJETO, '{cod_pn}' AS COD_PERGUNTA, "
-                f"'{des_pn}' AS DES_PERGUNTA, "
-                f"'{sql_pn}' AS DES_SQL_REFERENCIA, "
-                f"'{vw_pn}' AS NOM_VIEW_RECOMENDADA FROM DUAL) src\n"
-                f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_PERGUNTA = src.COD_PERGUNTA)\n"
-                f"WHEN MATCHED THEN UPDATE SET dst.DES_PERGUNTA = src.DES_PERGUNTA, dst.DES_SQL_REFERENCIA = src.DES_SQL_REFERENCIA\n"
-                f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_PERGUNTA, DES_PERGUNTA, DES_SQL_REFERENCIA, NOM_VIEW_RECOMENDADA)\n"
-                f"VALUES (src.SGL_PROJETO, src.COD_PERGUNTA, src.DES_PERGUNTA, src.DES_SQL_REFERENCIA, src.NOM_VIEW_RECOMENDADA);\n"
+                f"MERGE INTO {schema}.META_CONSULTA_NEGOCIO dst\n"
+                f"USING (SELECT '{projeto}' AS PROJETO, '{cod_pn}' AS ID_CONSULTA, "
+                f"'{des_pn}' AS PERGUNTA_LINGUAGEM_NATURAL, "
+                f"'PAINEL_{projeto}' AS PAINEL_RELACIONADO, 'Consulta analítica sugerida pelo Radar Consultivo' AS OBSERVACOES, "
+                f"'{sql_pn}' AS SQL_VALIDADO_INTERPRETACAO, "
+                f"'{vw_pn}' AS OBJETOS_CHAVE FROM DUAL) src\n"
+                f"ON (dst.PROJETO = src.PROJETO AND dst.ID_CONSULTA = src.ID_CONSULTA)\n"
+                f"WHEN MATCHED THEN UPDATE SET dst.PERGUNTA_LINGUAGEM_NATURAL = src.PERGUNTA_LINGUAGEM_NATURAL, dst.SQL_VALIDADO_INTERPRETACAO = src.SQL_VALIDADO_INTERPRETACAO, dst.OBJETOS_CHAVE = src.OBJETOS_CHAVE\n"
+                f"WHEN NOT MATCHED THEN INSERT (PROJETO, ID_CONSULTA, PERGUNTA_LINGUAGEM_NATURAL, PAINEL_RELACIONADO, OBSERVACOES, SQL_VALIDADO_INTERPRETACAO, OBJETOS_CHAVE)\n"
+                f"VALUES (src.PROJETO, src.ID_CONSULTA, src.PERGUNTA_LINGUAGEM_NATURAL, src.PAINEL_RELACIONADO, src.OBSERVACOES, src.SQL_VALIDADO_INTERPRETACAO, src.OBJETOS_CHAVE);\n"
             )
     linhas_06.append("COMMIT;\n")
-    arquivos["06_meta_pergunta_negocio.sql"] = "\n".join(linhas_06)
+    arquivos["06_meta_consulta_negocio.sql"] = "\n".join(linhas_06)
 
     # 07_meta_orientacao_ia.sql
     tpl_07 = TEMPLATES_SEM_DIR / "inserts" / "07_meta_orientacao_ia.sql"
     if tpl_07.exists():
         txt_07 = tpl_07.read_text(encoding="utf-8", errors="replace")
         txt_07 = txt_07.replace("<PROJETO>", projeto).replace("<SCHEMA>", schema)
-        arquivos["07_meta_orientacao_ia.sql"] = txt_07
+        txt_07 = re.sub(r"\bMERGE\s+INTO\s+META_ORIENTACAO_IA\b", f"MERGE INTO {schema}.META_ORIENTACAO_IA", txt_07)
+        bloco_proj_07 = (
+            f"\n-- Diretriz Específica do Projeto {projeto}\n"
+            f"MERGE INTO {schema}.META_ORIENTACAO_IA dst\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, 'REGRAS_GERAIS' AS SECAO, 1 AS ORDEM, "
+            f"'Prioridade de Views do Projeto {projeto}' AS TITULO, "
+            f"'Priorizar Views VW_{projeto}_KPI_* para perguntas agregadas e VW_{projeto}_EVENTO_* para detalhamento granular.' AS CONTEUDO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.SECAO = src.SECAO AND dst.ORDEM = src.ORDEM)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.TITULO = src.TITULO, dst.CONTEUDO = src.CONTEUDO, dst.DT_ATUALIZACAO = SYSDATE\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, SECAO, ORDEM, TITULO, CONTEUDO) VALUES (src.PROJETO, src.SECAO, src.ORDEM, src.TITULO, src.CONTEUDO);\n"
+            f"COMMIT;\n"
+        )
+        arquivos["07_meta_orientacao_ia.sql"] = txt_07.rstrip() + "\n" + bloco_proj_07
     else:
         arquivos["07_meta_orientacao_ia.sql"] = (
             f"-- 07_meta_orientacao_ia.sql ({projeto})\n"
             f"MERGE INTO {schema}.META_ORIENTACAO_IA dst\n"
-            f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'IA_001' AS COD_ORIENTACAO, "
-            f"'Priorizar Views VW_{projeto}_KPI_* para perguntas agregadas e VW_{projeto}_EVENTO_* para detalhamento.' AS DES_ORIENTACAO FROM DUAL) src\n"
-            f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.COD_ORIENTACAO = src.COD_ORIENTACAO)\n"
-            f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, COD_ORIENTACAO, DES_ORIENTACAO) VALUES (src.SGL_PROJETO, src.COD_ORIENTACAO, src.DES_ORIENTACAO);\n"
+            f"USING (SELECT '{projeto}' AS PROJETO, 'REGRAS_GERAIS' AS SECAO, 1 AS ORDEM, "
+            f"'Prioridade de Views do Projeto {projeto}' AS TITULO, "
+            f"'Priorizar Views VW_{projeto}_KPI_* para perguntas agregadas e VW_{projeto}_EVENTO_* para detalhamento.' AS CONTEUDO FROM DUAL) src\n"
+            f"ON (dst.PROJETO = src.PROJETO AND dst.SECAO = src.SECAO AND dst.ORDEM = src.ORDEM)\n"
+            f"WHEN MATCHED THEN UPDATE SET dst.TITULO = src.TITULO, dst.CONTEUDO = src.CONTEUDO\n"
+            f"WHEN NOT MATCHED THEN INSERT (PROJETO, SECAO, ORDEM, TITULO, CONTEUDO) VALUES (src.PROJETO, src.SECAO, src.ORDEM, src.TITULO, src.CONTEUDO);\n"
             f"COMMIT;\n"
         )
 
@@ -724,17 +792,20 @@ def construir_catalogo_meta(
         "-- =============================================================================",
         "",
         f"MERGE INTO {schema}.META_VALOR_DOMINIO dst\n"
-        f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'FLG_PADRAO' AS NOM_DOMINIO, 'S' AS VLR_DOMINIO, 'Sim / Verdadeiro / Ativo' AS DES_SIGNIFICADO FROM DUAL) src\n"
-        f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.NOM_DOMINIO = src.NOM_DOMINIO AND dst.VLR_DOMINIO = src.VLR_DOMINIO)\n"
-        f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, NOM_DOMINIO, VLR_DOMINIO, DES_SIGNIFICADO) VALUES (src.SGL_PROJETO, src.NOM_DOMINIO, src.VLR_DOMINIO, src.DES_SIGNIFICADO);\n",
+        f"USING (SELECT '{projeto}' AS PROJETO, 'GLOBAL' AS NOME_OBJETO, 'SIN_ATIVO' AS NOME_COLUNA, 'S' AS VALOR, 'Sim / Verdadeiro / Registro Vigente' AS DESCRICAO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+        f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO AND dst.NOME_COLUNA = src.NOME_COLUNA AND dst.VALOR = src.VALOR)\n"
+        f"WHEN MATCHED THEN UPDATE SET dst.DESCRICAO = src.DESCRICAO, dst.IND_ATIVO = src.IND_ATIVO\n"
+        f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, NOME_COLUNA, VALOR, DESCRICAO, IND_ATIVO) VALUES (src.PROJETO, src.NOME_OBJETO, src.NOME_COLUNA, src.VALOR, src.DESCRICAO, src.IND_ATIVO);\n",
         f"MERGE INTO {schema}.META_VALOR_DOMINIO dst\n"
-        f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'FLG_PADRAO' AS NOM_DOMINIO, 'N' AS VLR_DOMINIO, 'Não / Falso / Inativo' AS DES_SIGNIFICADO FROM DUAL) src\n"
-        f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.NOM_DOMINIO = src.NOM_DOMINIO AND dst.VLR_DOMINIO = src.VLR_DOMINIO)\n"
-        f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, NOM_DOMINIO, VLR_DOMINIO, DES_SIGNIFICADO) VALUES (src.SGL_PROJETO, src.NOM_DOMINIO, src.VLR_DOMINIO, src.DES_SIGNIFICADO);\n",
+        f"USING (SELECT '{projeto}' AS PROJETO, 'GLOBAL' AS NOME_OBJETO, 'SIN_ATIVO' AS NOME_COLUNA, 'N' AS VALOR, 'Não / Falso / Registro Histórico Expirado' AS DESCRICAO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+        f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO AND dst.NOME_COLUNA = src.NOME_COLUNA AND dst.VALOR = src.VALOR)\n"
+        f"WHEN MATCHED THEN UPDATE SET dst.DESCRICAO = src.DESCRICAO, dst.IND_ATIVO = src.IND_ATIVO\n"
+        f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, NOME_COLUNA, VALOR, DESCRICAO, IND_ATIVO) VALUES (src.PROJETO, src.NOME_OBJETO, src.NOME_COLUNA, src.VALOR, src.DESCRICAO, src.IND_ATIVO);\n",
         f"MERGE INTO {schema}.META_VALOR_DOMINIO dst\n"
-        f"USING (SELECT '{projeto}' AS SGL_PROJETO, 'SK_SENTINELA' AS NOM_DOMINIO, '-1' AS VLR_DOMINIO, 'Não Informado / Não Aplicável na Origem' AS DES_SIGNIFICADO FROM DUAL) src\n"
-        f"ON (dst.SGL_PROJETO = src.SGL_PROJETO AND dst.NOM_DOMINIO = src.NOM_DOMINIO AND dst.VLR_DOMINIO = src.VLR_DOMINIO)\n"
-        f"WHEN NOT MATCHED THEN INSERT (SGL_PROJETO, NOM_DOMINIO, VLR_DOMINIO, DES_SIGNIFICADO) VALUES (src.SGL_PROJETO, src.NOM_DOMINIO, src.VLR_DOMINIO, src.DES_SIGNIFICADO);\n",
+        f"USING (SELECT '{projeto}' AS PROJETO, 'GLOBAL' AS NOME_OBJETO, 'SK_SENTINELA' AS NOME_COLUNA, '-1' AS VALOR, 'Não Informado / Não Aplicável na Origem' AS DESCRICAO, 'S' AS IND_ATIVO FROM DUAL) src\n"
+        f"ON (dst.PROJETO = src.PROJETO AND dst.NOME_OBJETO = src.NOME_OBJETO AND dst.NOME_COLUNA = src.NOME_COLUNA AND dst.VALOR = src.VALOR)\n"
+        f"WHEN MATCHED THEN UPDATE SET dst.DESCRICAO = src.DESCRICAO, dst.IND_ATIVO = src.IND_ATIVO\n"
+        f"WHEN NOT MATCHED THEN INSERT (PROJETO, NOME_OBJETO, NOME_COLUNA, VALOR, DESCRICAO, IND_ATIVO) VALUES (src.PROJETO, src.NOME_OBJETO, src.NOME_COLUNA, src.VALOR, src.DESCRICAO, src.IND_ATIVO);\n",
         "COMMIT;\n",
     ]
     arquivos["08_meta_valor_dominio.sql"] = "\n".join(linhas_08)
@@ -883,11 +954,21 @@ def construir_script_validacoes_semantica(
     linhas.extend([
         "",
         "-- 4. Auditoria de Preenchimento do Catálogo META_* para o Projeto",
-        f"SELECT 'META_GLOSSARIO' AS TABELA, COUNT(1) AS QTD FROM {schema}.META_GLOSSARIO WHERE SGL_PROJETO = '{projeto}'",
+        f"SELECT 'META_GLOSSARIO' AS TABELA, COUNT(1) AS QTD FROM {schema}.META_GLOSSARIO WHERE PROJETO = '{projeto}'",
         "UNION ALL",
-        f"SELECT 'META_METRICA', COUNT(1) FROM {schema}.META_METRICA WHERE SGL_PROJETO = '{projeto}'",
+        f"SELECT 'META_METRICA', COUNT(1) FROM {schema}.META_METRICA WHERE PROJETO = '{projeto}'",
         "UNION ALL",
-        f"SELECT 'META_RELACIONAMENTO', COUNT(1) FROM {schema}.META_RELACIONAMENTO WHERE SGL_PROJETO = '{projeto}';",
+        f"SELECT 'META_OBJETO', COUNT(1) FROM {schema}.META_OBJETO WHERE PROJETO = '{projeto}'",
+        "UNION ALL",
+        f"SELECT 'META_RELACIONAMENTO', COUNT(1) FROM {schema}.META_RELACIONAMENTO WHERE PROJETO = '{projeto}'",
+        "UNION ALL",
+        f"SELECT 'META_REGRA_NEGOCIO', COUNT(1) FROM {schema}.META_REGRA_NEGOCIO WHERE PROJETO = '{projeto}'",
+        "UNION ALL",
+        f"SELECT 'META_CONSULTA_NEGOCIO', COUNT(1) FROM {schema}.META_CONSULTA_NEGOCIO WHERE PROJETO = '{projeto}'",
+        "UNION ALL",
+        f"SELECT 'META_ORIENTACAO_IA', COUNT(1) FROM {schema}.META_ORIENTACAO_IA WHERE PROJETO IN ('{projeto}', 'GLOBAL')",
+        "UNION ALL",
+        f"SELECT 'META_VALOR_DOMINIO', COUNT(1) FROM {schema}.META_VALOR_DOMINIO WHERE PROJETO = '{projeto}';",
         "",
     ])
     return "\n".join(linhas)
@@ -952,10 +1033,10 @@ def construir_documento_entendimento(
         "",
         "- **`01_meta_glossario.sql`**: Dicionário executivo de termos de negócio vinculados às Views.",
         "- **`02_meta_metrica.sql`**: Fórmulas oficiais de KPIs com proteção contra divisão por zero.",
-        "- **`03_meta_hierarquia.sql`**: Caminhos de drill-down aprovados para ferramentas de BI.",
+        "- **`03_meta_objeto.sql`**: Catálogo de Views governadas (`DIMENSAO`, `EVENTO`, `KPI`) e grão declarado.",
         "- **`04_meta_relacionamento.sql`**: Mapa de joins `N:1` entre Views de Evento e Views de Dimensão.",
         "- **`05_meta_regra_negocio.sql`**: Regras corporativas de filtragem SCD2 e tratamento da linha `-1`.",
-        "- **`06_meta_pergunta_negocio.sql`**: Perguntas executivas com SQL de referência (Golden Queries).",
+        "- **`06_meta_consulta_negocio.sql`**: Perguntas executivas com SQL de referência (Golden Queries).",
         "- **`07_meta_orientacao_ia.sql`**: Diretrizes de prompt engineering para agentes Text-to-SQL / LLM.",
         "- **`08_meta_valor_dominio.sql`**: Significado semântico de flags (`S`/`N`) e chaves sentinelas (`-1`).",
         "",
@@ -1015,9 +1096,13 @@ def executar_modular_semantica(
     if modo in ("catalogo-meta", "tudo"):
         ddl_meta_dst = meta_dir / "01_create_meta_tables.sql"
         ddl_meta_tpl = TEMPLATES_SEM_DIR / "01_create_meta_tables.sql"
-        if not ddl_meta_dst.exists() and ddl_meta_tpl.exists():
+        if ddl_meta_tpl.exists():
             shutil.copy2(ddl_meta_tpl, ddl_meta_dst)
             gerados.append(ddl_meta_dst)
+        for arq_legado in ("03_meta_hierarquia.sql", "06_meta_pergunta_negocio.sql"):
+            p_leg = meta_dir / arq_legado
+            if p_leg.exists():
+                p_leg.unlink()
 
         scripts_meta = construir_catalogo_meta(tabelas, schema, projeto)
         for nome_arq, conteudo in scripts_meta.items():

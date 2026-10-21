@@ -8,13 +8,18 @@ Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que aut
 
 ## 🎯 Por Onde Começar? (Guia Rápido para Quem Está Chegando Agora)
 
+> ⚙️ **Configuração Inicial dos Comandos `/` (Primeira vez no projeto):**
+> Para registrar ou sincronizar todos os atalhos `/<comando>` no menu de autocompletar da sua IDE, digite no chat:
+> - **`/instalar-comandos`** *(ou `/setup`, ou peça no chat: `"Execute python ninho.py instalar-comandos"`)*
+> - No terminal Windows: `.\ninho instalar-comandos` *(ou `python ninho.py instalar-comandos`)*
+
 > 🚀 **É a sua primeira vez abrindo o NINHO? Experimente digitar um destes comandos diretamente no chat:**
 > - **`/comecar`** *(ou `/onboarding`)*: Abre o **Assistente de Boas-Vindas** com as 5 missões reais explicadas em apenas **3 passos simples** (*Onde soltar o arquivo* $\rightarrow$ *Comando para simular* $\rightarrow$ *Comando para gerar*).
 > - **`/demo`** *(e depois `/limpar-demo`)*: **Modo Playground em 1 Comando!** Não tem arquivos agora? Ele cria sozinho um projeto completo de demonstração (*Licitações SAEB*), gera as Blueprints editáveis, o DW, a Camada Semântica, o Dicionário HTML interativo e um CSV sintético para Power BI em 3 segundos. Depois, digite `/limpar-demo` para zerar a bancada.
 > - **`/onde-estou`** *(ou `/status`)*: Abre a **Bússola Contextual** com barra visual de progresso (`[███░░] Fase X/5`), mostrando o que já existe nas pastas `entrega/` e `saida/` e qual o próximo comando recomendado.
 > - **`/duvida listar`** *(ou `/duvida <tema>`)*: Abre o **Oráculo de Arquitetura** para responder dúvidas técnicas sobre o programa (`estrategia-carga`, `scd`, `linha-default`, `camadas-views`, `arquitetura-etl`, `gate-governanca`, `simulacao`, `fast-track`, `rls`).
 > - **`/doctor`**: Verifica se você soltou algum arquivo na pasta errada de `entrega/` e o move automaticamente para a subpasta canônica correta (`--corrigir`).
-> - **`/help`**: Exibe no chat a tabela completa de todos os comandos disponíveis por tópico.
+> - **`/ajuda`** *(ou `/help`)*: Exibe no chat a tabela completa de todos os comandos disponíveis por tópico.
 
 > 👋 **Quer ler o manual completo para iniciantes?** Comece pelo [**Guia Inicial do Engenheiro — Bem-vindo ao NINHO (`GUIA_INICIAL_ENGENHEIRO.md`)**](documentacao/guias/GUIA_INICIAL_ENGENHEIRO.md)! Ele explica passo a passo a "Regra das 3 Pastas" (`entrega/` $\rightarrow$ `modulos/` $\rightarrow$ `saida/`), o que cada script/skill faz e como rodar sua primeira tarefa em 5 minutos.
 
@@ -45,7 +50,9 @@ Não perca tempo procurando arquivos. Localize seu desafio abaixo e acesse diret
 NINHO /
 │
 ├── AGENTS.md                            # 🤖 Orquestrador Principal (Regras & Gates)
-├── 🤖 .agents/skills/                   # 🧩 SKILLS MODULARES ESPECIALIZADAS
+├── ninho.py                             # 🚀 Dispatcher CLI Unificado + Instalador de Comandos (/instalar-comandos)
+├── ninho.bat                            # ⚡ Atalho de execução rápida no Windows (.\ninho <comando>)
+├── 🤖 .agents/skills/                   # 🧩 SKILLS MODULARES ESPECIALIZADAS + ATALHOS DE COMANDO (/comando)
 │   ├── planejador-dw-oracle/            # Star Schema, SCD2, Sequences, Índices e Fast-Track
 │   ├── gerador-etl-hop/                 # Pipelines (.hpl) e workflows (.hwf) Apache Hop 2.x
 │   ├── gerador-consultas-odi/           # Consultas SQL, pacotes e tuning preditivo ODI 12c
@@ -64,7 +71,7 @@ NINHO /
 │   ├── scripts_comuns/                  # 🛠️ 14 Utilitários Python determinísticos
 │   │   ├── ajuda_ninho.py               # 🧭 Central UX (/help, /comecar, /onde-estou, /demo)
 │   │   ├── validar_entrega.py           # 🔍 Validador pré-voo e pós-geração (all/saida)
-│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (9 baterias)
+│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (11 baterias)
 │   │   ├── inspecionar_ddl_origem.py    # 🔎 Extrator de DDLs e Radar Consultivo de KPIs
 │   │   ├── simular_projeto.py           # 🧪 Simulador e Blueprints Editáveis (DW/Semântica)
 │   │   ├── melhorar_dw_existente.py     # ⚡ Motor Fast-Track e Micro-Processos DW & ODI
@@ -179,7 +186,8 @@ graph TD
 
 | Categoria | Comando no Chat | O que a IA Faz |
 | :--- | :--- | :--- |
-| 🧭 **UX, Onboarding & Oráculo** | **`/help`** *(ou `/ajuda`, `/comandos`, `/help <topico>`)* | Lista diretamente aqui no chat todos os comandos organizados por tópico (`ux`, `simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`) (`ajuda_ninho.py`). |
+| ⚙️ **Setup & Comandos** | **`/instalar-comandos`** *(ou `/setup`, `/configurar`)* | Registra e sincroniza todos os comandos `/<comando>` como Skills nativas em `.agents/skills/` mantendo as 10 skills arquiteturais protegidas (`ninho.py instalar-comandos`). |
+| 🧭 **UX, Onboarding & Oráculo** | **`/ajuda`** *(ou `/help`, `/comandos`, `/ajuda <topico>`)* | Lista diretamente aqui no chat todos os comandos organizados por tópico (`ux`, `simulacao`, `micro`, `auditoria`, `dw`, `semantica`, `governanca`, `qualidade`) (`ajuda_ninho.py`). |
 | 🧭 **UX, Onboarding & Oráculo** | **`/comecar`** *(ou `/onboarding`)* | Exibe o **Assistente de Boas-Vindas** com as 5 trilhas guiadas de 3 passos para você saber onde colocar seus arquivos e qual comando rodar (`ajuda_ninho.py --onboarding`). |
 | 🧭 **UX, Onboarding & Oráculo** | **`/onde-estou`** *(ou `/status`)* | Exibe a **Bússola Contextual** com barra visual de progresso (`[███░░] Fase X/5`), arquivos detectados em `entrega/` e `saida/` e o próximo comando ideal (`ajuda_ninho.py --onde-estou`). |
 | 🧭 **UX, Onboarding & Oráculo** | **`/duvida <tema>`** *(ou `/duvida listar`)* | Consulta o **Oráculo de Arquitetura** sobre `estrategia-carga`, `scd`, `linha-default`, `camadas-views`, `arquitetura-etl`, `gate-governanca`, `simulacao`, `fast-track` e `rls` (`ajuda_ninho.py --explicar <tema>`). |
@@ -207,6 +215,6 @@ graph TD
 | 🧠 **Micro-Processos Semântica** | **`/gerar-catalogo-meta`** / **`/gerar-rls`** | Gera apenas o DDL + `MERGE INTO` das 8 tabelas `META_*` (`--modo catalogo-meta`) ou apenas a segurança VPD/RLS (`--modo rls`). |
 | 🧠 **Semântica & Cloud** | **`/concluir-dw`** / **`/iniciar-semantica`** | Transfere os DDLs/amostras do DW (`transicionar_dw_para_semantica.py`) e gera a Camada Semântica completa em `saida/camada_semantica/`. |
 | 🧠 **Semântica & Cloud** | **`/gerar-governanca`** | Gera os scripts das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e artefatos para AWS Glue & SageMaker Catalog em `saida/governanca_dados/`. |
-| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 9 testes End-to-End da plataforma (`testar_ninho.py`). |
+| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 11 testes End-to-End da plataforma (`testar_ninho.py`). |
 | ✅ **Qualidade, Testes & Entrega** | **`/diagnosticar-erro-carga`** / **`/empacotar-projeto`** | Analisa erros de execução (`ORA-xxxxx`, logs ODI/Hop) ou exporta a entrega final em `.zip` para `pacotes_exportados/` (`gerenciar_projeto.py`). |
 

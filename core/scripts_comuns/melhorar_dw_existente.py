@@ -38,6 +38,7 @@ Uso:
 
 import sys
 import re
+import html
 import argparse
 from pathlib import Path
 from datetime import datetime
@@ -64,7 +65,7 @@ def get_base_dir() -> Path:
 
 # Importa o parser determinístico de DDL do módulo irmão
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from inspecionar_ddl_origem import parse_ddl_text  # noqa: E402
+from inspecionar_ddl_origem import parse_ddl_text, ler_texto_sql  # noqa: E402
 
 
 # Dicionário semântico de prefixos corporativos para geração inteligente de comentários
@@ -453,9 +454,11 @@ def construir_script_comentarios(tabelas_cat: list, schema: str, titulo_camada: 
 def construir_dicionario_html(tabelas_classificadas: list, schema: str, projeto: str) -> str:
     """Gera o Dicionário de Dados interativo em HTML5 a partir das tabelas reais do DDL."""
     cards_html = []
+    schema = html.escape(str(schema), quote=True)
+    projeto = html.escape(str(projeto), quote=True)
     for tab, cat in tabelas_classificadas:
-        nome_tab = tab["nome_tabela"].upper()
-        comm_tab = gerar_comentario_tabela(tab, cat, projeto)
+        nome_tab = html.escape(tab["nome_tabela"].upper(), quote=True)
+        comm_tab = html.escape(gerar_comentario_tabela(tab, cat, projeto), quote=True)
         pks = set(tab.get("pks", []))
         fks_cols = {fk["coluna"].upper() for fk in tab.get("fks", [])}
         for c in tab["colunas"]:
@@ -465,14 +468,15 @@ def construir_dicionario_html(tabelas_classificadas: list, schema: str, projeto:
 
         badge_cls = "badge-fato" if cat == "FATO" else "badge-dim"
         badge_txt = "Tabela Fato" if cat == "FATO" else ("Dimensão" if cat == "DIM" else "Staging / Apoio")
-        pk_label = ", ".join(pks) if pks else "DIMENSION_KEY"
+        pk_label = html.escape(", ".join(pks) if pks else "DIMENSION_KEY", quote=True)
 
         linhas_tr = []
         for col in tab["colunas"]:
             cn = col["nome_dw"].upper()
-            tipo = col["tipo_oracle"]
-            obr = col["obrigatorio"]
-            desc = gerar_comentario_coluna(col, tab, cat)
+            cn_esc = html.escape(cn, quote=True)
+            tipo = html.escape(str(col["tipo_oracle"]), quote=True)
+            obr = html.escape(str(col["obrigatorio"]), quote=True)
+            desc = html.escape(gerar_comentario_coluna(col, tab, cat), quote=True)
 
             if cn in pks:
                 badge_col = '<span class="badge badge-pk">PK</span>'
@@ -483,7 +487,7 @@ def construir_dicionario_html(tabelas_classificadas: list, schema: str, projeto:
             elif cat == "FATO" and cn.startswith(("VAL_", "VLR_", "QTD_", "QT_", "PER_", "PRC_")):
                 badge_col = '<span class="badge badge-metric">Métrica</span>'
                 fn_agreg = "AVG" if cn.startswith(("PER_", "PRC_")) else "SUM"
-                regra_col = f'<span class="formula">{fn_agreg}({cn})</span>'
+                regra_col = f'<span class="formula">{fn_agreg}({cn_esc})</span>'
             else:
                 badge_col = "-"
                 if cn in ("DTC_EFETIVACAO", "DTC_INICIO_VIGENCIA"):
@@ -497,7 +501,7 @@ def construir_dicionario_html(tabelas_classificadas: list, schema: str, projeto:
 
             linhas_tr.append(
                 f"                <tr>\n"
-                f"                    <td class=\"col-name\">{cn}</td>\n"
+                f"                    <td class=\"col-name\">{cn_esc}</td>\n"
                 f"                    <td class=\"col-type\">{tipo} ({obr})</td>\n"
                 f"                    <td>{badge_col}</td>\n"
                 f"                    <td>{desc}</td>\n"
@@ -1134,7 +1138,13 @@ def construir_script_linha_default(dims: list, schema: str) -> str:
 
 
 def construir_scripts_odi(
-    dims: list, fatos: list, stgs: list, schema: str, projeto: str, estrategia: str
+    dims: list,
+    fatos: list,
+    stgs: list,
+    schema: str,
+    projeto: str,
+    estrategia: str,
+    schema_stg: str | None = None,
 ) -> tuple:
     """
     Gera os 3 scripts SQL corporativos do ODI 12c a partir do DDL:
@@ -1143,6 +1153,7 @@ def construir_scripts_odi(
       3. 04_select_odi_fato.sql (Consulta da Fato com LEFT JOIN nas Dimensões e NVL -1)
     """
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    schema_s = (schema_stg or schema).upper()
     stg_map = {s["nome_tabela"].upper().replace("STG_", ""): s["nome_tabela"].upper() for s in stgs}
 
     linhas_odi_ddl = [
@@ -1155,11 +1166,24 @@ def construir_scripts_odi(
     linhas_odi_sel_dim = [
         "-- =============================================================================",
         f"-- CONSULTAS ANALÍTICAS SQL PARA O ODI 12c (MAP_001_ODI_DIM_*) — PROJETO {projeto}",
-        f"-- Schema Alvo: {schema} | Gerado em: {agora}",
+        f"-- Schema Alvo: {schema} | Stage Origem: {schema_s} | Gerado em: {agora}",
         "-- Instrução  : Cole cada SELECT na propriedade Custom SQL do Dataset no ODI 12c.",
         "-- =============================================================================",
         "",
     ]
+
+    cols_scd_controle = {
+        "VERSION",
+        "DTC_INICIO",
+        "DTC_EFETIVACAO",
+        "DTC_EXPIRACAO",
+        "DTC_INICIO_VIGENCIA",
+        "DTC_FIM_VIGENCIA",
+        "FLG_ATUAL",
+        "FLG_ATIVO",
+        "SIN_ATIVO",
+        "DES_ATUALIZAR",
+    }
 
     for d in dims:
         tname = d["nome_tabela"].upper()
@@ -1173,29 +1197,55 @@ def construir_scripts_odi(
 
         col_defs = []
         cols_negocio = []
+        nomes_cols_dim = {c["nome_dw"].upper() for c in d["colunas"]}
         for c in d["colunas"]:
             cname = c["nome_dw"].upper()
             ctype = c["tipo_oracle"]
             col_defs.append(f"    {cname:<28} {ctype}")
-            if cname not in (sk_col, nk_col, "VERSION", "DTC_INICIO", "DTC_EXPIRACAO", "FLG_ATUAL"):
+            if cname not in (sk_col, nk_col) and cname not in cols_scd_controle:
                 cols_negocio.append(cname)
+
+        col_dt_idx = next(
+            (c for c in ("DTC_EFETIVACAO", "DTC_INICIO", "DTC_INICIO_VIGENCIA") if c in nomes_cols_dim),
+            None,
+        )
+        clausula_idx_cols = f"{nk_col}, {col_dt_idx} DESC" if col_dt_idx else nk_col
 
         linhas_odi_ddl.extend([
             f"-- Tabela Auxiliar ODI para {tname}",
             f"CREATE TABLE {schema}.{odi_table} (",
             ",\n".join(col_defs),
             ");",
-            f"CREATE INDEX {schema}.IDX_{odi_table[:18]}_NK ON {schema}.{odi_table} ({nk_col}, DTC_INICIO DESC);",
+            f"CREATE INDEX {schema}.IDX_{odi_table[:18]}_NK ON {schema}.{odi_table} ({clausula_idx_cols});",
             f"COMMENT ON TABLE {schema}.{odi_table} IS 'Tabela intermediária de stage analítico do ODI 12c para cálculo de versão e vigência SCD2 de {tname}.';",
             "",
         ])
 
         sel_cols = ",\n        ".join([f"S.{c}" for c in cols_negocio]) if cols_negocio else f"S.{nk_col}"
         outer_cols = ",\n    ".join([f"B.{c}" for c in cols_negocio]) if cols_negocio else f"B.{nk_col}"
+
+        scd_outer_exprs = []
+        if "VERSION" in nomes_cols_dim:
+            scd_outer_exprs.append("    B.NR_VERSAO AS VERSION")
+        if "SIN_ATIVO" in nomes_cols_dim:
+            scd_outer_exprs.append("    CASE WHEN B.PROX_DTC_INICIO IS NULL THEN 'S' ELSE 'N' END AS SIN_ATIVO")
+        if "FLG_ATIVO" in nomes_cols_dim:
+            scd_outer_exprs.append("    CASE WHEN B.PROX_DTC_INICIO IS NULL THEN 'S' ELSE 'N' END AS FLG_ATIVO")
+        if "FLG_ATUAL" in nomes_cols_dim:
+            scd_outer_exprs.append("    CASE WHEN B.PROX_DTC_INICIO IS NULL THEN 'S' ELSE 'N' END AS FLG_ATUAL")
+        col_dt_ini_sel = col_dt_idx or "DTC_EFETIVACAO"
+        scd_outer_exprs.append(
+            f"    CASE WHEN B.NR_VERSAO = 1 THEN TO_DATE('1900-01-01', 'YYYY-MM-DD') ELSE B.DTC_MOVIMENTO END AS {col_dt_ini_sel}"
+        )
+        col_dt_fim_sel = "DTC_FIM_VIGENCIA" if "DTC_FIM_VIGENCIA" in nomes_cols_dim else "DTC_EXPIRACAO"
+        scd_outer_exprs.append(f"    B.PROX_DTC_INICIO AS {col_dt_fim_sel}")
+        if "DES_ATUALIZAR" in nomes_cols_dim:
+            scd_outer_exprs.append("    CASE WHEN B.PROX_DTC_INICIO IS NULL THEN 'S' ELSE 'N' END AS DES_ATUALIZAR")
+
         linhas_odi_sel_dim.extend([
             "-- -----------------------------------------------------------------------------",
             f"-- Dimensão Alvo: {schema}.{tname} (Tabela Auxiliar: {schema}.{odi_table})",
-            f"-- Origem Stage : {schema}.{stg_origem} | Chave Natural (NK): {nk_col}",
+            f"-- Origem Stage : {schema_s}.{stg_origem} | Chave Natural (NK): {nk_col}",
             "-- -----------------------------------------------------------------------------",
             "WITH BASE_DEDUP AS (",
             "    SELECT",
@@ -1204,15 +1254,13 @@ def construir_scripts_odi(
             "        SYSDATE AS DTC_MOVIMENTO,",
             f"        ROW_NUMBER() OVER (PARTITION BY S.{nk_col} ORDER BY S.{nk_col}) AS NR_VERSAO,",
             f"        LEAD(SYSDATE, 1) OVER (PARTITION BY S.{nk_col} ORDER BY S.{nk_col}) AS PROX_DTC_INICIO",
-            f"    FROM {schema}.{stg_origem} S",
+            f"    FROM {schema_s}.{stg_origem} S",
             f"    WHERE S.{nk_col} IS NOT NULL",
             ")",
             "SELECT",
             f"    B.{nk_col},",
             f"    {outer_cols},",
-            "    B.NR_VERSAO AS VERSION,",
-            "    CASE WHEN B.NR_VERSAO = 1 THEN TO_DATE('1900-01-01', 'YYYY-MM-DD') ELSE B.DTC_MOVIMENTO END AS DTC_INICIO,",
-            "    B.PROX_DTC_INICIO AS DTC_EXPIRACAO",
+            ",\n".join(scd_outer_exprs),
             "FROM BASE_DEDUP B;",
             "",
         ])
@@ -1220,11 +1268,13 @@ def construir_scripts_odi(
     linhas_odi_fato = [
         "-- =============================================================================",
         f"-- CONSULTAS DE RESOLUÇÃO DE SKs PARA TABELAS FATO (MAP_FATO_*) — PROJETO {projeto}",
-        f"-- Schema Alvo: {schema} | Estratégia: {estrategia.upper()} | Gerado em: {agora}",
+        f"-- Schema Alvo: {schema} | Stage Origem: {schema_s} | Estratégia: {estrategia.upper()} | Gerado em: {agora}",
         "-- =============================================================================",
         "",
     ]
 
+    dims_by_name = {d["nome_tabela"].upper(): d for d in dims}
+    nomes_dims_set = set(dims_by_name.keys())
     dim_by_key = {}
     for d in dims:
         ent = re.sub(r"^DIM_", "", d["nome_tabela"].upper())
@@ -1235,6 +1285,7 @@ def construir_scripts_odi(
         ent_fato = re.sub(r"^(FATO_|FAT_)", "", fname)
         stg_fato = stg_map.get(ent_fato, f"STG_{ent_fato}")
         sk_fato = f["colunas"][0]["nome_dw"].upper() if f["colunas"] else f"SK_{ent_fato}"
+        fks_f_map = {fk["coluna"].upper(): fk["tabela_ref"].upper() for fk in identificar_fks_fato(f, nomes_dims_set)}
 
         select_parts = []
         join_parts = []
@@ -1242,30 +1293,33 @@ def construir_scripts_odi(
 
         for c in f["colunas"]:
             cname = c["nome_dw"].upper()
-            if cname == sk_fato:
+            if cname == sk_fato and cname not in fks_f_map:
                 continue
-            if cname.startswith(("SK_", "DIM_")) or cname.endswith("_KEY"):
-                sufixo = re.sub(r"^(SK_|DIM_)", "", cname)
-                sufixo = re.sub(r"_KEY$", "", sufixo)
-                dim_match = dim_by_key.get(sufixo)
+            if cname in fks_f_map or cname.startswith(("SK_", "DIM_")) or cname.endswith("_KEY"):
+                dim_match = dims_by_name.get(fks_f_map.get(cname, ""))
                 if not dim_match:
-                    for k_ent, d_obj in dim_by_key.items():
-                        if k_ent in sufixo or sufixo in k_ent:
-                            dim_match = d_obj
-                            break
+                    sufixo = re.sub(r"^(SK_|DIM_|ID_|COD_)", "", cname)
+                    sufixo = re.sub(r"_KEY$", "", sufixo)
+                    dim_match = dim_by_key.get(sufixo)
+                    if not dim_match:
+                        for k_ent, d_obj in dim_by_key.items():
+                            if k_ent in sufixo or sufixo in k_ent:
+                                dim_match = d_obj
+                                break
                 alias = f"D{alias_idx}"
                 alias_idx += 1
                 if dim_match:
                     d_name = dim_match["nome_tabela"].upper()
                     d_sk = _obter_sk_dim(dim_match)
                     d_nk = _obter_nk_dim(dim_match)
-                    tem_scd2 = any(col["nome_dw"].upper() == "DTC_EXPIRACAO" for col in dim_match["colunas"])
+                    tem_scd2 = any(col["nome_dw"].upper() in ("DTC_EXPIRACAO", "DTC_FIM_VIGENCIA") for col in dim_match["colunas"])
+                    col_exp = "DTC_FIM_VIGENCIA" if any(col["nome_dw"].upper() == "DTC_FIM_VIGENCIA" for col in dim_match["colunas"]) else "DTC_EXPIRACAO"
                     select_parts.append(f"    NVL({alias}.{d_sk}, -1) AS {cname}")
                     if tem_scd2:
                         join_parts.append(
                             f"LEFT JOIN {schema}.{d_name} {alias}\n"
                             f"    ON S.{d_nk} = {alias}.{d_nk}\n"
-                            f"   AND {alias}.DTC_EXPIRACAO IS NULL"
+                            f"   AND {alias}.{col_exp} IS NULL"
                         )
                     else:
                         join_parts.append(
@@ -1283,14 +1337,17 @@ def construir_scripts_odi(
 
         linhas_odi_fato.extend([
             "-- -----------------------------------------------------------------------------",
-            f"-- Tabela Fato Alvo: {schema}.{fname} | Stage Origem: {schema}.{stg_fato}",
+            f"-- Tabela Fato Alvo: {schema}.{fname} | Stage Origem: {schema_s}.{stg_fato}",
             "-- -----------------------------------------------------------------------------",
             "SELECT",
             ",\n".join(select_parts),
-            f"FROM {schema}.{stg_fato} S",
-            "\n".join(join_parts) + ";",
-            "",
         ])
+        if join_parts:
+            linhas_odi_fato.append(f"FROM {schema_s}.{stg_fato} S")
+            linhas_odi_fato.append("\n".join(join_parts) + ";")
+        else:
+            linhas_odi_fato.append(f"FROM {schema_s}.{stg_fato} S;")
+        linhas_odi_fato.append("")
 
     return "\n".join(linhas_odi_ddl), "\n".join(linhas_odi_sel_dim), "\n".join(linhas_odi_fato)
 
@@ -1415,7 +1472,7 @@ def executar_melhoria_rapida(
 
     tabelas = []
     for arq in arquivos_sql:
-        sql_txt = arq.read_text(encoding="utf-8", errors="ignore")
+        sql_txt = ler_texto_sql(arq)
         tabs_arq = parse_ddl_text(sql_txt, arq.name)
         tabelas.extend(tabs_arq)
 

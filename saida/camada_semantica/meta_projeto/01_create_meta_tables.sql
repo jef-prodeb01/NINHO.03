@@ -98,7 +98,7 @@ COMMENT ON COLUMN META_METRICA.USUARIO_ATUALIZACAO IS 'Usuário Oracle que reali
 -- -------------------------------------------------------------
 CREATE TABLE META_CONSULTA_NEGOCIO (
     PROJETO                        VARCHAR2(50) DEFAULT 'GLOBAL' NOT NULL,
-    ID_CONSULTA                    VARCHAR2(10) NOT NULL,
+    ID_CONSULTA                    VARCHAR2(50) NOT NULL,
     PERGUNTA_LINGUAGEM_NATURAL     VARCHAR2(4000),
     PAINEL_RELACIONADO             VARCHAR2(255),
     OBSERVACOES                    VARCHAR2(4000),

@@ -14,6 +14,8 @@ FTP_PORT="${ENV_FTP_PORT:-21}"
 FTP_USER="${ENV_FTP_USER:-}"
 FTP_PASS="${ENV_FTP_PASS:-}"
 FTP_DIR="${ENV_FTP_REMT_DIR:-/}"
+CA_BUNDLE="${ENV_FTP_CA_BUNDLE:-/etc/pki/tls/certs/ca-bundle.crt}"
+CURL_TLS_OPTS="${ENV_CURL_TLS_OPTS:---cacert ${CA_BUNDLE}}"
 
 [[ "${FTP_DIR}" != /* ]] && FTP_DIR="/${FTP_DIR}"
 [[ "${FTP_DIR}" != */ ]] && FTP_DIR="${FTP_DIR}/"
@@ -34,14 +36,14 @@ echo "==========================================================================
 
 echo "NOME_PROJETO;NOME_ARQUIVO;DATA_MODIFICACAO;TAMANHO_BYTES;STATUS_CARGA" > "${CSV_OUTPUT}"
 
-curl -s --ssl-reqd --insecure \
+# shellcheck disable=SC2086
+curl -s --ssl-reqd ${CURL_TLS_OPTS} \
      -u "${FTP_USER}:${FTP_PASS}" \
      --list-only "${REMOTE_URL}" | while read -r file; do
     if [[ "${file}" =~ \.(xlsx|csv|txt)$ ]]; then
-        SIZE=$(curl -s --ssl-reqd --insecure -u "${FTP_USER}:${FTP_PASS}" -sI "${REMOTE_URL}${file}" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+        SIZE=$(curl -s --ssl-reqd ${CURL_TLS_OPTS} -u "${FTP_USER}:${FTP_PASS}" -sI "${REMOTE_URL}${file}" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
         echo "${PROJETO};${file};$(date '+%Y-%m-%d %H:%M:%S');${SIZE:-0};PENDENTE" >> "${CSV_OUTPUT}"
     fi
 done
 
 echo "Concluido. Manifesto gerado em: ${CSV_OUTPUT}"
-

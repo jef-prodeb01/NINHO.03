@@ -129,6 +129,7 @@ class ODIMappingAuditor:
         self.h8_date_joins_missing_trunc = []
         self.h8_duration_in_group_by = []
         self.h9_c_dollar_in_multitenant_loop = []
+        self.c_dollar_scenarios = []
         self.serial_scen_packages = []
 
         self.heuristics_triggered = []
@@ -306,7 +307,7 @@ class ODIMappingAuditor:
 
                 # H8A: Join com DIM_TEMPO.DTC_COMPLETA sem TRUNC na coluna da STG
                 if "DTC_COMPLETA" in e.upper() and "=" in e:
-                    # Ex: NVL(STG_SEI_PROTOCOLO.DTA_GERACAO, TRUNC(SYSDATE)) = DIM_TEMPO.DTC_COMPLETA
+                    # Ex: NVL(STG_PROTOCOLO.DTA_GERACAO, TRUNC(SYSDATE)) = DIM_TEMPO.DTC_COMPLETA
                     left_side = e.split("=")[0] if "DTC_COMPLETA" in e.split("=")[1].upper() else e.split("=")[1]
                     if not re.search(r"TRUNC\s*\(\s*[A-Za-z0-9_]+\.[A-Za-z0-9_]+", left_side, re.IGNORECASE):
                         finding = f"{obj_name}: `{e.strip()}` (Coluna de data sem `TRUNC()` no join com `DIM_TEMPO`)"
@@ -324,11 +325,19 @@ class ODIMappingAuditor:
         for task_label, sql in sql_tasks:
             sql_up = sql.upper()
 
-            # H9: Tabela C$_ criada dentro de cenário que usa #V_SCHEMA / #BI_SEI_MUNICIPIO.V_SCHEMA
-            if ("CREATE TABLE" in sql_up and "C$_" in sql_up) or ("FROM" in sql_up and ".V_SCHEMA" in sql_up):
-                if "C$_" in sql_up or ".V_SCHEMA" in sql_up:
+            # H9 / H5: Tabelas C$_ no SQL compilado
+            tem_c_dollar = "CREATE TABLE" in sql_up and "C$_" in sql_up
+            tem_var_schema = ".V_SCHEMA" in sql_up or "#V_SCHEMA" in sql_up or "V_CNT" in sql_up
+            if tem_c_dollar:
+                if tem_var_schema or self.multitenant_loop_found:
                     if scen_name not in self.h9_c_dollar_in_multitenant_loop:
                         self.h9_c_dollar_in_multitenant_loop.append(scen_name)
+                else:
+                    if scen_name not in self.c_dollar_scenarios:
+                        self.c_dollar_scenarios.append(scen_name)
+            elif tem_var_schema and self.multitenant_loop_found:
+                if scen_name not in self.h9_c_dollar_in_multitenant_loop:
+                    self.h9_c_dollar_in_multitenant_loop.append(scen_name)
 
             # H7 no SQL compilado: 'X' AS ...DES_ATUALIZAR + STG.DES_ATUALIZAR <> DIM.DES_ATUALIZAR
             if re.search(r"'X'\s+AS\s+[A-Za-z0-9_]*DES_ATUALIZAR", sql, re.IGNORECASE) or "STG.DES_ATUALIZAR <> DIM.DES_ATUALIZAR" in sql_up:
@@ -337,7 +346,7 @@ class ODIMappingAuditor:
 
             # H6 no SQL compilado: LEFT OUTER JOIN ... DIM_... ON STG.ID_... = DIM.ID_... sem DTC_EXPIRACAO
             for m in re.finditer(
-                r"LEFT\s+OUTER\s+JOIN\s+(?:<\?=.*?\?>\s+)?(DIM_SEI_MUNIC_[A-Za-z0-9_]+|DIM_[A-Za-z0-9_]+)\s+ON\s+([^\n\r)]+)",
+                r"LEFT\s+OUTER\s+JOIN\s+(?:<\?=.*?\?>\s+)?(?:[A-Za-z0-9_#.]+\.)?(DIM_[A-Za-z0-9_]+)\s+ON\s+([^\n\r)]+)",
                 sql,
                 re.IGNORECASE | re.DOTALL,
             ):
@@ -522,7 +531,9 @@ class ODIMappingAuditor:
                     f"a condição é SEMPRE FALSA! O SCD Tipo 2 nunca abre nova versão histórica e sobrescreve tudo no `TGT_UPD_DIM` (SCD1 disfarçado)."
                 ),
                 "prescricao": [
-                    "Substituir a constante `'X'` na expressão `DES_ATUALIZAR` por um hash determinístico das colunas monitoradas no SCD2: `STANDARD_HASH(NVL(TO_CHAR(COL1),'#') || '|' || NVL(TO_CHAR(COL2),'#'), 'MD5')`.",
+                    "Manter `DES_ATUALIZAR` como flag `CHAR(1)` calculada dinamicamente por comparação de hash: "
+                    "`CASE WHEN <hash_stg> <> <hash_dim_vigente> THEN 'S' ELSE 'N' END AS DES_ATUALIZAR`.",
+                    "Alternativa corporativa recomendada: manter uma coluna física `HSH_SCD2 VARCHAR2(32)` na dimensão contendo o hash MD5 dos atributos monitorados no SCD2 e comparar `STG.HSH_SCD2 <> DIM.HSH_SCD2`.",
                     "Manter nas colunas de SCD Tipo 1 apenas os atributos descritivos que devem ser sobrescritos sem gerar nova linha.",
                 ],
             })
@@ -546,64 +557,88 @@ class ODIMappingAuditor:
                     "Foram detectados erros semânticos nas expressões SQL de carga das Fatos: "
                     + " | ".join(detalhes)
                     + ". Datas com componente de hora (`HH24:MI:SS`) sem `TRUNC()` falham no join com `DIM_TEMPO.DTC_COMPLETA` (caindo em `-1`), "
-                    "e expressões `(DT_CONCLUSAO - DT_ABERTURA) * 86400` dentro do `GROUP BY` impedem a agregação e avaliam `SYSDATE` linha a linha."
+                    "e expressões de duração dentro do `GROUP BY` impedem a agregação e avaliam `SYSDATE` linha a linha."
                 ),
                 "prescricao": [
-                    "Padronizar todos os lookups de `DIM_TEMPO` com `TRUNC()`: `TRUNC(NVL(STG.DTA_GERACAO, SYSDATE)) = DIM_TEMPO.DTC_COMPLETA`.",
-                    "Em `MAP_CARGA_FATO_TRAMITACAO`, envolver a fórmula de tempo em `SUM(((NVL(STG.DT_CONCLUSAO, SYSDATE) - STG.DT_ABERTURA) * 86400))` para removê-la da cláusula `GROUP BY`.",
+                    "Padronizar todos os lookups de `DIM_TEMPO` com `TRUNC()`: `TRUNC(NVL(STG.<COLUNA_DATA>, SYSDATE)) = DIM_TEMPO.DTC_COMPLETA`.",
+                    "Em mapeamentos com métricas de duração temporal (ex.: data_fim - data_inicio), envolver a fórmula em `SUM(...)` ou `AVG(...)` para removê-la da cláusula `GROUP BY`.",
                 ],
             })
 
         # H9: Loop Multi-Tenant Intra-Oracle com LKM SQL to Oracle (C$_)
-        if self.h9_c_dollar_in_multitenant_loop or (self.same_db_all_users_discovery and any("SQL to Oracle" in l for l in self.lkms_found)):
+        if self.h9_c_dollar_in_multitenant_loop or (self.same_db_all_users_discovery and self.multitenant_loop_found and any("SQL to Oracle" in l for l in self.lkms_found)):
+            scens_afetados = ", ".join(self.h9_c_dollar_in_multitenant_loop[:5]) if self.h9_c_dollar_in_multitenant_loop else "Cenários com loop multi-tenant"
             self.heuristics_triggered.append({
                 "id": "H9_LOOP_MULTITENANT_C_DOLLAR_INTRA_ORACLE",
-                "titulo": "Gargalo Severo Multi-Tenant: Recriação de Tabelas `C$_` via JDBC a cada Município no Mesmo Banco Oracle",
+                "titulo": "Gargalo Severo Multi-Tenant: Recriação de Tabelas `C$_` via JDBC a cada Tenant no Mesmo Banco Oracle",
                 "gravidade": "CRÍTICA",
                 "descricao": (
-                    "A procedure `MERGE_ODI_CTRL` descobre os schemas municipais consultando `all_users` local (todos os schemas `BD_SEIMUN_%` residem no mesmo Oracle). "
-                    "Porém, os 9 mapeamentos de Staging usam `LKM SQL to Oracle (Built-In)`. A cada iteração do loop (`#V_CNT`), o ODI executa `CREATE TABLE C$_0STG_...`, "
-                    "trafega todas as linhas pela memória da JVM do agente JDBC (`VALUES(:ID_ATIVIDADE, ...)`), faz `INSERT INTO STG_...` e `DROP TABLE C$_0STG_...`!"
+                    f"Nos cenários `{scens_afetados}`, a esteira itera sobre múltiplos schemas tenant no mesmo banco Oracle "
+                    "utilizando `LKM SQL to Oracle (Built-In)`. A cada iteração do loop, o ODI recria tabelas temporárias `C$_`, "
+                    "trafega todas as linhas pela memória da JVM do agente JDBC e executa DROP TABLE desnecessariamente!"
                 ),
                 "prescricao": [
-                    "Como os schemas `BD_SEIMUN_%` estão na mesma instância Oracle do DW, eliminar o `LKM SQL to Oracle (Built-In)` e as tabelas `C$_`!",
-                    "Usar `INSERT /*+ APPEND */ INTO BI_SEI_MUNICIPIO.STG_SEI_<TABELA> SELECT ... FROM #V_SCHEMA.<TABELA>` direto no banco (Single-Technology IKM ou Procedure com `EXECUTE IMMEDIATE` iterando sobre `ODI_SCHEMA_CTRL`).",
+                    "Como os schemas de origem residem na mesma instância Oracle do DW, eliminar o `LKM SQL to Oracle (Built-In)` e as tabelas `C$_`.",
+                    "Substituir por carga direta no banco (Single-Technology IKM ou Procedure com `INSERT /*+ APPEND */ INTO <DW_SCHEMA>.STG_<TABELA> SELECT ... FROM #V_SCHEMA.<TABELA>`).",
                 ],
             })
 
         # H2: Pré-requisito de Primary Key na Staging (+ validação de chave multi-tenant)
-        desc_h2 = (
-            "Para cargas incrementais (`IKM Oracle Merge`), a Staging exige Primary Key física. "
+        has_incremental_ikm = any(
+            re.search(r"\b(Merge|Incremental\s+Update|Control\s+Append)\b", ikm, re.IGNORECASE)
+            for ikm in self.ikms_found
         )
-        if self.multitenant_concat_found:
-            desc_h2 += (
-                "Foi detectada corretamente a concatenação de chave natural multi-tenant "
-                "`to_number(to_char(#V_IBGE) || '000' || to_char(ID))` para evitar colisão de IDs entre municípios."
+        needs_h2 = (
+            has_incremental_ikm
+            or self.multitenant_concat_found
+            or bool(self.create_date_cols and self.close_date_cols)
+            or bool(self.update_date_cols and not self.truncate_detected)
+        )
+        if needs_h2:
+            desc_h2 = (
+                "Para cargas com consolidação incremental (IKM Oracle Merge / Update) ou fontes particionadas, "
+                "a Staging exige Primary Key física para garantir unicidade e permitir MERGE performático. "
             )
-        self.heuristics_triggered.append({
-            "id": "H2_PK_STAGING_E_CHAVE_MULTITENANT",
-            "titulo": "Estrutura de Primary Key na Staging Area & Isolamento de Chaves Multi-Tenant",
-            "gravidade": "ALERTA_ARQUITETURAL",
-            "descricao": desc_h2,
-            "prescricao": [
-                "Criar constraint de Primary Key física nas tabelas `STG_*` sobre a coluna de ID composta (`#V_IBGE || '000' || ID`).",
-                "Configurar `Target Key` no ODI Canvas apontando para a PK da Staging.",
-            ],
-        })
+            if self.multitenant_concat_found:
+                desc_h2 += (
+                    "Foi detectada corretamente a concatenação de chave natural multi-tenant "
+                    "para isolamento entre origens distintas."
+                )
+            self.heuristics_triggered.append({
+                "id": "H2_PK_STAGING_E_CHAVE_MULTITENANT",
+                "titulo": "Estrutura de Primary Key na Staging Area & Isolamento de Chaves de Carga",
+                "gravidade": "ALERTA_ARQUITETURAL",
+                "descricao": desc_h2,
+                "prescricao": [
+                    "Criar constraint de Primary Key física nas tabelas `STG_*` sobre a coluna de chave natural/composta.",
+                    "Configurar `Target Key` no ODI Canvas apontando para a PK da Staging.",
+                ],
+            })
 
-        # H3: IKM Merge vs Update
-        self.heuristics_triggered.append({
-            "id": "H3_IKM_MERGE_VS_UPDATE",
-            "titulo": "Seleção Ótima de IKM: `IKM Oracle Merge` com `FLOW_CONTROL = False`",
-            "gravidade": "RECOMENDAÇÃO_PERFORMANCE",
-            "descricao": (
-                "Substituir `IKM Oracle Incremental Update` ou `Control Append` com CKM ativo por `IKM Oracle Merge` "
-                "(para cargas incrementais) ou `IKM Oracle Insert` com `/*+ APPEND PARALLEL */` e `FLOW_CONTROL = False`."
-            ),
-            "prescricao": [
-                "Definir `FLOW_CONTROL = False` e `STATIC_CONTROL = False` para eliminar a criação de tabelas de erro `E$_`.",
-            ],
-        })
+        # H3: IKM Merge vs Update / FLOW_CONTROL
+        inadequate_ikms = [
+            ikm for ikm in self.ikms_found
+            if re.search(r"\b(Incremental\s+Update|Control\s+Append)\b", ikm, re.IGNORECASE)
+        ]
+        if inadequate_ikms or self.flow_control_detected:
+            detalhes_h3 = []
+            if inadequate_ikms:
+                detalhes_h3.append(f"IKM inadequado detectado: {', '.join(inadequate_ikms)}")
+            if self.flow_control_detected:
+                detalhes_h3.append("Opção FLOW_CONTROL = True ativa (gera tabelas de erro E$_ e verificações linha a linha)")
+            self.heuristics_triggered.append({
+                "id": "H3_IKM_MERGE_VS_UPDATE",
+                "titulo": "Seleção Ótima de IKM: Substituir Incremental Update por `IKM Oracle Merge` com `FLOW_CONTROL = False`",
+                "gravidade": "RECOMENDAÇÃO_PERFORMANCE",
+                "descricao": (
+                    f"{'; '.join(detalhes_h3)}. "
+                    "Substituir `IKM Oracle Incremental Update` ou `Control Append` com CKM ativo por `IKM Oracle Merge` "
+                    "(para cargas incrementais) ou `IKM Oracle Insert` com `/*+ APPEND PARALLEL */` e `FLOW_CONTROL = False`."
+                ),
+                "prescricao": [
+                    "Definir `FLOW_CONTROL = False` e `STATIC_CONTROL = False` para eliminar a criação de tabelas de erro `E$_`.",
+                ],
+            })
 
         # H4: Monolito ou Pacotes Seriais
         if len(self.stg_targets) >= 3 or self.serial_scen_packages:
@@ -617,22 +652,23 @@ class ODIMappingAuditor:
                 "gravidade": "ALERTA_ARQUITETURAL",
                 "descricao": (
                     f"Os fluxos de Staging, Dimensões e Fatos são disparados em série (`-SYNC_MODE=1`).{detalhe_pack} "
-                    f"Isso faz com que tabelas pequenas aguardem o término de tabelas volumosas (`ATIVIDADE`, `PROTOCOLO`)."
+                    f"Isso faz com que tabelas pequenas aguardem o término de tabelas volumosas."
                 ),
                 "prescricao": [
-                    "Disparar os cenários independentes de Dimensões (`SCEN_CARGA_SEI_DIM_*`) e Fatos (`SCEN_CARGA_FATO_*`) em paralelo via `OdiStartScen -ASYNC=YES` seguidos de `OdiWaitForChildSession`.",
+                    "Disparar os cenários independentes de Dimensões (`SCEN_CARGA_DIM_*`) e Fatos (`SCEN_CARGA_FATO_*`) em paralelo via `OdiStartScen -ASYNC=YES` seguidos de `OdiWaitForChildSession`.",
                 ],
             })
 
         # H5: Funil JDBC genérico (quando não coberto pelo H9)
-        if any("SQL to Oracle" in lkm for lkm in self.lkms_found) and not self.h9_c_dollar_in_multitenant_loop:
+        has_sql_to_oracle = any("SQL to Oracle" in lkm for lkm in self.lkms_found)
+        if (has_sql_to_oracle or self.c_dollar_scenarios) and not self.h9_c_dollar_in_multitenant_loop:
+            cenarios_txt = f" ({len(self.c_dollar_scenarios)} cenário(s) com C$_: {', '.join(self.c_dollar_scenarios[:4])})" if self.c_dollar_scenarios else ""
             self.heuristics_triggered.append({
                 "id": "H5_FUNIL_JDBC",
-                "titulo": "Detecção de Funil de I/O em Driver JDBC (`LKM SQL to Oracle`)",
+                "titulo": f"Detecção de Funil de I/O em Driver JDBC (`LKM SQL to Oracle` / `C$_`){cenarios_txt}",
                 "gravidade": "ALERTA_PERFORMANCE",
                 "descricao": (
-                    "O uso de `LKM SQL to Oracle (Built-In)` força todos os dados a trafegarem pela JVM do ODI Agent "
-                    "e cria tabelas temporárias `C$_`."
+                    "O uso de `LKM SQL to Oracle (Built-In)` ou tabelas temporárias `C$_` força os dados a trafegarem pela JVM do ODI Agent."
                 ),
                 "prescricao": [
                     "Substituir por `LKM Oracle to Oracle Pull (DB Link)` ou SQL direto no mesmo servidor Oracle.",
@@ -720,23 +756,55 @@ class ODIMappingAuditor:
                     content.append(f"- {item}")
                 content.append("")
 
-        content.append("---\n")
-        content.append("## 4. Scripts SQL / Expressões Corretivas Prontas para Aplicação\n")
-        content.append("```sql")
-        content.append("-- 1. Correção da Expressão DES_ATUALIZAR nas Dimensões (Habilita SCD Tipo 2 Real):")
-        content.append("STANDARD_HASH(NVL(TO_CHAR(STG.SIGLA), '#') || '|' || NVL(TO_CHAR(STG.DESCRICAO), '#'), 'MD5') AS DES_ATUALIZAR")
-        content.append("")
-        content.append("-- 2. Correção dos Joins de Dimensão SCD2 nas Tabelas Fato (Evita Fan Trap / Duplicação):")
-        content.append("LEFT OUTER JOIN BI_SEI_MUNICIPIO.DIM_SEI_MUNIC_UNIDADE DIM_UNIDADE")
-        content.append("  ON STG_SEI_ATIVIDADE.ID_UNIDADE = DIM_UNIDADE.ID_UNIDADE")
-        content.append(" AND DIM_UNIDADE.DTC_EXPIRACAO IS NULL")
-        content.append("")
-        content.append("-- 3. Correção do Join com DIM_TEMPO em MAP_CARGA_FATO_PROCESSO:")
-        content.append("TRUNC(NVL(STG_SEI_PROTOCOLO.DTA_GERACAO, SYSDATE)) = DIM_TEMPO.DTC_COMPLETA")
-        content.append("")
-        content.append("-- 4. Correção da Métrica de Tempo de Tramitação em MAP_CARGA_FATO_TRAMITACAO (Fora do GROUP BY):")
-        content.append("SUM(((NVL(STG_SEI_ATIVIDADE.DT_CONCLUSAO, SYSDATE) - STG_SEI_ATIVIDADE.DT_ABERTURA) * 86400)) AS QTD_TEMPO_TRAMITACAO")
-        content.append("```\n")
+        # Seção 4: Scripts SQL / Expressões Corretivas Prontas para Aplicação (apenas para heurísticas disparadas)
+        blocos_sql = []
+        if self.h7_fake_scd2_constant_x:
+            blocos_sql.append(
+                "-- 1. Correção da Expressão DES_ATUALIZAR nas Dimensões (Flag CHAR(1) baseada em Hash SCD2):\n"
+                "-- Opção A: Flag calculada no SELECT da ODI_DIM_*:\n"
+                "CASE\n"
+                "  WHEN STANDARD_HASH(NVL(TO_CHAR(STG.COL1), '#') || '|' || NVL(TO_CHAR(STG.COL2), '#'), 'MD5')\n"
+                "       <> DIM.HSH_SCD2 THEN 'S'\n"
+                "  ELSE 'N'\n"
+                "END AS DES_ATUALIZAR\n"
+                "\n"
+                "-- Opção B: Coluna HSH_SCD2 VARCHAR2(32) comparada no TGT_CLS_DIM:\n"
+                "STANDARD_HASH(NVL(TO_CHAR(STG.COL1), '#') || '|' || NVL(TO_CHAR(STG.COL2), '#'), 'MD5') AS HSH_SCD2"
+            )
+        if self.h6_fact_joins_missing_scd2_filter:
+            blocos_sql.append(
+                "-- 2. Correção dos Joins de Dimensão SCD2 nas Tabelas Fato (Evita Fan Trap / Duplicação):\n"
+                "LEFT OUTER JOIN <SCHEMA_DW>.DIM_<ENTIDADE> DIM_<ENTIDADE>\n"
+                "  ON STG_<FATO>.<ID_ENTIDADE> = DIM_<ENTIDADE>.<ID_ENTIDADE>\n"
+                " AND DIM_<ENTIDADE>.DTC_EXPIRACAO IS NULL"
+            )
+        if self.h8_date_joins_missing_trunc:
+            blocos_sql.append(
+                "-- 3. Correção do Join com DIM_TEMPO (Evita chaves órfãs -1 por componente de hora):\n"
+                "TRUNC(NVL(STG.<COLUNA_DATA>, SYSDATE)) = DIM_TEMPO.DTC_COMPLETA"
+            )
+        if self.h8_duration_in_group_by:
+            blocos_sql.append(
+                "-- 4. Correção da Métrica de Duração em Fato (Agregação com SUM fora do GROUP BY):\n"
+                "SUM(((NVL(STG.<DATA_FIM>, SYSDATE) - STG.<DATA_INICIO>) * 86400)) AS QTD_DURACAO_SEGUNDOS"
+            )
+        if self.h9_c_dollar_in_multitenant_loop:
+            blocos_sql.append(
+                "-- 5. Eliminação de LKM SQL to Oracle e Tabelas C$_ em ambiente Intra-Oracle:\n"
+                "INSERT /*+ APPEND */ INTO <SCHEMA_DW>.STG_<TABELA> (\n"
+                "    COL1, COL2, DTC_CARGA\n"
+                ")\n"
+                "SELECT\n"
+                "    COL1, COL2, SYSDATE\n"
+                "FROM #V_SCHEMA.<TABELA>"
+            )
+
+        if blocos_sql:
+            content.append("---\n")
+            content.append("## 4. Scripts SQL / Expressões Corretivas Prontas para Aplicação\n")
+            content.append("```sql")
+            content.append("\n\n".join(blocos_sql))
+            content.append("```\n")
 
         output_path.write_text("\n".join(content), encoding="utf-8")
         print_ok(f"Relatório preditivo v2.0 gerado com sucesso em: {output_path}")

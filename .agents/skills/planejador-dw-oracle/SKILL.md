@@ -143,7 +143,7 @@ Quando o Engenheiro de Dados quiser visualizar **de ponta a ponta** como o proje
    ```bash
    python core/scripts_comuns/simular_projeto.py --modulo dw --acao simular
    ```
-   Gera [`entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md`](../../../entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md) contendo:
+   Gera `entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md` (em [`entrega/planejador_dw/`](../../../entrega/planejador_dw/)) contendo:
    - **Seção 1:** Gate de Aprovação (`- [ ] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL`);
    - **Seção 2:** Parâmetros Globais editáveis (`PROJETO_SIGLA`, `SCHEMA_DW_ALVO`, `SCHEMA_STG_ALVO`, `ESTRATEGIA_CARGA_FATO`, `TABLESPACE_DADOS`, `TABLESPACE_INDICES`);
    - **Seção 3:** Arquitetura Visual da Esteira Completa (Mermaid);

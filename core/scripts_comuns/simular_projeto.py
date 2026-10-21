@@ -67,6 +67,12 @@ from modular_semantica import (
     construir_views_kpis,
     localizar_ddls_para_semantica,
 )
+from inspecionar_ddl_origem import (
+    AMARELO,
+    RESET,
+    detectar_ctas,
+    ler_texto_sql,
+)
 
 ROOT_DIR = SCRIPT_DIR.parent.parent
 ENTREGA_DW_DIR = ROOT_DIR / "entrega" / "planejador_dw"
@@ -95,6 +101,7 @@ def _classificar_papel_coluna_dim(cname: str, sk_col: str, nk_col: str) -> str:
         "DTC_EXPIRACAO",
         "FLG_ATIVO",
         "SIN_ATIVO",
+        "DES_ATUALIZAR",
         "DT_INICIO_VIGENCIA",
         "DT_FIM_VIGENCIA",
     ):
@@ -120,25 +127,186 @@ def _classificar_papel_coluna_fato(cname: str, pks: list[str], fks_cols: set[str
     return "DIM_DEGENERADA"
 
 
+_RE_TABELA_TECNICA = re.compile(
+    r"^(?:STG_|TMP_|TEMP_|ODI_|LOG_|ERR_|CTRL_|SNP_|C\$_|E\$_|I\$_|CONTROLE_)|(?:_ERRO|_ERR|_LOG|_CTRL|_REJEITADOS)$",
+    re.IGNORECASE,
+)
+
+
+def _eh_tabela_tecnica(nome_tabela: str) -> bool:
+    return bool(_RE_TABELA_TECNICA.search(nome_tabela.upper()))
+
+
+def _eh_tabela_dw(nome_tabela: str) -> bool:
+    return nome_tabela.upper().startswith(("DIM_", "DM_", "FATO_", "FAT_", "FT_"))
+
+
+_PALAVRAS_CHAVE_METRICAS = {
+    "VALOR",
+    "PRECO",
+    "QUANTIDADE",
+    "CUSTO",
+    "SALDO",
+    "TOTAL",
+    "MONTANTE",
+    "PESO",
+    "DESCONTO",
+    "LUCRO",
+    "RECEITA",
+    "TAXA",
+    "JUROS",
+    "VAL",
+    "VLR",
+    "QTD",
+    "QT",
+    "PCT",
+    "DURACAO",
+}
+_PREFIXOS_METRICAS = ("VAL_", "VLR_", "QTD_", "QT_", "PCT_", "NUM_DIAS_", "TMP_", "DURACAO_")
+
+
+def _avaliar_metricas_tabela(colunas: list[dict]) -> tuple[int, list[str]]:
+    metricas = []
+    for c in colunas:
+        u = c["nome_dw"].upper()
+        if u.startswith(_PREFIXOS_METRICAS):
+            metricas.append(u)
+        else:
+            partes = set(u.split("_"))
+            if partes & _PALAVRAS_CHAVE_METRICAS:
+                tipo = (c.get("tipo_oracle") or c.get("tipo_origem") or "").upper()
+                if any(t in tipo for t in ("NUMBER", "DECIMAL", "NUMERIC", "FLOAT", "DOUBLE", "INT", "BIGINT")):
+                    metricas.append(u)
+    return len(metricas), metricas
+
+
+def _pontuar_e_classificar_oltp(tabelas_oltp: list[dict], todas_tabelas: list[dict]) -> dict[str, str]:
+    """Classifica cada tabela OLTP entre 'FATO' ou 'DIM' com base em métricas, relações e nomes."""
+    mapa_nomes = {}
+    for t in todas_tabelas:
+        nome_up = t["nome_tabela"].upper()
+        raw = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL|DIM|DM|FATO|FAT|FT)_", "", nome_up)
+        mapa_nomes[raw] = nome_up
+
+    refs_saida: dict[str, set[str]] = {t["nome_tabela"].upper(): set() for t in tabelas_oltp}
+    refs_entrada: dict[str, set[str]] = {t["nome_tabela"].upper(): set() for t in tabelas_oltp}
+
+    for t in tabelas_oltp:
+        t_nome = t["nome_tabela"].upper()
+        for fk in t.get("fks", []):
+            alvo = fk.get("tabela_ref", "").upper()
+            if alvo and alvo != t_nome:
+                refs_saida[t_nome].add(alvo)
+                if alvo in refs_entrada:
+                    refs_entrada[alvo].add(t_nome)
+
+        for col in t.get("colunas", []):
+            c_up = col["nome_dw"].upper()
+            m_fk = re.match(r"^(?:ID|CD|COD|NUM)_([A-Za-z0-9_]+)$", c_up)
+            if m_fk:
+                entidade = m_fk.group(1)
+                for raw, full_name in mapa_nomes.items():
+                    if entidade == raw and full_name != t_nome:
+                        refs_saida[t_nome].add(full_name)
+                        if full_name in refs_entrada:
+                            refs_entrada[full_name].add(t_nome)
+
+    classificacao = {}
+    scores = {}
+
+    for t in tabelas_oltp:
+        t_nome = t["nome_tabela"].upper()
+        num_met, metricas = _avaliar_metricas_tabela(t.get("colunas", []))
+        out_count = len(refs_saida[t_nome])
+        in_count = len(refs_entrada[t_nome])
+
+        score_fato = 0
+        score_dim = 0
+
+        score_fato += out_count * 3
+        score_dim += in_count * 4
+
+        score_fato += num_met * 2
+        if num_met == 0 and out_count <= 1:
+            score_dim += 3
+
+        if re.search(
+            r"\b(MOV|REL|ITEM|DETALHE|HIST|TRANS|VENDA|PEDIDO|CONTRATO|LANCAMENTO|PAGAMENTO|EXECUCAO|FATURA|ORDEM|EVENTO)\b",
+            t_nome,
+        ):
+            score_fato += 4
+        if re.search(
+            r"\b(CAD|DOM|TIPO|STATUS|CATEGORIA|CLASSIFICACAO|UNIDADE|CLIENTE|FORNECEDOR|ORGAO|PRODUTO|USUARIO|PESSOA|EMPRESA)\b",
+            t_nome,
+        ):
+            score_dim += 4
+
+        scores[t_nome] = {
+            "score_fato": score_fato,
+            "score_dim": score_dim,
+            "num_met": num_met,
+            "out_count": out_count,
+            "in_count": in_count,
+        }
+
+    fatos_definidas = []
+    for t in tabelas_oltp:
+        t_nome = t["nome_tabela"].upper()
+        info = scores[t_nome]
+        if (
+            info["score_fato"] > info["score_dim"]
+            and (info["out_count"] >= 2 or (info["out_count"] >= 1 and info["num_met"] >= 1) or info["num_met"] >= 2)
+        ):
+            classificacao[t_nome] = "FATO"
+            fatos_definidas.append(t_nome)
+        else:
+            classificacao[t_nome] = "DIM"
+
+    if not fatos_definidas and len(tabelas_oltp) > 1:
+        melhor_candidata = max(tabelas_oltp, key=lambda tab: scores[tab["nome_tabela"].upper()]["score_fato"])
+        candidata_nome = melhor_candidata["nome_tabela"].upper()
+        if scores[candidata_nome]["score_fato"] > 0 or scores[candidata_nome]["num_met"] > 0:
+            classificacao[candidata_nome] = "FATO"
+            print(
+                f"  {AMARELO}[AVISO HEURÍSTICO]{RESET} Tabela '{candidata_nome}' classificada como FATO por pontuação analítica relativa "
+                f"(Score: {scores[candidata_nome]['score_fato']}). Revise a granularidade no Blueprint se necessário."
+            )
+
+    return classificacao
+
+
 def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[dict]:
     """
-    Se as tabelas de entrada já forem DIM_* / FATO_*, preserva-as.
-    Se forem tabelas OLTP (TB_*, TAB_*, CAD_*, MOV_*), projeta automaticamente DIM_* e FATO_*.
+    Preserva tabelas que já são DW (DIM_*, FATO_*).
+    Descarta tabelas técnicas (STG_*, TMP_*, ODI_*, CTRL_*, etc.) emitindo aviso explicativo.
+    Converte tabelas OLTP (TB_*, CAD_*, MOV_*, etc.) para DIM_* ou FATO_* usando pontuação heurística explicável.
     """
-    dims_ou_fatos = [
-        t for t in tabelas_brutas
-        if t["nome_tabela"].upper().startswith(("DIM_", "DM_", "FATO_", "FAT_", "FT_"))
-    ]
-    if dims_ou_fatos:
-        return dims_ou_fatos
+    resultado_dw: list[dict] = []
+    tabelas_oltp: list[dict] = []
 
-    propostas: list[dict] = []
-    for idx, t in enumerate(tabelas_brutas):
-        raw_name = re.sub(r"^(TB|TAB|TBL|CAD|MOV|REL|RL)_", "", t["nome_tabela"].upper())
-        tem_metricas = any(c["nome_dw"].startswith(("QTD_", "VLR_", "VAL_", "QT_")) for c in t["colunas"])
-        eh_fato = tem_metricas or (idx == len(tabelas_brutas) - 1 and len(tabelas_brutas) > 1)
+    for t in tabelas_brutas:
+        t_nome = t["nome_tabela"].upper()
+        if _eh_tabela_tecnica(t_nome):
+            print(
+                f"  {AMARELO}[AVISO]{RESET} Tabela técnica ignorada na modelagem dimensional: {t_nome}"
+            )
+            continue
+        if _eh_tabela_dw(t_nome):
+            resultado_dw.append(t)
+        else:
+            tabelas_oltp.append(t)
 
-        if not eh_fato:
+    if not tabelas_oltp:
+        return resultado_dw
+
+    classif = _pontuar_e_classificar_oltp(tabelas_oltp, tabelas_brutas)
+
+    for t in tabelas_oltp:
+        t_nome = t["nome_tabela"].upper()
+        papel = classif.get(t_nome, "DIM")
+        raw_name = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL)_", "", t_nome)
+
+        if papel == "DIM":
             dim_name = f"DIM_{raw_name}"
             sk_name = "DIMENSION_KEY"
             cols_novas = [
@@ -154,8 +322,10 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
             for c in t["colunas"]:
                 cols_novas.append(dict(c))
             for aud_col, aud_tipo, aud_obrig in [
+                ("SIN_ATIVO", "CHAR(1)", "NOT NULL"),
                 ("DTC_EFETIVACAO", "DATE", "NOT NULL"),
                 ("DTC_EXPIRACAO", "DATE", "NULL"),
+                ("DES_ATUALIZAR", "CHAR(1)", "NULL"),
             ]:
                 if not any(x["nome_dw"] == aud_col for x in cols_novas):
                     cols_novas.append({
@@ -166,7 +336,7 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
                         "obrigatorio": aud_obrig,
                         "comentario": "",
                     })
-            propostas.append({
+            resultado_dw.append({
                 "arquivo": t.get("arquivo", "simulacao.sql"),
                 "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
                 "nome_tabela": dim_name,
@@ -179,7 +349,7 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
             })
         else:
             fato_name = f"FATO_{raw_name}"
-            propostas.append({
+            resultado_dw.append({
                 "arquivo": t.get("arquivo", "simulacao.sql"),
                 "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
                 "nome_tabela": fato_name,
@@ -190,7 +360,8 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
                 "fks": list(t.get("fks", [])),
                 "indices": [],
             })
-    return propostas
+
+    return resultado_dw
 
 
 # =============================================================================
@@ -598,7 +769,7 @@ def gerar_blueprint_simulacao_semantica(
         "",
         "### 6.2. Novas Perguntas de Negócio (Golden Queries) Sugeridas pelo Radar da IA",
         "",
-        "Marque `[x]` nas perguntas executivas abaixo para cadastrá-las em `06_meta_pergunta_negocio.sql`:",
+        "Marque `[x]` nas perguntas executivas abaixo para cadastrá-las em `06_meta_consulta_negocio.sql`:",
         "",
         "| Ativo | Código da Pergunta | Pergunta Executiva de Negócio | SQL de Referência (Golden Query) | View Recomendada |",
         "| :---: | :--- | :--- | :--- | :--- |",
@@ -931,6 +1102,31 @@ def _gerar_scripts_ddl_completos_dw(
         )
         gerados.append(p)
 
+        p_ctrl = SAIDA_DW_DIR / "01_controle_carga" / "01_tb_controle_carga.sql"
+        p_ctrl.write_text(
+            f"-- =============================================================================\n"
+            f"-- NINHO — 01_tb_controle_carga.sql (PROJETO: {projeto} | SCHEMA: {schema_dw})\n"
+            f"-- =============================================================================\n"
+            f"CREATE TABLE {schema_dw}.TB_CONTROLE_CARGA (\n"
+            f"    COD_CARGA         NUMBER(10)          GENERATED BY DEFAULT AS IDENTITY NOT NULL,\n"
+            f"    SGL_PROJETO       VARCHAR2(50 CHAR)   DEFAULT '{projeto}' NOT NULL,\n"
+            f"    NOM_OBJETO_ALVO   VARCHAR2(128 CHAR)  NOT NULL,\n"
+            f"    TIP_CAMADA        VARCHAR2(20 CHAR)   NOT NULL,\n"
+            f"    DTC_INICIO_CARGA  TIMESTAMP           DEFAULT SYSTIMESTAMP NOT NULL,\n"
+            f"    DTC_FIM_CARGA     TIMESTAMP           NULL,\n"
+            f"    QTD_LIDOS         NUMBER(15)          DEFAULT 0,\n"
+            f"    QTD_INSERIDOS     NUMBER(15)          DEFAULT 0,\n"
+            f"    QTD_ATUALIZADOS   NUMBER(15)          DEFAULT 0,\n"
+            f"    QTD_REJEITADOS    NUMBER(15)          DEFAULT 0,\n"
+            f"    IND_STATUS        VARCHAR2(20 CHAR)   DEFAULT 'EM_ANDAMENTO' NOT NULL,\n"
+            f"    DES_MENSAGEM_ERRO VARCHAR2(4000 CHAR) NULL,\n"
+            f"    CONSTRAINT PK_TB_CONTROLE_CARGA PRIMARY KEY (COD_CARGA) USING INDEX TABLESPACE {ts_idx}\n"
+            f") TABLESPACE {ts_dat};\n\n"
+            f"COMMENT ON TABLE {schema_dw}.TB_CONTROLE_CARGA IS 'Tabela corporativa de auditoria e telemetria de execução de cargas ETL (STG/DIM/FATO).';\n",
+            encoding="utf-8",
+        )
+        gerados.append(p_ctrl)
+
     # 02_staging
     if "02_staging" in entregaveis:
         p = SAIDA_DW_DIR / "02_staging" / "02_create_stg_tables.sql"
@@ -947,7 +1143,7 @@ def _gerar_scripts_ddl_completos_dw(
                 c for c in t["colunas"]
                 if c["nome_dw"] != "DIMENSION_KEY"
                 and not c["nome_dw"].startswith("SK_")
-                and c["nome_dw"] not in ("DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO")
+                and c["nome_dw"] not in ("DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO", "SIN_ATIVO", "DES_ATUALIZAR")
             ]
             if not cols_stg:
                 cols_stg = t["colunas"]
@@ -981,6 +1177,27 @@ def _gerar_scripts_ddl_completos_dw(
             linhas_dim.append(f"    CONSTRAINT PK_{tname} PRIMARY KEY ({sk}) USING INDEX TABLESPACE {ts_idx}")
             linhas_dim.append(f") TABLESPACE {ts_dat};")
             linhas_dim.append("")
+        if not any(d["nome_tabela"].upper() in ("DIM_TEMPO", "DIM_CALENDARIO", "DIM_DATA") for d in dims):
+            linhas_dim.extend([
+                f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO",
+                f"CREATE TABLE {schema_dw}.DIM_TEMPO (",
+                f"    SK_TEMPO          NUMBER(8)          NOT NULL,",
+                f"    DTC_DATA          DATE               NOT NULL,",
+                f"    NUM_ANO           NUMBER(4)          NOT NULL,",
+                f"    NUM_SEMESTRE      NUMBER(1)          NOT NULL,",
+                f"    NUM_TRIMESTRE     NUMBER(1)          NOT NULL,",
+                f"    NUM_MES           NUMBER(2)          NOT NULL,",
+                f"    NOM_MES           VARCHAR2(20 CHAR)  NOT NULL,",
+                f"    SGL_MES            VARCHAR2(3 CHAR)   NOT NULL,",
+                f"    NUM_DIA           NUMBER(2)          NOT NULL,",
+                f"    NOM_DIA_SEMANA    VARCHAR2(20 CHAR)  NOT NULL,",
+                f"    IND_FIM_SEMANA    CHAR(1)            DEFAULT 'N' NOT NULL,",
+                f"    IND_FERIADO       CHAR(1)            DEFAULT 'N' NOT NULL,",
+                f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (SK_TEMPO) USING INDEX TABLESPACE {ts_idx}",
+                f") TABLESPACE {ts_dat};",
+                f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal (SK no formato YYYYMMDD ou -1).';",
+                "",
+            ])
         sql_comm_dim, _, _ = construir_script_comentarios([(d, "DIM") for d in dims], schema_dw, "DIMENSÕES (DIM_*)")
         linhas_dim.append(sql_comm_dim)
         p.write_text("\n".join(linhas_dim), encoding="utf-8")
@@ -1077,7 +1294,7 @@ def executar_simulacao_aprovada_dw(tabelas_base: list[dict], forcar: bool = Fals
     )
 
     sql_odi_tbl, sql_odi_dim, sql_odi_fato = construir_scripts_odi(
-        dims, fatos, stgs, schema_dw, projeto, estrategia
+        dims, fatos, stgs, schema_dw, projeto, estrategia, schema_stg=schema_stg
     )
     if "03_odi_dim_tables" in entregaveis and dims:
         p = SAIDA_DW_DIR / "03_dimensoes" / "03_create_odi_dim_tables.sql"
@@ -1221,9 +1438,13 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
     if "catalogo_meta" in entregaveis:
         tpl_meta = ROOT_DIR / "modulos" / "camada_semantica" / "templates" / "01_create_meta_tables.sql"
         dst_meta = meta_dir / "01_create_meta_tables.sql"
-        if not dst_meta.exists() and tpl_meta.exists():
+        if tpl_meta.exists():
             shutil.copy2(tpl_meta, dst_meta)
             gerados.append(dst_meta)
+        for arq_legado in ("03_meta_hierarquia.sql", "06_meta_pergunta_negocio.sql"):
+            p_leg = meta_dir / arq_legado
+            if p_leg.exists():
+                p_leg.unlink()
 
         for nome_m, cont_m in construir_catalogo_meta(tabelas, schema, projeto, edicoes_sem=edicoes_sem).items():
             pm = meta_dir / nome_m
@@ -1274,7 +1495,12 @@ def carregar_insumos_para_simulacao(caminho_custom: Path | None = None, acao: st
 
     por_nome: dict[str, dict] = {}
     for arq in arqs:
-        txt = arq.read_text(encoding="utf-8", errors="replace")
+        txt = ler_texto_sql(arq)
+        ctas = detectar_ctas(txt)
+        if ctas:
+            print(
+                f"  {AMARELO}[AVISO]{RESET} {arq.name}: {len(ctas)} tabela(s) CTAS ignoradas (sem lista de colunas no DDL): {', '.join(ctas)}"
+            )
         for t in parse_ddl_text(txt, arq.name):
             por_nome[t["nome_tabela"]] = t
 

@@ -121,7 +121,7 @@ Quando o Engenheiro quiser simular a Camada Semântica antes de fechar o cenári
    ```bash
    python core/scripts_comuns/simular_projeto.py --modulo semantica --acao simular
    ```
-   Gera [`entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md`](../../../entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md) com parâmetros globais, matriz editável das Views em 3 camadas, catálogo de indicadores `META_METRICA`, Radar Consultivo da IA e escopo de entregáveis com checkboxes `[x]`/`[ ]`.
+   Gera `entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md` (em [`entrega/camada_semantica/`](../../../entrega/camada_semantica/)) com parâmetros globais, matriz editável das Views em 3 camadas, catálogo de indicadores `META_METRICA`, Radar Consultivo da IA e escopo de entregáveis com checkboxes `[x]`/`[ ]`.
 2. **Fase 2 — Executar na Esteira Real após Aprovação (`/executar-simulacao`):**
    ```bash
    python core/scripts_comuns/simular_projeto.py --modulo semantica --acao executar

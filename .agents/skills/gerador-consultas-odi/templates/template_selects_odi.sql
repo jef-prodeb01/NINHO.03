@@ -12,20 +12,34 @@
 -- ============================================================================
 SELECT 
     "<SCHEMA_ALVO>"."SEQ_DIM_<ENTIDADE>".NEXTVAL AS DIMENSION_KEY,
-    COD_NATURAL_ORIGEM                           AS COD_<ENTIDADE>,
-    MAX(NVL(NOM_ORIGEM, 'NAO INFORMADO'))        AS NOM_<ENTIDADE>,
-    CASE 
-        WHEN UPPER(MAX(NVL(DES_TIPO, ''))) LIKE '%EXTERNO%' THEN 'EXTERNO'
-        ELSE 'INTERNO'
-    END                                          AS DES_TIPO_<ENTIDADE>,
-    -- Atributos de Controle SCD Tipo 2
+    S.COD_NATURAL_ORIGEM                         AS COD_<ENTIDADE>,
+    S.NOM_<ENTIDADE>                             AS NOM_<ENTIDADE>,
+    S.DES_TIPO_<ENTIDADE>                        AS DES_TIPO_<ENTIDADE>,
+    -- Atributos de Controle SCD Tipo 2 (compativeis com Heuristica H7 do ODI)
     TRUNC(SYSDATE)                               AS DTC_EFETIVACAO,
     CAST(NULL AS DATE)                           AS DTC_EXPIRACAO,
-    'S'                                          AS DES_ATUALIZAR,
+    CASE
+        WHEN D.DIMENSION_KEY IS NULL THEN 'S'
+        WHEN STANDARD_HASH(S.NOM_<ENTIDADE> || '|' || S.DES_TIPO_<ENTIDADE>, 'MD5')
+          <> STANDARD_HASH(D.NOM_<ENTIDADE> || '|' || D.DES_TIPO_<ENTIDADE>, 'MD5') THEN 'S'
+        ELSE 'N'
+    END                                          AS DES_ATUALIZAR,
     'S'                                          AS SIN_ATIVO
-FROM "<SCHEMA_ALVO>"."STG_<TABELA_ORIGEM>"
-WHERE COD_NATURAL_ORIGEM IS NOT NULL
-GROUP BY COD_NATURAL_ORIGEM;
+FROM (
+    SELECT
+        COD_NATURAL_ORIGEM,
+        MAX(NVL(NOM_ORIGEM, 'NAO INFORMADO'))    AS NOM_<ENTIDADE>,
+        CASE 
+            WHEN UPPER(MAX(NVL(DES_TIPO, ''))) LIKE '%EXTERNO%' THEN 'EXTERNO'
+            ELSE 'INTERNO'
+        END                                      AS DES_TIPO_<ENTIDADE>
+    FROM "<SCHEMA_ALVO>"."STG_<TABELA_ORIGEM>"
+    WHERE COD_NATURAL_ORIGEM IS NOT NULL
+    GROUP BY COD_NATURAL_ORIGEM
+) S
+LEFT JOIN "<SCHEMA_ALVO>"."DIM_<ENTIDADE>" D
+    ON S.COD_NATURAL_ORIGEM = D.COD_<ENTIDADE>
+   AND D.DTC_EXPIRACAO IS NULL;
 
 
 -- ============================================================================
@@ -64,4 +78,3 @@ LEFT JOIN "<SCHEMA_ALVO>"."DIM_<ENTIDADE>" de
 
 LEFT JOIN "<SCHEMA_ALVO>"."DIM_TEMPO" dt
     ON TRUNC(stg.DTC_REGISTRO) = dt.DTC_COMPLETA;
-

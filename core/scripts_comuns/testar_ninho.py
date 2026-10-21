@@ -21,6 +21,9 @@ O que é testado:
      - Apache Hop 2.x (`auditar_esteira_hop.py` — heurísticas HOP-H1 a HOP-H8)
      - Power BI `.pbix` (`inspecionar_pbix.py` — AST + heurísticas PBIX-H1 a PBIX-H5)
      - Governança Gate 0.5 (`inspecionar_insumos_governanca.py` — bloqueio na origem)
+  9. Experiência Conversacional UX (`/comecar`, `/onde-estou`, `/duvida`, `/doctor`, `/demo`)
+  10. Regressão de Confiabilidade E1 a E4 (Parser DDL, Heurística Fato/Dim, Auditor ODI)
+  11. Regressão de Blindagem E5 a E12 (DDL META_*, XSS HTML, SCD2/DIM_TEMPO, PBIX Agnóstico, ODI FK/SCD2, CLI/Templates)
 
 Uso:
   python core/scripts_comuns/testar_ninho.py
@@ -156,9 +159,18 @@ def teste_01_ajuda_e_status() -> str:
     assert rc == 0, f"ajuda_ninho.py falhou: {err}"
     assert "/simular-dw" in out and "/executar-simulacao" in out, "Comandos de simulação ausentes no /help"
 
+    # Valida o dispatcher unificado ninho.py (com e sem '/')
+    rc_ninho, out_ninho, err_ninho = _executar_cli(["ninho.py", "/ajuda", "simulacao"])
+    assert rc_ninho == 0 and "/simular-dw" in out_ninho, f"ninho.py /ajuda falhou: {err_ninho}"
+
+    # Valida que as Skills de Slash Command reais existem em .agents/skills/
+    for cmd_skill in ("ajuda", "onde-estou", "simular-dw", "melhorar-dw-existente", "testar-ninho"):
+        skill_path = BASE_DIR / ".agents" / "skills" / cmd_skill / "SKILL.md"
+        assert skill_path.exists(), f"Skill nativa de slash command ausente: {skill_path}"
+
     rc2, out2, err2 = _executar_cli(["core/scripts_comuns/gerenciar_projeto.py", "--status"])
     assert rc2 == 0, f"gerenciar_projeto.py --status falhou: {err2}"
-    return "Catálogo /help e gerenciador de status validados."
+    return "Catálogo /help, dispatcher ninho.py, skills nativas e gerenciador de status validados."
 
 
 def teste_02_inspecionar_ddl_origem() -> str:
@@ -274,7 +286,7 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
     arq_vw_ev = BASE_DIR / "saida" / "camada_semantica" / "vw_analiticas" / "02_vw_eventos.sql"
     arq_vw_kpi = BASE_DIR / "saida" / "camada_semantica" / "vw_analiticas" / "03_vw_kpis.sql"
     arq_meta_m = BASE_DIR / "saida" / "camada_semantica" / "meta_projeto" / "02_meta_metrica.sql"
-    arq_meta_p = BASE_DIR / "saida" / "camada_semantica" / "meta_projeto" / "06_meta_pergunta_negocio.sql"
+    arq_meta_p = BASE_DIR / "saida" / "camada_semantica" / "meta_projeto" / "06_meta_consulta_negocio.sql"
     arq_rls = BASE_DIR / "saida" / "camada_semantica" / "meta_projeto" / "02_rls.sql"
 
     sql_ev = arq_vw_ev.read_text(encoding="utf-8")
@@ -289,7 +301,7 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
     assert "TICKET_MEDIO_" in sql_kpi and "TAXA_QUALID_" in sql_kpi, "KPIs do Radar da IA (Seção 6.1) ausentes em 03_vw_kpis.sql"
     assert "QTD_TOTAL_" not in sql_meta_m, "Métrica desmarcada [ ] (QTD_TOTAL_*) não deveria estar em 02_meta_metrica.sql"
     assert "VAL_ECONOMIA_GERADA" in sql_meta_m and "TICKET_MEDIO_" in sql_meta_m, "Métricas custom/Radar ausentes em 02_meta_metrica.sql"
-    assert "_RAD_" in sql_meta_p, "Golden Queries do Radar da IA (Seção 6.2) ausentes em 06_meta_pergunta_negocio.sql"
+    assert "_RAD_" in sql_meta_p, "Golden Queries do Radar da IA (Seção 6.2) ausentes em 06_meta_consulta_negocio.sql"
     assert "SK_ORGAO_CUSTOM_RLS" in sql_rls, "COLUNA_SEGREGACAO_RLS editada não refletiu em 02_rls.sql"
 
     return "Parser reverso DW + Semântica + KPIs do Radar da IA validados com 100% de fidelidade."
@@ -555,6 +567,269 @@ def teste_09_experiencia_ux_conversacional() -> str:
     return "Onboarding (/comecar), Bússola (/onde-estou), Oráculo (/duvida), Doctor (--corrigir) e Playground (/demo) validados."
 
 
+def teste_10_regressao_e1_e4_robustez() -> str:
+    from inspecionar_ddl_origem import parse_ddl_text, detectar_ctas
+    from simular_projeto import _converter_oltp_para_dw_se_necessario
+    from auditar_mapa_odi import ODIMappingAuditor
+
+    # 10.1. DDL Parser Robustez (E3)
+    sql_teste = """
+    -- Teste de DDL com comentários e identificadores especiais
+    CREATE TABLE TB_TESTE_PARSER (
+        KEY_CLIENTE VARCHAR2(20),
+        CHECK_DIGITO NUMBER(2),
+        INDEX_ORDEM NUMBER(5),
+        /* comentario, bloco */
+        [Cod Pedido] NUMBER(10),
+        "Valor Total" NUMBER(15, 2) DEFAULT 0, -- comentario, linha
+        CONSTRAINT PK_TESTE PRIMARY KEY (KEY_CLIENTE, [Cod Pedido])
+    );
+    CREATE TABLE TB_CTAS_TESTE AS SELECT ID, NOME FROM TB_ORIGEM;
+    """
+    tabs = parse_ddl_text(sql_teste, "teste.sql")
+    assert len(tabs) == 1, f"Esperava 1 tabela no CREATE TABLE balanceado, obteve {len(tabs)}"
+    col_names = [c["nome_dw"] for c in tabs[0]["colunas"]]
+    assert "KEY_CLIENTE" in col_names, "KEY_CLIENTE descartada indevidamente"
+    assert "CHECK_DIGITO" in col_names, "CHECK_DIGITO descartada indevidamente"
+    assert "INDEX_ORDEM" in col_names, "INDEX_ORDEM descartada indevidamente"
+    assert "COD_PEDIDO" in col_names, "[Cod Pedido] não convertida corretamente"
+    assert "VALOR_TOTAL" in col_names, '"Valor Total" não convertida corretamente'
+    assert "COMENTARIO" not in col_names and "BLOCO" not in col_names and "LINHA" not in col_names, "Comentários criaram colunas falsas"
+
+    ctas_tabs = detectar_ctas(sql_teste)
+    assert "TB_CTAS_TESTE" in ctas_tabs, "detectar_ctas falhou em identificar CTAS"
+
+    # 10.2. Classificação Fato/Dimensão Heurística (E4)
+    # Cenário A: TB_VENDA (com métricas e FKs) no início do arquivo
+    sql_oltp_venda = """
+    CREATE TABLE TB_VENDA (
+        ID_VENDA NUMBER PRIMARY KEY,
+        ID_CLIENTE NUMBER,
+        ID_PRODUTO NUMBER,
+        VAL_TOTAL NUMBER(12,2),
+        QTD_ITENS NUMBER(5)
+    );
+    CREATE TABLE TB_CLIENTE (
+        ID_CLIENTE NUMBER PRIMARY KEY,
+        NOM_CLIENTE VARCHAR2(100)
+    );
+    CREATE TABLE TB_PRODUTO (
+        ID_PRODUTO NUMBER PRIMARY KEY,
+        DES_PRODUTO VARCHAR2(100)
+    );
+    """
+    tabs_venda = parse_ddl_text(sql_oltp_venda, "vendas.sql")
+    propostas_dw = _converter_oltp_para_dw_se_necessario(tabs_venda)
+    nomes_dw = {t["nome_tabela"]: t for t in propostas_dw}
+    assert "FATO_VENDA" in nomes_dw, f"TB_VENDA deveria ser FATO_VENDA, mas obteve: {list(nomes_dw.keys())}"
+    assert "DIM_CLIENTE" in nomes_dw, "TB_CLIENTE deveria ser DIM_CLIENTE"
+    assert "DIM_PRODUTO" in nomes_dw, "TB_PRODUTO deveria ser DIM_PRODUTO"
+
+    # Cenário B: Preservação de DIM_TEMPO existente + conversão de OLTP + descarte de tabela técnica
+    sql_misto = """
+    CREATE TABLE DIM_TEMPO (
+        DIMENSION_KEY NUMBER PRIMARY KEY,
+        DTC_COMPLETA DATE
+    );
+    CREATE TABLE STG_CARGA_TMP (
+        ID NUMBER,
+        DADOS VARCHAR2(100)
+    );
+    CREATE TABLE TB_PEDIDO (
+        ID_PEDIDO NUMBER PRIMARY KEY,
+        ID_CLIENTE NUMBER,
+        VAL_PEDIDO NUMBER(10,2)
+    );
+    CREATE TABLE TB_CLIENTE (
+        ID_CLIENTE NUMBER PRIMARY KEY,
+        NOM_CLIENTE VARCHAR2(100)
+    );
+    """
+    tabs_misto = parse_ddl_text(sql_misto, "misto.sql")
+    propostas_misto = _converter_oltp_para_dw_se_necessario(tabs_misto)
+    nomes_misto = {t["nome_tabela"]: t for t in propostas_misto}
+    assert "DIM_TEMPO" in nomes_misto, "DIM_TEMPO pré-existente foi descartada indevidamente"
+    assert "FATO_PEDIDO" in nomes_misto, "TB_PEDIDO deveria ter sido convertida em FATO_PEDIDO"
+    assert "DIM_CLIENTE" in nomes_misto, "TB_CLIENTE deveria ter sido convertida em DIM_CLIENTE"
+    assert "STG_CARGA_TMP" not in nomes_misto and "DIM_CARGA_TMP" not in nomes_misto, "Tabela técnica STG_CARGA_TMP deveria ter sido ignorada"
+
+    # 10.3. Auditor ODI sem falsos positivos e sem textos de cliente antigo (E1 e E2)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        xml_limpo = tmp / "MAP_LIMPO.xml"
+        xml_limpo.write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<SunopsisExport>
+  <Object class="com.sunopsis.dwg.dbobj.SnpMapping">
+    <Field name="Name"><![CDATA[MAP_CARGA_DIM_CLIENTE]]></Field>
+  </Object>
+  <Object class="com.sunopsis.dwg.dbobj.SnpMapProp">
+    <Field name="PropValue"><![CDATA[IKM Oracle Insert]]></Field>
+  </Object>
+</SunopsisExport>""",
+            encoding="utf-8",
+        )
+        rel_limpo = tmp / "rel_limpo.md"
+        auditor_limpo = ODIMappingAuditor(xml_limpo)
+        auditor_limpo.parse()
+        auditor_limpo.generate_markdown_report(rel_limpo)
+        txt_limpo = rel_limpo.read_text(encoding="utf-8")
+        h_ids = [h["id"] for h in auditor_limpo.heuristics_triggered]
+        assert "H2_PK_STAGING_E_CHAVE_MULTITENANT" not in h_ids, "H2 não deveria disparar para carga Insert limpa sem CDC/Merge"
+        assert "H3_IKM_MERGE_VS_UPDATE" not in h_ids, "H3 não deveria disparar para mapa com IKM limpo sem FLOW_CONTROL"
+        assert "H9_LOOP_MULTITENANT_C_DOLLAR_INTRA_ORACLE" not in h_ids, "H9 não deveria disparar sem evidência de loop"
+        assert "SEI" not in txt_limpo and "SEIMUN" not in txt_limpo, "Relatório ODI vazou textos específicos do SEI Municipal"
+
+    return "Regressão E1 (ODI genérico), E2 (DES_ATUALIZAR), E3 (DDL Parser) e E4 (Fato/Dimensão) aprovada."
+
+
+def teste_11_regressao_e5_e12_blindagem() -> str:
+    from inspecionar_ddl_origem import parse_ddl_text
+    from melhorar_dw_existente import construir_dicionario_html, construir_scripts_odi
+    from modular_semantica import construir_catalogo_meta
+    from simular_projeto import _converter_oltp_para_dw_se_necessario, _gerar_scripts_ddl_completos_dw
+
+    # 11.1. E5 + E10: DDL 01_create_meta_tables.sql e scripts 01_meta_*.sql..08_meta_*.sql 100% compatíveis
+    ddl_meta_tpl = (
+        BASE_DIR / "modulos" / "camada_semantica" / "templates" / "01_create_meta_tables.sql"
+    ).read_text(encoding="utf-8")
+    for constraint_esperada in (
+        "CHK_META_METRICA_ADIT",
+        "CHK_META_OBJ_TIPO",
+        "CHK_META_OBJ_GOV",
+        "CHK_META_OBJ_ATIVO",
+        "UK_META_RELACIONAMENTO",
+        "CHK_META_REL_JOIN",
+        "CHK_META_REL_CARD",
+        "CHK_META_REGRA_SEV",
+        "CHK_META_REGRA_STATUS",
+        "CHK_META_VD_ATIVO",
+        "CHK_META_ORIA_SECAO",
+        "ID_CONSULTA                    VARCHAR2(50)",
+    ):
+        assert constraint_esperada in ddl_meta_tpl, f"Constraint/tipo {constraint_esperada} ausente em 01_create_meta_tables.sql"
+
+    tabs_dw = _converter_oltp_para_dw_se_necessario(parse_ddl_text(DDL_ORIGEM_TESTE, "teste.sql"))
+    scripts_meta = construir_catalogo_meta(tabs_dw, schema="DW_SEM_TESTE", projeto="PROJ_TESTE")
+    assert "03_meta_objeto.sql" in scripts_meta, "03_meta_objeto.sql não gerado por construir_catalogo_meta"
+    assert "06_meta_consulta_negocio.sql" in scripts_meta, "06_meta_consulta_negocio.sql não gerado por construir_catalogo_meta"
+    assert "META_OBJETO" in scripts_meta["03_meta_objeto.sql"] and "META_HIERARQUIA" not in scripts_meta["03_meta_objeto.sql"]
+    assert "META_CONSULTA_NEGOCIO" in scripts_meta["06_meta_consulta_negocio.sql"] and "META_PERGUNTA_NEGOCIO" not in scripts_meta["06_meta_consulta_negocio.sql"]
+    for nome_arq, sql_txt in scripts_meta.items():
+        assert "PROJETO" in sql_txt and "COD_PROJETO" not in sql_txt, f"{nome_arq} usou COD_PROJETO em vez de PROJETO"
+
+    # 11.2. E6: Sanitização XSS no Dicionário HTML
+    tabs_xss = parse_ddl_text(
+        "CREATE TABLE DIM_XSS (SK_XSS NUMBER PRIMARY KEY, DES_XSS VARCHAR2(50));",
+        "xss.sql",
+    )
+    tabs_xss[0]["comentario_tabela"] = "<script>alert('xss_tab')</script>"
+    tabs_xss[0]["colunas"][0]["comentario"] = "<img src=x onerror=alert(1)>"
+    html_gerado = construir_dicionario_html([(tabs_xss[0], "DIM")], "DW_XSS", "<script>alert('proj')</script>")
+    assert "<script>alert(" not in html_gerado and "<img src=x" not in html_gerado, "Falha de sanitização XSS no Dicionário HTML!"
+    assert "&lt;script&gt;alert(" in html_gerado, "Entidades HTML escapadas não encontradas no Dicionário HTML"
+
+    # 11.3. E7: 4 colunas SCD2 completas + 01_tb_controle_carga.sql + DIM_TEMPO canônica
+    dim_orgao = next(t for t in tabs_dw if t["nome_tabela"] == "DIM_ORGAO_PUBLICO")
+    nomes_cols_dim = {c["nome_dw"] for c in dim_orgao["colunas"]}
+    for col_scd2 in ("SIN_ATIVO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "DES_ATUALIZAR"):
+        assert col_scd2 in nomes_cols_dim, f"Coluna SCD2 {col_scd2} ausente na dimensão convertida"
+
+    arqs_dw = _gerar_scripts_ddl_completos_dw(
+        tabs_dw,
+        schema_dw="DW_TST",
+        schema_stg="STG_TST",
+        projeto="PROJ_TST",
+        ts_dat="TS_D",
+        ts_idx="TS_I",
+        entregaveis={"01_tablespaces", "02_staging", "03_dimensoes_ddl", "04_fatos_ddl", "05_sequences"},
+    )
+    assert (BASE_DIR / "saida" / "planejador_dw" / "01_controle_carga" / "01_tb_controle_carga.sql").exists(), "01_tb_controle_carga.sql não foi gerado"
+    ddl_dims = (BASE_DIR / "saida" / "planejador_dw" / "03_dimensoes" / "03_create_dim_tables.sql").read_text(encoding="utf-8")
+    assert "DIM_TEMPO" in ddl_dims and "SK_TEMPO" in ddl_dims, "DDL de DIM_TEMPO ausente em 03_create_dim_tables.sql"
+
+    # 11.4. E8: inspecionar_pbix.py 100% agnóstico (zero vazamento de SEI/SAEB/PRODEB/URBIS em PBIX financeiro)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp = Path(tmpdir)
+        arq_pbix_fin = tmp / "Painel_Financeiro_Vendas.pbix"
+        layout_fin = {
+            "sections": [
+                {
+                    "displayName": "Faturamento",
+                    "filters": "[]",
+                    "visualContainers": [
+                        {
+                            "config": json.dumps(
+                                {
+                                    "singleVisual": {
+                                        "visualType": "barChart",
+                                        "prototypeQuery": {
+                                            "From": [{"Name": "v", "Entity": "FatoVendas"}],
+                                            "Select": [
+                                                {
+                                                    "Column": {
+                                                        "Expression": {"SourceRef": {"Source": "v"}},
+                                                        "Property": "ValorLiquido",
+                                                    },
+                                                    "Name": "FatoVendas.ValorLiquido",
+                                                }
+                                            ],
+                                        },
+                                    }
+                                }
+                            ),
+                            "filters": "[]",
+                        }
+                    ],
+                }
+            ]
+        }
+        with zipfile.ZipFile(arq_pbix_fin, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("Report/Layout", json.dumps(layout_fin).encode("utf-16-le"))
+        rel_fin = tmp / "rel_fin.md"
+        rc_p, out_p, err_p = _executar_cli(
+            ["core/scripts_comuns/inspecionar_pbix.py", str(arq_pbix_fin), "--output", str(rel_fin)]
+        )
+        assert rc_p == 0 and rel_fin.exists(), f"inspecionar_pbix.py falhou: {err_p}"
+        txt_fin = rel_fin.read_text(encoding="utf-8")
+        for termo_proibido in ("SAEB", "PRODEB", "URBIS", "processo_sei", "Processos_Resumo"):
+            assert termo_proibido not in txt_fin, f"Relatório PBIX vazou termo hardcoded de outro projeto: {termo_proibido}"
+
+    # 11.5. E9: construir_scripts_odi com DTC_EFETIVACAO, exclusão SCD2 da STG e LEFT JOIN para ID_* convertido
+    dims_dw = [t for t in tabs_dw if t["nome_tabela"].startswith("DIM_")]
+    fatos_dw = [t for t in tabs_dw if t["nome_tabela"].startswith("FATO_")]
+    sql_odi_ddl, sql_odi_dims, sql_odi_fato = construir_scripts_odi(
+        dims_dw, fatos_dw, [], schema="DW_TST", projeto="PROJ_TST", estrategia="A", schema_stg="STG_TST"
+    )
+    assert "(ID_ORGAO, DTC_EFETIVACAO DESC)" in sql_odi_ddl, "Índice ODI_DIM deveria usar DTC_EFETIVACAO"
+    assert "STG_TST.STG_ORGAO_PUBLICO" in sql_odi_dims, "Schema STG customizado não utilizado em 03_selects_odi_dimensoes.sql"
+    assert "LEFT JOIN DW_TST.DIM_ORGAO_PUBLICO" in sql_odi_fato, "LEFT JOIN para DIM_ORGAO_PUBLICO ausente em 04_select_odi_fato.sql"
+    assert ", -1) AS SK_ORGAO_PUBLICO" in sql_odi_fato or ", -1) AS ID_ORGAO" in sql_odi_fato, (
+        f"Fallback NVL(..., -1) para FK de órgão ausente em 04_select_odi_fato.sql:\n{sql_odi_fato}"
+    )
+
+    # 11.6. E11 + E12: Rotas do ninho.py e templates FTPS/ODI seguros
+    if str(BASE_DIR) not in sys.path:
+        sys.path.insert(0, str(BASE_DIR))
+    import ninho as ninho_cli
+    for cmd_k, (scr_name, _, _) in ninho_cli.ROTAS_COMANDOS.items():
+        if scr_name == "__interno_instalar__":
+            continue
+        assert (BASE_DIR / "core" / "scripts_comuns" / scr_name).exists(), f"Rota '{cmd_k}' aponta para script inexistente: {scr_name}"
+    for cmd_esperado in ("instalar-comandos", "setup", "desafiar-grao", "classificar-scd", "definir-estrategia-carga", "gerar-governanca", "diagnosticar-erro-carga"):
+        assert cmd_esperado in ninho_cli.ROTAS_COMANDOS, f"Comando '{cmd_esperado}' ausente em ninho.py"
+    assert ninho_cli.instalar_comandos_chat([]) == 0, "Falha ao executar instalar_comandos_chat()"
+
+    sh_ftps = (BASE_DIR / ".agents" / "skills" / "extrator-ftps-lote-hop" / "templates" / "extrair_metadados_ftps.sh").read_text(encoding="utf-8")
+    assert "CURL_TLS_OPTS" in sh_ftps, "Template FTPS não parametrizou CURL_TLS_OPTS"
+    tpl_odi = (BASE_DIR / ".agents" / "skills" / "gerador-consultas-odi" / "templates" / "template_selects_odi.sql").read_text(encoding="utf-8")
+    assert "'S'                            AS DES_ATUALIZAR" not in tpl_odi and "STANDARD_HASH" in tpl_odi, (
+        "template_selects_odi.sql ainda contém 'S' hardcoded para DES_ATUALIZAR"
+    )
+
+    return "Blindagem E5 a E12 (DDL META_*, XSS HTML, SCD2/DIM_TEMPO, PBIX Agnóstico, ODI FK/SCD2, CLI/Templates) aprovada."
+
+
 def executar_suite_completa(manter_arquivos: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
@@ -564,12 +839,14 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T01: Central de Ajuda (/help) & Gerenciador de Projeto", teste_01_ajuda_e_status),
         ("T02: Extrator de DDLs de Origem & Radar Consultivo", teste_02_inspecionar_ddl_origem),
         ("T03: Simulação Editável + Parser Reverso DW & Semântica + KPIs Radar", teste_03_simulacao_edicao_reversa_dw_e_semantica),
-        ("T04: Gerador Dinâmico de Mock BI (Colunas Reais + Sentinela -1)", teste_04_gerador_mock_dinamico),
+        ("T04: Gerador Dinâmico de Dados Sintéticos BI (Colunas Reais + Sentinela -1)", teste_04_gerador_mock_dinamico),
         ("T05: Validador de Qualidade Pós-Geração (validar_entrega.py saida)", teste_05_validar_entrega_saida),
         ("T06: Transição DW -> Semântica & Micro-Modos Isolados", teste_06_transicao_e_micro_modos_semantica),
         ("T07: Motor Fast-Track Não-Destrutivo (melhorar_dw_existente.py)", teste_07_fast_track_melhorar_dw_existente),
         ("T08: Auditoria Especializada (ODI 12c, Hop 2.x, Power BI .pbix, Gov Gate 0.5)", teste_08_motores_auditoria_odi_hop_pbix_governanca),
         ("T09: Experiência Conversacional UX (/comecar, /onde-estou, /duvida, /doctor, /demo)", teste_09_experiencia_ux_conversacional),
+        ("T10: Regressão de Confiabilidade (Erros E1 a E4 Resolvidos)", teste_10_regressao_e1_e4_robustez),
+        ("T11: Regressão de Blindagem Arquitetural (Erros E5 a E12 Resolvidos)", teste_11_regressao_e5_e12_blindagem),
     ]
 
     passou = 0
@@ -601,7 +878,8 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
             _limpar_artefatos_workspace()
             for arq, conteudo_orig in snapshots.items():
                 try:
-                    arq.write_bytes(conteudo_orig)
+                    if not arq.exists() or arq.read_bytes() != conteudo_orig:
+                        arq.write_bytes(conteudo_orig)
                 except OSError:
                     pass
 

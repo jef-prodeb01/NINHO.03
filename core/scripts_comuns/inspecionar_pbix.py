@@ -6,16 +6,17 @@ Descompacta arquivos .pbix (ZIP nativo), decodifica Report/Layout e DiagramLayou
 extrai Tabelas, Colunas, Medidas, Páginas, Visuais e Filtros (Relatório, Página e Visual),
 traduz a AST de filtros do Power BI para expressões SQL/DAX legíveis e detecta anti-padrões:
 
-- PBIX-H1: Clonagem Multi-Tenant de arquivos .pbix por Órgão em vez de Row-Level Security (RLS)
-- PBIX-H2: Bug de Copy-Paste / Vazamento de Filtro de Órgão divergente dentro de visuais (ex: filtro 'SAEB' esquecido no painel da 'PRODEB'/'URBIS')
-- PBIX-H3: Tabelão Desnormalizado (ex: dadosConsolidados) exigindo decomposição Star Schema (Kimball)
-- PBIX-H4: Regras de Negócio e KPIs ocultos em filtros visuais (ex: id_tarefa IN (2, 13), hierarquia Unidade_N.3)
-- PBIX-H5: Sanitização de dados sujos/teste feita no visual do Power BI (ex: <> 'TESTE-SEI', <> '*', <> '@') em vez do ETL/Staging
+- PBIX-H1: Clonagem Multi-Tenant de arquivos .pbix por Órgão/Tenant em vez de Row-Level Security (RLS)
+- PBIX-H2: Bug de Copy-Paste / Vazamento de Filtro de Órgão/Tenant divergente dentro de visuais
+- PBIX-H3: Tabelão Desnormalizado (Flat Table) exigindo decomposição Star Schema (Kimball)
+- PBIX-H4: Regras de Negócio e KPIs ocultos em filtros visuais
+- PBIX-H5: Sanitização de dados sujos/teste feita no visual do Power BI em vez do ETL/Staging
 
 Uso:
     python core/scripts_comuns/inspecionar_pbix.py <caminho_arquivo_ou_pasta> [--output <caminho_relatorio.md>]
 """
 
+import re
 import sys
 import json
 import zipfile
@@ -45,6 +46,32 @@ COMPARISON_OPS = {
     3: "<",
     4: "<=",
 }
+
+TENANT_COLUMN_KEYWORDS = (
+    "orgao",
+    "sigla_orgao",
+    "secretaria",
+    "empresa",
+    "filial",
+    "tenant",
+    "unidade_gestora",
+)
+
+GENERIC_FLAT_TABLE_NAMES = (
+    "consulta1",
+    "query1",
+    "tabela1",
+    "planilha1",
+    "sheet1",
+    "dadosconsolidados",
+    "base_consolidada",
+    "base",
+    "dados",
+    "relatorio",
+    "relatório",
+    "tabelao",
+    "tabelão",
+)
 
 
 def print_banner():
@@ -165,6 +192,15 @@ def extract_filter_list(raw_filters_str: str) -> list:
     return parsed
 
 
+def _is_tenant_filter(field_name: str, condition_str: str) -> bool:
+    combined = f"{field_name} {condition_str}".lower()
+    return any(kw in combined for kw in TENANT_COLUMN_KEYWORDS)
+
+
+def _extract_string_literals(condition_str: str) -> list:
+    return [m.strip() for m in re.findall(r"'([^']+)'", condition_str) if m.strip()]
+
+
 class PBIXInspector:
     """Inspeciona um arquivo .pbix ou diretório de arquivos .pbix."""
 
@@ -175,6 +211,7 @@ class PBIXInspector:
         self.heuristics_triggered = []
         self.cross_tenant_leaks = []
         self.business_rules_filters = []
+        self.business_rules_catalog = []
         self.sanitation_filters = []
         self.flat_tables_detected = set()
 
@@ -237,18 +274,21 @@ class PBIXInspector:
                     info["report_filters"] = extract_filter_list(layout.get("filters", "[]"))
 
                     tenant_counts = defaultdict(int)
+                    for rf in info["report_filters"]:
+                        if _is_tenant_filter(rf.get("field", ""), rf["condition"]) and "NOT (" not in rf["condition"].upper():
+                            for lit in _extract_string_literals(rf["condition"]):
+                                tenant_counts[lit.upper()] += 1
 
                     for sec in layout.get("sections", []):
                         page_name = sec.get("displayName", sec.get("name", "Sem Nome"))
                         page_filters = extract_filter_list(sec.get("filters", "[]"))
 
-                        # Detecta filtro de órgão dominante na página
+                        # Detecta dinamicamente filtro de órgão/tenant dominante na página
                         for pf in page_filters:
                             cond = pf["condition"]
-                            if "orgao" in cond.lower():
-                                for org_candidate in ("PRODEB", "URBIS", "SAEB", "SESAB", "SEFAZ", "SEC"):
-                                    if f"'{org_candidate}'" in cond.upper():
-                                        tenant_counts[org_candidate] += 1
+                            if _is_tenant_filter(pf.get("field", ""), cond) and "NOT (" not in cond.upper():
+                                for lit in _extract_string_literals(cond):
+                                    tenant_counts[lit.upper()] += 1
 
                         visuals_list = []
                         for vc in sec.get("visualContainers", []):
@@ -330,17 +370,68 @@ class PBIXInspector:
         info["tables"] = sorted(list(info["tables"]))
         return info
 
-    def _run_heuristics(self):
-        """Aplica as 5 Heurísticas de Engenharia Reversa e Qualidade de BI (PBIX-H1 a PBIX-H5)."""
+    def _infer_star_schema_candidates(self) -> tuple:
+        """Deriva sugestão dinâmica de Dimensões e Fatos a partir das tabelas e colunas extraídas."""
+        dims = set()
+        fatos = set()
+        for rep in self.reports:
+            for tbl, cols in rep["columns_by_table"].items():
+                tbl_up = re.sub(r"[^A-Z0-9_]", "_", tbl.upper()).strip("_")
+                if tbl_up.startswith("DIM_"):
+                    dims.add(tbl_up)
+                elif tbl_up.startswith(("FATO_", "FAT_")):
+                    fatos.add(tbl_up)
+                else:
+                    fatos.add(f"FATO_{tbl_up}" if tbl_up else "FATO_EVENTO")
+                for col in cols:
+                    col_low = col.lower()
+                    if any(k in col_low for k in ("data", "dt_", "dtc_", "mes", "ano", "periodo")):
+                        dims.add("DIM_TEMPO")
+                    elif any(k in col_low for k in ("orgao", "secretaria", "empresa", "filial")):
+                        dims.add("DIM_ORGAO")
+                    elif "unidade" in col_low or "setor" in col_low or "departamento" in col_low:
+                        dims.add("DIM_UNIDADE")
+                    elif "usuario" in col_low or "servidor" in col_low or "cliente" in col_low or "vendedor" in col_low:
+                        dims.add("DIM_PESSOA_USUARIO")
+                    elif col_low.startswith(("id_", "cod_", "cd_")) and len(col_low) > 3:
+                        ent = re.sub(r"^(id_|cod_|cd_)", "", col_low).upper()
+                        ent = re.sub(r"[^A-Z0-9_]", "_", ent).strip("_")
+                        if ent:
+                            dims.add(f"DIM_{ent}")
+        if not dims:
+            dims = {"DIM_TEMPO", "DIM_ENTIDADE"}
+        if not fatos:
+            fatos = {"FATO_PRINCIPAL"}
+        return sorted(dims), sorted(fatos)
 
-        # Coleta global de filtros e tabelas
+    def _run_heuristics(self):
+        """Aplica as 5 Heurísticas de Engenharia Reversa e Qualidade de BI (PBIX-H1 a PBIX-H5) de forma 100% dinâmica."""
+
         tenants_by_file = {}
+        seen_rule_conditions = set()
+
         for rep in self.reports:
             if rep.get("dominant_tenant"):
                 tenants_by_file[rep["file"]] = rep["dominant_tenant"]
 
+            # PBIX-H3: Detecção estrutural e dinâmica de Tabelão Desnormalizado (Flat Table)
+            non_star_tables = [
+                t for t in rep["tables"]
+                if not t.upper().startswith(("DIM_", "FATO_", "FAT_", "VW_", "CALENDARIO", "D_", "F_"))
+            ]
             for t in rep["tables"]:
-                if t.lower() in ("dadosconsolidados", "consulta1", "relatório da unidade"):
+                t_low = t.lower().strip()
+                cols_count = len(rep["columns_by_table"].get(t, set()))
+                measures_count = len(rep["measures_by_table"].get(t, set()))
+                is_generic_name = any(
+                    t_low == g or t_low.startswith(f"{g}_") or t_low.startswith(f"{g} ")
+                    for g in GENERIC_FLAT_TABLE_NAMES
+                )
+                is_single_wide_table = len(non_star_tables) == 1 and t in non_star_tables and (cols_count + measures_count) >= 4
+                is_wide_hybrid_table = (
+                    t in non_star_tables and cols_count >= 6 and measures_count >= 1
+                )
+                if is_generic_name or is_single_wide_table or is_wide_hybrid_table:
                     self.flat_tables_detected.add(f"{rep['file']}: `{t}`")
 
             # Inspeciona filtros de página e visuais
@@ -349,48 +440,87 @@ class PBIXInspector:
                     (f"Visual '{v['title']}' ({v['type']})", v["filters"]) for v in page["visuals"]
                 ]:
                     for f in flist:
+                        field_name = f.get("field", "")
                         cond = f["condition"]
                         cond_up = cond.upper()
+                        cond_low = cond.lower()
 
-                        # PBIX-H2: Vazamento de filtro de órgão divergente do órgão dominante do arquivo
+                        # PBIX-H2: Vazamento dinâmico de filtro de órgão/tenant divergente do dominante do arquivo
                         dom = rep.get("dominant_tenant")
-                        if dom and ("ORGAO" in cond_up or "SIGLA_ORGAO" in cond_up):
-                            for other_org in ("PRODEB", "URBIS", "SAEB", "SESAB", "SEFAZ"):
-                                if other_org != dom and f"'{other_org}'" in cond_up:
+                        if dom and _is_tenant_filter(field_name, cond) and "NOT (" not in cond_up:
+                            for lit in _extract_string_literals(cond):
+                                if lit.upper() != dom.upper():
                                     leak_msg = (
-                                        f"**{rep['file']}** (Órgão do Relatório: `{dom}`) -> Aba `{page['name']}` -> "
-                                        f"{vf_owner} possui filtro travado em `{cond}` (Vazamento de dados de `{other_org}`!)"
+                                        f"**{rep['file']}** (Tenant Dominante: `{dom}`) -> Aba `{page['name']}` -> "
+                                        f"{vf_owner} possui filtro travado em `{cond}` (Vazamento de dados de `{lit}`!)"
                                     )
                                     if leak_msg not in self.cross_tenant_leaks:
                                         self.cross_tenant_leaks.append(leak_msg)
 
-                        # PBIX-H4: Regras de negócio em filtros visuais (id_tarefa, Unidade_N, etc.)
-                        if any(k in cond.lower() for k in ("id_tarefa", "unidade_n.", "tarefa_nome")):
-                            rule_msg = f"`{rep['file']}` | Aba `{page['name']}` | {vf_owner}: `{cond}`"
-                            if rule_msg not in self.business_rules_filters:
-                                self.business_rules_filters.append(rule_msg)
-
-                        # PBIX-H5: Sanitização de lixo/teste no visual (TESTE-SEI, '*', '@', '')
-                        if any(k in cond_up for k in ("TESTE-SEI", "'*'", "'@'", "NOT (")) and "IS NOT NULL" not in cond_up:
+                        # PBIX-H5: Sanitização de lixo/teste no visual (exclusões manuais, códigos técnicos, strings vazias)
+                        is_sanitation = (
+                            any(k in cond_up for k in ("TESTE", "'*'", "'@'", "''", "<> ''"))
+                            or ("NOT (" in cond_up and "IS NOT NULL" not in cond_up)
+                        )
+                        if is_sanitation:
                             san_msg = f"`{rep['file']}` | Aba `{page['name']}` | {vf_owner}: `{cond}`"
                             if san_msg not in self.sanitation_filters:
                                 self.sanitation_filters.append(san_msg)
+
+                        # PBIX-H4: Regras de negócio em filtros visuais (qualquer predicado seletivo que não seja tenant nem mera sanitização)
+                        is_business_rule = (
+                            not _is_tenant_filter(field_name, cond)
+                            and not is_sanitation
+                            and (
+                                " IN (" in cond_up
+                                or any(
+                                    k in cond_low
+                                    for k in (
+                                        "id_",
+                                        "cod_",
+                                        "cd_",
+                                        "status",
+                                        "situacao",
+                                        "tipo",
+                                        "nivel",
+                                        "unidade_n",
+                                        "tarefa",
+                                        "categoria",
+                                        "indicador",
+                                        "fl_",
+                                        "sin_",
+                                    )
+                                )
+                                or ("IS NOT NULL" in cond_up and "IS NULL" in cond_up)
+                                or vf_owner.startswith("Visual ")
+                            )
+                        )
+                        if is_business_rule:
+                            rule_msg = f"`{rep['file']}` | Aba `{page['name']}` | {vf_owner}: `{cond}`"
+                            if rule_msg not in self.business_rules_filters:
+                                self.business_rules_filters.append(rule_msg)
+                            if cond not in seen_rule_conditions:
+                                seen_rule_conditions.add(cond)
+                                self.business_rules_catalog.append({
+                                    "contexto": f"{page['name']} — {vf_owner}",
+                                    "expressao": cond,
+                                    "campo": field_name or cond.split()[0],
+                                })
 
         # PBIX-H1: Clonagem Multi-Tenant de arquivos .pbix
         if tenants_by_file:
             lista_clones = ", ".join(f"`{k}` -> `{v}`" for k, v in tenants_by_file.items())
             self.heuristics_triggered.append({
                 "id": "PBIX_H1_CLONAGEM_MULTITENANT_SEM_RLS",
-                "titulo": f"Clonagem Manual de Relatórios `.pbix` por Órgão em vez de Row-Level Security ({len(tenants_by_file)} arquivos)",
+                "titulo": f"Clonagem Manual de Relatórios `.pbix` por Órgão/Tenant em vez de Row-Level Security ({len(tenants_by_file)} arquivos)",
                 "gravidade": "CRÍTICA",
                 "descricao": (
-                    f"Os relatórios analisados são cópias estruturais idênticas onde o isolamento de dados é feito "
-                    f"manualmente por filtro de página (`orgao.sigla_orgao`): {lista_clones}. "
-                    f"Manter N arquivos `.pbix` separados multiplica o esforço de manutenção e gera inconsistências de versão."
+                    f"Os relatórios analisados utilizam filtros estáticos de página/relatório para isolar cada órgão/tenant: "
+                    f"{lista_clones}. Manter arquivos `.pbix` separados por unidade/órgão multiplica o esforço de manutenção e gera divergência de versões."
                 ),
                 "prescricao": [
-                    "Unificar os relatórios de cada família em um ÚNICO arquivo `.pbix` corporativo.",
-                    "Implementar isolamento de acesso via **Row-Level Security (RLS)** no banco Oracle (`seguranca-rls-oracle` com `DBMS_RLS`) ou RLS dinâmico no dataset semântico.",
+                    "Unificar os relatórios de mesma estrutura em um ÚNICO arquivo `.pbix` corporativo.",
+                    "Implementar isolamento de acesso via **Row-Level Security (RLS)** no banco Oracle (`seguranca-rls-oracle` com `DBMS_RLS`) ou RLS dinâmico no modelo semântico.",
                 ],
             })
 
@@ -398,66 +528,66 @@ class PBIXInspector:
         if self.cross_tenant_leaks:
             self.heuristics_triggered.append({
                 "id": "PBIX_H2_VAZAMENTO_FILTRO_CROSS_TENANT",
-                "titulo": f"Bug Real de Copy-Paste: Filtro de Outro Órgão Esquecido Dentro de Visual ({len(self.cross_tenant_leaks)} ocorrências)",
+                "titulo": f"Bug Real de Copy-Paste: Filtro de Outro Órgão/Tenant Esquecido Dentro de Visual ({len(self.cross_tenant_leaks)} ocorrências)",
                 "gravidade": "CRÍTICA",
                 "descricao": (
-                    "Ao clonar o arquivo `.pbix` de um órgão para outro, um filtro visual interno permaneceu apontando "
-                    "para o órgão antigo! Exemplos detectados: " + " ; ".join(self.cross_tenant_leaks)
+                    "Ao clonar ou adaptar o arquivo `.pbix` entre órgãos/unidades, um filtro interno permaneceu apontando "
+                    "para outro tenant! Ocorrências detectadas: " + " ; ".join(self.cross_tenant_leaks)
                 ),
                 "prescricao": [
-                    "Remover imediatamente o filtro visual hardcoded `dadosConsolidados.Orgao = 'SAEB'` dos cartões da página `Geral` nos painéis da PRODEB e URBIS.",
-                    "Substituir filtros manuais de órgão por política centralizada de RLS.",
+                    "Remover imediatamente os filtros visuais divergentes listados acima nos visuais afetados.",
+                    "Substituir filtros manuais de órgão/tenant por política centralizada de RLS (`DBMS_RLS`).",
                 ],
             })
 
-        # PBIX-H3: Tabelão Desnormalizado (dadosConsolidados)
+        # PBIX-H3: Tabelão Desnormalizado (Flat Table)
         if self.flat_tables_detected:
+            dims_sug, fatos_sug = self._infer_star_schema_candidates()
+            nomes_tabeloes = ", ".join(sorted(self.flat_tables_detected))
             self.heuristics_triggered.append({
                 "id": "PBIX_H3_TABELAO_FLAT_DESNORMALIZADO",
-                "titulo": "Modelo Baseado em Tabelão Flat Desnormalizado (`dadosConsolidados` / `Consulta1`)",
+                "titulo": f"Modelo Baseado em Tabelão Flat Desnormalizado ({len(self.flat_tables_detected)} tabela(s) detectada(s))",
                 "gravidade": "ALTA",
                 "descricao": (
-                    f"Foram detectadas tabelas planas desnormalizadas concentrando fatos e dimensões: "
-                    f"{', '.join(sorted(self.flat_tables_detected))}. "
-                    f"Isso degrada a compressão colunar do VertiPaq, exige filtros complexos nos visuais e causa ambiguidade nos cálculos."
+                    f"Foram detectadas tabelas planas desnormalizadas concentrando atributos dimensionais e métricas: "
+                    f"{nomes_tabeloes}. Isso degrada a compressão colunar do VertiPaq, exige filtros complexos nos visuais e causa ambiguidade nos cálculos DAX."
                 ),
                 "prescricao": [
-                    "Decompor o tabelão no Star Schema oficial do DW Oracle (`DIM_ORGAO`, `DIM_UNIDADE`, `DIM_TAREFA`, `DIM_USUARIO`, `DIM_TEMPO` + `FATO_PROCESSO`, `FATO_TRAMITACAO`, `FATO_DOCUMENTO`, `FATO_PERMISSAO_SIP`).",
+                    f"Decompor o tabelão no Star Schema oficial do DW Oracle (Dimensões sugeridas: `{', '.join(dims_sug)}` + Fato(s): `{', '.join(fatos_sug)}`).",
                     "Expor para o Power BI exclusivamente as Views da Camada Semântica (`VW_<PROJETO>_DIM_*`, `VW_<PROJETO>_EVENTO_*`, `VW_<PROJETO>_KPI_*`).",
                 ],
             })
 
         # PBIX-H4: Regras de Negócio Ocultas em Filtros Visuais
         if self.business_rules_filters:
+            exemplos_regras = "; ".join(self.business_rules_filters[:4])
             self.heuristics_triggered.append({
                 "id": "PBIX_H4_REGRAS_NEGOCIO_HARDCODED_NO_VISUAL",
                 "titulo": f"Regras de Negócio e KPIs Críticos Ocultos em Filtros Visuais ({len(self.business_rules_filters)} regras extraídas)",
                 "gravidade": "ALTA",
                 "descricao": (
-                    "Conceitos oficiais de negócio (como 'Processos Gerados' = `id_tarefa = 1`, "
-                    "'Documentos por Período' = `id_tarefa IN (2, 13)`, 'Processos Tramitados' = `id_tarefa IN (32, 48)` "
-                    "e recorte hierárquico de 3º nível `Unidade_N.3 IS NOT NULL AND Unidade_N.4 IS NULL`) estão cravados "
-                    "manualmente nos filtros laterais de cada gráfico/cartão do Power BI."
+                    "Regras de negócio e recortes de KPIs estão cravados manualmente nos filtros laterais de visuais/páginas "
+                    f"do Power BI ({exemplos_regras}). Isso impede o reuso governado da regra em outros painéis e agentes de IA."
                 ),
                 "prescricao": [
-                    "Promover essas regras para flags/colunas semânticas na `DIM_TAREFA` / `DIM_UNIDADE` e nas views `VW_<PROJETO>_KPI_*`.",
-                    "Catalogar todas as regras extraídas nas tabelas `META_CONCEITOS_NEGOCIO` e `META_REGRAS_NEGOCIO` da Camada Semântica.",
+                    "Promover essas condições para flags/atributos oficiais nas Dimensões (`DIM_*`) e métricas prontas nas views `VW_<PROJETO>_KPI_*`.",
+                    "Catalogar todas as regras extraídas nas tabelas `META_OBJETO`, `META_METRICA` e `META_REGRA_NEGOCIO` da Camada Semântica.",
                 ],
             })
 
         # PBIX-H5: Sanitização de Sujeira nos Filtros Visuais
         if self.sanitation_filters:
+            exemplos_san = "; ".join(self.sanitation_filters[:4])
             self.heuristics_triggered.append({
                 "id": "PBIX_H5_SANITIZACAO_DE_LIXO_NO_VISUAL",
                 "titulo": f"Expurgo Manual de Dados de Teste/Sujeira no Visual do Relatório ({len(self.sanitation_filters)} ocorrências)",
                 "gravidade": "ALERTA_QUALIDADE",
                 "descricao": (
-                    "Os visuais do Power BI estão filtrando manualmente registros de teste e códigos técnicos inválidos "
-                    "(ex: `Unidade1 <> 'TESTE-SEI'`, `sigla <> '*'`, `usuario.nome <> ''`, `TAREFA_NOME <> '@'`). "
-                    "Se um analista criar um novo visual e esquecer esses filtros, os indicadores sairão contaminados."
+                    "Os visuais/páginas do Power BI estão filtrando manualmente registros inválidos, códigos técnicos ou dados de teste "
+                    f"({exemplos_san}). Se um analista criar um novo visual e esquecer esses filtros, os indicadores sairão contaminados."
                 ),
                 "prescricao": [
-                    "Mover o expurgo de `TESTE-SEI`, `sigla = '*'` e registros vazios para a camada de Staging/DW ou para o predicado padrão das Views `VW_<PROJETO>_DIM_*`.",
+                    "Mover o expurgo de registros inválidos/teste para a camada de Staging (`STG_*`) ou para a cláusula `WHERE` das Views `VW_<PROJETO>_DIM_*`.",
                 ],
             })
 
@@ -467,7 +597,7 @@ class PBIXInspector:
             print(
                 f"  - {CIANO}{r['file']}{RESET} | Modo: {r['connection_mode']} | "
                 f"Tabelas: {len(r['tables'])} | Abas: {len(r['pages'])} | "
-                f"Órgão Dominante: {r.get('dominant_tenant') or 'Global'}"
+                f"Tenant Dominante: {r.get('dominant_tenant') or 'Global'}"
             )
         print()
         print(f"{NEGRITO}Heurísticas e Anti-Padrões Detectados ({len(self.heuristics_triggered)}):{RESET}")
@@ -485,6 +615,8 @@ class PBIXInspector:
         lines.append("---\n")
 
         lines.append("## 1. Resumo Executivo & Anti-Padrões Detectados\n")
+        if not self.heuristics_triggered:
+            lines.append("Nenhum anti-padrão crítico detectado nos arquivos inspecionados.\n")
         for idx, h in enumerate(self.heuristics_triggered, 1):
             lines.append(f"### 1.{idx}. [{h['id']}] {h['titulo']}")
             lines.append(f"- **Gravidade:** `{h['gravidade']}`")
@@ -495,15 +627,23 @@ class PBIXInspector:
             lines.append("")
 
         lines.append("---\n")
-        lines.append("## 2. Catálogo de Regras de Negócio Implícitas Extraídas dos Filtros Visuais\n")
-        lines.append("| Regra / Conceito Identificado | Expressão Extraída do Filtro Visual | Ação Recomendada no DW / Camada Semântica |")
+        lines.append("## 2. Catálogo de Regras de Negócio e Filtros Extraídos dos Visuais\n")
+        lines.append("| Contexto (Aba / Visual) | Expressão Extraída do Filtro Visual | Ação Recomendada no DW / Camada Semântica |")
         lines.append("| :--- | :--- | :--- |")
-        lines.append("| **Processos Gerados** | `dadosConsolidados.id_tarefa = 1` | Criar métrica/flag oficial na `FATO_PROCESSO` / `VW_SEI_KPI_PROCESSOS` e registrar em `META_REGRAS_NEGOCIO` |")
-        lines.append("| **Documentos por Período** | `dadosConsolidados.id_tarefa IN (2, 13)` | Mapear tarefas `2` e `13` na `DIM_TAREFA` (`FL_GERACAO_DOCUMENTO = 'S'`) e na `FATO_DOCUMENTO` |")
-        lines.append("| **Processos Tramitados para o Órgão** | `dadosConsolidados.id_tarefa IN (32, 48)` | Mapear tarefas `32` e `48` como evento oficial de tramitação na `FATO_TRAMITACAO` |")
-        lines.append("| **Recorte de 3º Nível Hierárquico de Unidade** | `Unidade_N.3 IS NOT NULL AND Unidade_N.4 IS NULL` | Modelar `NUM_NIVEL_HIERARQUIA = 3` e `DES_UNIDADE_N1..N5` na `DIM_UNIDADE` |")
-        lines.append("| **Expurgo de Tarefas Técnicas no Andamento** | `tarefa.TAREFA_NOME NOT IN ('@', 'Gerado documento', ...)` | Criar flag `FL_EXIBIR_ANDAMENTO = 'S'` na `DIM_TAREFA` |")
-        lines.append("| **Sanitização de Unidades e Usuários (SIP/SEI)** | `Unidade1 <> 'TESTE-SEI'`, `sigla <> '*'`, `usuario.nome <> ''` | Aplicar filtro de saneamento na `STG_` e nas views `VW_SEI_DIM_UNIDADE` / `VW_SEI_DIM_USUARIO` |\n")
+        if self.business_rules_catalog or self.sanitation_filters:
+            for item in self.business_rules_catalog:
+                lines.append(
+                    f"| **{item['contexto']}** | `{item['expressao']}` | "
+                    f"Promover regra sobre `{item['campo']}` para flag/métrica em `DIM_*` / `VW_<PROJETO>_KPI_*` e catalogar em `META_REGRA_NEGOCIO` |"
+                )
+            for san in self.sanitation_filters[:10]:
+                lines.append(
+                    f"| **Filtro de Sanitização** | {san} | "
+                    "Aplicar expurgo na carga de `STG_*` e nas views vigentes `VW_<PROJETO>_DIM_*` |"
+                )
+        else:
+            lines.append("| *(Sem filtros ocultos)* | *(Nenhuma expressão de filtro visual seletivo detectada)* | Manter regras centralizadas nas views `VW_<PROJETO>_*` |")
+        lines.append("")
 
         lines.append("---\n")
         lines.append("## 3. Inventário Estrutural Detalhado por Arquivo `.pbix`\n")

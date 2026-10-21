@@ -76,10 +76,110 @@ def mapear_tipo_oracle(tipo_origem: str) -> str:
     return t if t else "VARCHAR2(255 CHAR)"
 
 
+def ler_texto_sql(caminho: Path) -> str:
+    """Lê um arquivo SQL tentando UTF-8 (com/sem BOM) e, em seguida, CP1252 (padrão de exportações no Windows).
+
+    Evita a perda silenciosa de acentos em comentários/COMMENT ON que ocorria com `errors="ignore"`.
+    """
+    dados = Path(caminho).read_bytes()
+    for enc in ("utf-8-sig", "cp1252"):
+        try:
+            return dados.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return dados.decode("latin-1")
+
+
+def _remover_comentarios_sql(sql_text: str) -> str:
+    """Remove comentários `-- ...` e `/* ... */` respeitando literais '...' e identificadores "..." / [...] / `...`.
+
+    Os comentários são substituídos por espaço (ou quebra de linha) para preservar a separação entre tokens.
+    """
+    saida = []
+    i = 0
+    n = len(sql_text)
+    while i < n:
+        ch = sql_text[i]
+        nxt = sql_text[i + 1] if i + 1 < n else ""
+        if ch == "-" and nxt == "-":
+            fim = sql_text.find("\n", i)
+            if fim == -1:
+                break
+            saida.append("\n")
+            i = fim + 1
+            continue
+        if ch == "/" and nxt == "*":
+            fim = sql_text.find("*/", i + 2)
+            saida.append(" ")
+            if fim == -1:
+                break
+            i = fim + 2
+            continue
+        if ch in ("'", '"', "`", "["):
+            fecha = "]" if ch == "[" else ch
+            j = i + 1
+            while j < n:
+                if sql_text[j] == fecha:
+                    # Aspas duplicadas ('' ou "") representam escape dentro do literal
+                    if fecha in ("'", '"') and j + 1 < n and sql_text[j + 1] == fecha:
+                        j += 2
+                        continue
+                    break
+                j += 1
+            saida.append(sql_text[i : j + 1])
+            i = j + 1
+            continue
+        saida.append(ch)
+        i += 1
+    return "".join(saida)
+
+
+# Identificador SQL: "Com Espaço" | [Com Espaço] | `crase` | simples
+_IDENT = r'(?:"[^"]+"|\[[^\]]+\]|`[^`]+`|[^\s\(\),\."\[`]+)'
+_IDENT_QUALIFICADO = rf"{_IDENT}(?:\s*\.\s*{_IDENT})*"
+_RE_IDENT_INICIAL = re.compile(r'^\s*(?:"([^"]+)"|\[([^\]]+)\]|`([^`]+)`|([^\s\(\),]+))')
+
+
+def _limpar_identificador(token: str) -> str:
+    """Extrai o nome puro de um identificador, removendo aspas/colchetes e sufixos como ASC/DESC.
+
+    Ex.: '[Id] ASC' -> 'Id' | '"NOME CLIENTE"' -> 'NOME CLIENTE' | 'dbo.T' -> 'dbo.T'
+    """
+    m = _RE_IDENT_INICIAL.match(token or "")
+    if not m:
+        return (token or "").strip()
+    return next(g for g in m.groups() if g is not None).strip()
+
+
+def _nome_dw(nome_original: str) -> str:
+    """Normaliza um nome de coluna para o padrão DW (maiúsculo, sem espaços/caracteres especiais)."""
+    return re.sub(r"[^A-Z0-9_#$]+", "_", nome_original.strip().upper()).strip("_")
+
+
+def _ultima_parte(nome_qualificado: str) -> str:
+    """Retorna a última parte de um nome qualificado (schema.tabela), sem aspas/colchetes, em maiúsculo."""
+    partes = re.findall(_IDENT, nome_qualificado)
+    return _limpar_identificador(partes[-1]).upper() if partes else nome_qualificado.strip().upper()
+
+
+def _lista_identificadores(texto_lista: str) -> list:
+    """Converte 'A, [B] ASC, "C D"' em ['A', 'B', 'C_D'] (normalizados para DW)."""
+    return [_nome_dw(_limpar_identificador(p)) for p in texto_lista.split(",") if p.strip()]
+
+
+def detectar_ctas(sql_text: str) -> list:
+    """Lista tabelas criadas via `CREATE TABLE ... AS SELECT` (sem lista de colunas, não extraíveis do DDL)."""
+    padrao = re.compile(
+        rf"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\s+({_IDENT_QUALIFICADO})\s+AS\s+(?:WITH|SELECT)\b",
+        re.IGNORECASE,
+    )
+    return [_ultima_parte(m.group(1)) for m in padrao.finditer(_remover_comentarios_sql(sql_text))]
+
+
 def _extrair_blocos_create_table(sql_text: str) -> list:
     """Localiza instruções CREATE TABLE usando balanceamento de parênteses (suporta cláusulas TABLESPACE/STORAGE do Oracle)."""
     padrao_inicio = re.compile(
-        r"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([^\(\s]+)\s*\(",
+        rf"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?({_IDENT_QUALIFICADO})\s*\(",
         re.IGNORECASE,
     )
     blocos = []
@@ -92,17 +192,17 @@ def _extrair_blocos_create_table(sql_text: str) -> list:
         nome_bruto = m.group(1).strip()
         idx_abre = m.end() - 1  # posição do '('
         nivel = 0
-        em_aspas = False
+        aspas = ""  # "'" (literal) ou '"' (identificador) quando dentro de aspas
         idx_fecha = -1
         i = idx_abre
         while i < n:
             ch = sql_text[i]
-            if ch == "'":
-                if em_aspas and i + 1 < n and sql_text[i + 1] == "'":
+            if ch in ("'", '"') and (not aspas or aspas == ch):
+                if aspas and i + 1 < n and sql_text[i + 1] == ch:
                     i += 2
                     continue
-                em_aspas = not em_aspas
-            elif not em_aspas:
+                aspas = "" if aspas else ch
+            elif not aspas:
                 if ch == "(":
                     nivel += 1
                 elif ch == ")":
@@ -121,36 +221,29 @@ def _extrair_blocos_create_table(sql_text: str) -> list:
 
 
 def _dividir_definicoes_colunas(corpo: str) -> list:
-    """Divide os itens internos do CREATE TABLE por vírgula no nível 0 de parênteses."""
-    # Remove comentários de linha antes de dividir
-    linhas_sem_coment = []
-    for ln in corpo.splitlines():
-        ln_s = ln.strip()
-        if ln_s.startswith("--"):
-            continue
-        # Remove comentário inline '-- ...' fora de aspas simples
-        idx_c = ln.find("--")
-        if idx_c != -1 and "'" not in ln[:idx_c]:
-            ln = ln[:idx_c]
-        linhas_sem_coment.append(ln)
-    texto = "\n".join(linhas_sem_coment)
+    """Divide os itens internos do CREATE TABLE por vírgula no nível 0 de parênteses.
+
+    Os comentários (`--` e `/* */`) já foram removidos de forma segura por `_remover_comentarios_sql`
+    antes desta etapa; aqui apenas respeitamos literais '...' e identificadores "..." ao dividir.
+    """
+    texto = corpo
 
     itens = []
     atual = []
     nivel = 0
-    em_aspas = False
+    aspas = ""
     i = 0
     n = len(texto)
     while i < n:
         ch = texto[i]
-        if ch == "'":
-            if em_aspas and i + 1 < n and texto[i + 1] == "'":
-                atual.append("''")
+        if ch in ("'", '"') and (not aspas or aspas == ch):
+            if aspas and i + 1 < n and texto[i + 1] == ch:
+                atual.append(ch * 2)
                 i += 2
                 continue
-            em_aspas = not em_aspas
+            aspas = "" if aspas else ch
             atual.append(ch)
-        elif not em_aspas:
+        elif not aspas:
             if ch == "(":
                 nivel += 1
                 atual.append(ch)
@@ -174,15 +267,40 @@ def _dividir_definicoes_colunas(corpo: str) -> list:
     return itens
 
 
+def _pares_fk(cols_origem: str, tabela_ref: str, cols_ref: str) -> list:
+    """Gera um dicionário de FK por par de colunas (suporta FKs compostas)."""
+    origem = _lista_identificadores(cols_origem)
+    destino = _lista_identificadores(cols_ref) if cols_ref else []
+    tab_ref = _ultima_parte(tabela_ref)
+    pares = []
+    for idx, col in enumerate(origem):
+        col_ref = destino[idx] if idx < len(destino) else (destino[0] if destino else col)
+        pares.append({"coluna": col, "tabela_ref": tab_ref, "coluna_ref": col_ref})
+    return pares
+
+
+# Itens do CREATE TABLE que não são colunas (exige palavra inteira: KEY_CLIENTE/CHECK_DIGITO continuam sendo colunas)
+_RE_ITEM_NAO_COLUNA = re.compile(
+    r"^(?:CONSTRAINT|UNIQUE|CHECK|INDEX|KEY|FULLTEXT|SPATIAL|SUPPLEMENTAL|PERIOD\s+FOR|LIKE|EXCLUDE)\b",
+    re.IGNORECASE,
+)
+_RE_FIM_TIPO = re.compile(
+    r"\b(?:COLLATE|NOT\s+NULL|NULL|DEFAULT|CONSTRAINT|PRIMARY\s+KEY|UNIQUE|CHECK|REFERENCES|GENERATED|IDENTITY|"
+    r"AUTO_INCREMENT|ENABLE|DISABLE|VISIBLE|INVISIBLE|ENCRYPT|SORT)\b",
+    re.IGNORECASE,
+)
+
+
 def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
     """Extrai definições de tabelas, colunas, PKs, FKs, índices e comentários de um texto SQL."""
     tabelas = {}
+    sql_text = _remover_comentarios_sql(sql_text)
 
     # 1. Localizar blocos CREATE TABLE com balanceamento de parênteses
     for nome_bruto_raw, corpo in _extrair_blocos_create_table(sql_text):
-        partes_nome = [p.strip('`"[]') for p in nome_bruto_raw.split(".")]
+        partes_nome = [_limpar_identificador(p) for p in re.findall(_IDENT, nome_bruto_raw)]
         nome_bruto = ".".join(partes_nome)
-        nome_curto = partes_nome[-1].upper()
+        nome_curto = _nome_dw(partes_nome[-1]) if partes_nome else _nome_dw(nome_bruto_raw)
 
         colunas = []
         pks = []
@@ -192,53 +310,53 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
             ln_clean = " ".join(ln_clean.split()).strip()
             if not ln_clean:
                 continue
+            ln_up = ln_clean.upper()
 
-            # Constraint PK inline ou bloco
+            # Constraint PK em bloco (CONSTRAINT x PRIMARY KEY (...) / PRIMARY KEY (...))
             m_pk = re.search(r"PRIMARY\s+KEY\s*(?:CLUSTERED|NONCLUSTERED)?\s*\(([^)]+)\)", ln_clean, re.IGNORECASE)
-            if m_pk and ln_clean.upper().startswith(("CONSTRAINT", "PRIMARY KEY")):
-                cols_pk = [c.strip().strip('`"[]').split()[0].upper() for c in m_pk.group(1).split(",")]
-                for c_pk in cols_pk:
+            if m_pk and re.match(r"^(?:CONSTRAINT\b|PRIMARY\s+KEY\b)", ln_up):
+                for c_pk in _lista_identificadores(m_pk.group(1)):
                     if c_pk not in pks:
                         pks.append(c_pk)
                 continue
 
-            # Constraint FK inline no CREATE TABLE
+            # Constraint FK em bloco (suporta FK composta)
             m_fk = re.search(
-                r"FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([^\(\s]+)\s*\(([^)]+)\)",
+                rf"FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+({_IDENT_QUALIFICADO})\s*(?:\(([^)]+)\))?",
                 ln_clean,
                 re.IGNORECASE,
             )
-            if m_fk and ln_clean.upper().startswith(("CONSTRAINT", "FOREIGN KEY")):
-                col_fk = m_fk.group(1).strip().strip('`"[]').upper()
-                tab_ref = [p.strip('`"[]') for p in m_fk.group(2).strip().split(".")][-1].upper()
-                col_ref = m_fk.group(3).strip().strip('`"[]').upper()
-                fks.append({"coluna": col_fk, "tabela_ref": tab_ref, "coluna_ref": col_ref})
+            if m_fk and re.match(r"^(?:CONSTRAINT\b|FOREIGN\s+KEY\b)", ln_up):
+                fks.extend(_pares_fk(m_fk.group(1), m_fk.group(2), m_fk.group(3) or ""))
                 continue
 
-            if ln_clean.upper().startswith(("CONSTRAINT", "UNIQUE", "CHECK", "INDEX", "KEY", "SUPPLEMENTAL")):
+            if _RE_ITEM_NAO_COLUNA.match(ln_clean):
                 continue
 
-            # Parse de coluna: nome + tipo + nulabilidade
-            m_col = re.match(r'^[\["`]?([A-Za-z0-9_#$]+)[\]"`]?\s+(.+)$', ln_clean)
+            # Parse de coluna: nome (simples ou entre aspas/colchetes/crase) + tipo + nulabilidade
+            m_col = re.match(r'^(?:"([^"]+)"|\[([^\]]+)\]|`([^`]+)`|([A-Za-z0-9_#$]+))\s+(.+)$', ln_clean)
             if m_col:
-                col_nome = m_col.group(1).upper()
-                resto = m_col.group(2)
+                nome_original = next(g for g in m_col.groups()[:4] if g is not None)
+                col_nome = _nome_dw(nome_original)
+                resto = m_col.group(5)
 
                 not_null = bool(re.search(r"\bNOT\s+NULL\b", resto, re.IGNORECASE))
                 if re.search(r"\bPRIMARY\s+KEY\b", resto, re.IGNORECASE) and col_nome not in pks:
                     pks.append(col_nome)
 
-                # Extrair apenas a definição de tipo antes de COLLATE / NOT NULL / NULL / DEFAULT / CONSTRAINT / GENERATED / ENABLE
-                tipo_raw = re.split(
-                    r"\b(?:COLLATE|NOT\s+NULL|NULL|DEFAULT|CONSTRAINT|PRIMARY\s+KEY|GENERATED|IDENTITY|AUTO_INCREMENT|ENABLE|DISABLE)\b",
-                    resto,
-                    maxsplit=1,
-                    flags=re.IGNORECASE,
-                )[0].strip()
+                # FK inline na coluna: ID_X NUMBER REFERENCES TB_X (ID)
+                m_ref = re.search(
+                    rf"\bREFERENCES\s+({_IDENT_QUALIFICADO})\s*(?:\(([^)]+)\))?", resto, re.IGNORECASE
+                )
+                if m_ref:
+                    fks.extend(_pares_fk(nome_original, m_ref.group(1), m_ref.group(2) or ""))
+
+                # Extrair apenas a definição de tipo antes de COLLATE / NOT NULL / NULL / DEFAULT / CONSTRAINT / ...
+                tipo_raw = _RE_FIM_TIPO.split(resto, maxsplit=1)[0].strip()
 
                 colunas.append(
                     {
-                        "nome_original": m_col.group(1),
+                        "nome_original": nome_original,
                         "nome_dw": col_nome,
                         "tipo_origem": tipo_raw,
                         "tipo_oracle": mapear_tipo_oracle(tipo_raw),
@@ -260,40 +378,36 @@ def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
 
     # 2. Localizar ALTER TABLE ... ADD CONSTRAINT ... PRIMARY KEY
     padrao_alter_pk = re.compile(
-        r"ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+(?:CONSTRAINT\s+[^\s]+\s+)?PRIMARY\s+KEY\s*\(([^)]+)\)",
+        rf"ALTER\s+TABLE\s+(?:ONLY\s+)?({_IDENT_QUALIFICADO})\s+ADD\s+(?:CONSTRAINT\s+{_IDENT}\s+)?PRIMARY\s+KEY\s*(?:CLUSTERED|NONCLUSTERED)?\s*\(([^)]+)\)",
         re.IGNORECASE,
     )
     for m in padrao_alter_pk.finditer(sql_text):
-        tab = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
+        tab = _ultima_parte(m.group(1))
         if tab in tabelas:
-            cols_pk = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(2).split(",")]
-            for c_pk in cols_pk:
+            for c_pk in _lista_identificadores(m.group(2)):
                 if c_pk not in tabelas[tab]["pks"]:
                     tabelas[tab]["pks"].append(c_pk)
 
-    # 3. Localizar ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY
+    # 3. Localizar ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY (suporta FK composta)
     padrao_alter_fk = re.compile(
-        r"ALTER\s+TABLE\s+([^\s]+)\s+ADD\s+(?:CONSTRAINT\s+[^\s]+\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+([^\(\s]+)\s*\(([^)]+)\)",
+        rf"ALTER\s+TABLE\s+(?:ONLY\s+)?({_IDENT_QUALIFICADO})\s+(?:WITH\s+(?:NO)?CHECK\s+)?ADD\s+(?:CONSTRAINT\s+{_IDENT}\s+)?FOREIGN\s+KEY\s*\(([^)]+)\)\s*REFERENCES\s+({_IDENT_QUALIFICADO})\s*\(([^)]+)\)",
         re.IGNORECASE,
     )
     for m in padrao_alter_fk.finditer(sql_text):
-        tab = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
-        col_fk = m.group(2).strip().strip('`"[]').upper()
-        tab_ref = [p.strip('`"[]') for p in m.group(3).strip().split(".")][-1].upper()
-        col_ref = m.group(4).strip().strip('`"[]').upper()
+        tab = _ultima_parte(m.group(1))
         if tab in tabelas:
-            tabelas[tab]["fks"].append({"coluna": col_fk, "tabela_ref": tab_ref, "coluna_ref": col_ref})
+            tabelas[tab]["fks"].extend(_pares_fk(m.group(2), m.group(3), m.group(4)))
 
     # 4. Localizar CREATE [BITMAP|UNIQUE] INDEX
     padrao_idx = re.compile(
-        r"CREATE\s+(?:UNIQUE\s+|BITMAP\s+)?(?:CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\s+([^\s]+)\s+ON\s+([^\(\s]+)\s*\(([^)]+)\)(?:\s*INCLUDE\s*\(([^)]+)\))?",
+        rf"CREATE\s+(?:UNIQUE\s+|BITMAP\s+)?(?:CLUSTERED\s+|NONCLUSTERED\s+)?INDEX\s+({_IDENT_QUALIFICADO})\s+ON\s+({_IDENT_QUALIFICADO})\s*\(([^)]+)\)(?:\s*INCLUDE\s*\(([^)]+)\))?",
         re.IGNORECASE,
     )
     for m in padrao_idx.finditer(sql_text):
-        nome_idx = [p.strip('`"[]') for p in m.group(1).strip().split(".")][-1].upper()
-        tab = [p.strip('`"[]') for p in m.group(2).strip().split(".")][-1].upper()
-        cols_idx = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(3).split(",")]
-        cols_inc = [c.strip().strip('`"[]').split()[0].upper() for c in m.group(4).split(",")] if m.group(4) else []
+        nome_idx = _ultima_parte(m.group(1))
+        tab = _ultima_parte(m.group(2))
+        cols_idx = _lista_identificadores(m.group(3))
+        cols_inc = _lista_identificadores(m.group(4)) if m.group(4) else []
         if tab in tabelas:
             tabelas[tab]["indices"].append(
                 {"nome": nome_idx, "colunas": cols_idx, "include": cols_inc}
@@ -732,9 +846,15 @@ def main():
 
     todas_tabelas = []
     for arq in alvos:
-        sql_txt = arq.read_text(encoding="utf-8", errors="ignore")
+        sql_txt = ler_texto_sql(arq)
         tabs = parse_ddl_text(sql_txt, arq.name)
         todas_tabelas.extend(tabs)
+        ctas = detectar_ctas(sql_txt)
+        if ctas:
+            print(
+                f"  {AMARELO}[AVISO]{RESET} {arq.name}: {len(ctas)} tabela(s) criadas via CREATE TABLE ... AS SELECT "
+                f"foram ignoradas (sem lista de colunas no DDL): {', '.join(ctas)}"
+            )
 
     if not todas_tabelas:
         print(f"  {VERMELHO}[ERRO]{RESET} Nenhuma instrução CREATE TABLE foi identificada nos arquivos analisados.\n")
