@@ -54,18 +54,39 @@ SAIDA_SEM_DIR = ROOT_DIR / "saida" / "camada_semantica"
 TEMPLATES_SEM_DIR = ROOT_DIR / "modulos" / "camada_semantica" / "templates"
 
 
+def _listar_arquivos_ddl_pasta(pasta: Path) -> list[Path]:
+    """Lista arquivos .sql, .ddl e também .csv/.txt que contenham CREATE TABLE."""
+    encontrados = []
+    if not pasta.exists():
+        return encontrados
+    for f in sorted(pasta.rglob("*")):
+        if not f.is_file() or f.name.lower() == "readme.md":
+            continue
+        suf = f.suffix.lower()
+        if suf in (".sql", ".ddl"):
+            encontrados.append(f)
+        elif suf in (".csv", ".txt") and not f.name.upper().endswith("_REJEITADOS.CSV"):
+            try:
+                amostra = f.read_text(encoding="utf-8", errors="ignore")[:8192].upper()
+                if "CREATE TABLE" in amostra:
+                    encontrados.append(f)
+            except Exception:
+                pass
+    return encontrados
+
+
 def localizar_ddls_para_semantica(caminho_custom: Path | None = None) -> tuple[list[Path], Path]:
-    """Localiza arquivos .sql de DDL na ordem de prioridade da Camada Semântica."""
+    """Localiza arquivos de DDL (.sql/.ddl/.csv) na ordem de prioridade da Camada Semântica."""
     if caminho_custom and caminho_custom.exists():
         if caminho_custom.is_file():
             return [caminho_custom], caminho_custom.parent
-        arqs = sorted(caminho_custom.rglob("*.sql"))
+        arqs = _listar_arquivos_ddl_pasta(caminho_custom)
         if arqs:
             return arqs, caminho_custom
 
     # 1. entrega/camada_semantica/ddl/
     if ENTREGA_SEM_DDL_DIR.exists():
-        arqs = sorted(ENTREGA_SEM_DDL_DIR.rglob("*.sql"))
+        arqs = _listar_arquivos_ddl_pasta(ENTREGA_SEM_DDL_DIR)
         if arqs:
             return arqs, ENTREGA_SEM_DDL_DIR
 
@@ -88,7 +109,7 @@ def localizar_ddls_para_semantica(caminho_custom: Path | None = None) -> tuple[l
 
     # 3. entrega/planejador_dw/ddl/
     if ENTREGA_DW_DDL_DIR.exists():
-        arqs = sorted(ENTREGA_DW_DDL_DIR.rglob("*.sql"))
+        arqs = _listar_arquivos_ddl_pasta(ENTREGA_DW_DDL_DIR)
         if arqs:
             return arqs, ENTREGA_DW_DDL_DIR
 
@@ -108,8 +129,8 @@ def carregar_tabelas_dw(arquivos_sql: list[Path]) -> list[dict]:
 
 
 def _nome_entidade_curto(nome_tabela: str) -> str:
-    """Remove prefixos DIM_, FATO_, FAT_ para compor o nome canônico da View."""
-    return re.sub(r"^(DIM|FATO|FAT)_", "", nome_tabela.upper())
+    """Remove prefixos MVW_<PROJ>_, VW_<PROJ>_, DIM_, FATO_, FAT_ para compor o nome canônico da View."""
+    return re.sub(r"^(?:MVW_|VW_)?(?:[A-Z0-9]+_)?(?:DIM|DM|FATO|FAT|FT)_", "", nome_tabela.upper())
 
 
 def _obter_cfg_view_semantica(
@@ -265,12 +286,14 @@ def construir_views_eventos(
 
         select_exprs = []
         comentarios_vw = []
+        cols_select_usadas = set()
 
         for c in f["colunas"]:
             cname = c["nome_dw"]
             if cname in ("COD_EXECUCAO_CARGA",):
                 continue
             select_exprs.append(f"    f.{cname} AS {cname}")
+            cols_select_usadas.add(cname.upper())
             c_comment = c.get("comentario") or gerar_comentario_coluna(c, f, "FATO")
             comentarios_vw.append((cname, c_comment))
 
@@ -289,15 +312,19 @@ def construir_views_eventos(
                     and not c["nome_dw"].startswith(("DTC_", "DT_", "FLG_AT", "SIN_AT", "DES_ATUALIZAR", "DES_HASH"))
                 ][:3]
                 sufixo_dim = _nome_entidade_curto(dim_tab)
+                sufixo_fk = re.sub(r"^(SK_|DIM_|ID_)", "", col_fk.upper())
                 for atr in atributos_dim:
                     aname = atr["nome_dw"]
                     alias_col = aname if aname.endswith(f"_{sufixo_dim}") else f"{aname}_{sufixo_dim}"
-                    alias_col = alias_col[:30]
+                    alias_col = alias_col[:30].upper()
+                    if alias_col in cols_select_usadas:
+                        alias_col = f"{aname}_{sufixo_fk}"[:30].upper()
+                    cols_select_usadas.add(alias_col)
                     if aname.startswith(("DES_", "NOM_", "DSC_", "SGL_", "SIG_")):
                         select_exprs.append(f"    NVL({alias}.{aname}, 'Não Informado') AS {alias_col}")
                     else:
                         select_exprs.append(f"    {alias}.{aname} AS {alias_col}")
-                    comentarios_vw.append((alias_col, f"Atributo {aname} oriundo da dimensão {dim_tab}."))
+                    comentarios_vw.append((alias_col, f"Atributo {aname} oriundo da dimensão {dim_tab} ({col_fk})."))
 
         select_exprs.append("    CASE WHEN 1 = 1 THEN 'REGULAR' ELSE 'PENDENTE' END AS IND_SITUACAO_EVENTO")
         comentarios_vw.append(("IND_SITUACAO_EVENTO", "Indicador semântico padronizado da situação do evento para consumo de BI e IA."))

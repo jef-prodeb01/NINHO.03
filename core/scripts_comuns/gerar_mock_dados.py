@@ -125,7 +125,23 @@ def _gerar_valor_coluna(
             return f"{datetime.now().year}.{indice_linha:06d}"
         return indice_linha
 
-    # Datas
+    # Datas e atributos de calendário (DIM_TEMPO)
+    if c_up in ("NUM_ANO", "NR_ANO", "ANO"):
+        return (data_ini + timedelta(days=max(0, indice_linha * 10))).year if not eh_sentinela else 1900
+    if c_up in ("NUM_MES", "NR_MES", "MES"):
+        return ((indice_linha - 1) % 12) + 1 if not eh_sentinela else 1
+    if c_up in ("NUM_DIA", "NR_DIA", "DIA"):
+        return ((indice_linha - 1) % 28) + 1 if not eh_sentinela else 1
+    if c_up in ("NUM_TRIMESTRE", "TRIMESTRE"):
+        return ((indice_linha - 1) % 4) + 1 if not eh_sentinela else 1
+    if c_up in ("NUM_SEMESTRE", "SEMESTRE"):
+        return ((indice_linha - 1) % 2) + 1 if not eh_sentinela else 1
+    if c_up in ("NOM_MES", "DES_MES", "NM_MES"):
+        meses = [
+            "JANEIRO", "FEVEREIRO", "MARCO", "ABRIL", "MAIO", "JUNHO",
+            "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO",
+        ]
+        return meses[(indice_linha - 1) % 12] if not eh_sentinela else "NAO INFORMADO"
     if "DATE" in t_up or "TIMESTAMP" in t_up or c_up.startswith(("DTC_", "DAT_", "DT_")):
         dt_ev = data_ini + timedelta(days=random.randint(0, 90))
         return dt_ev.strftime("%Y-%m-%d")
@@ -331,9 +347,34 @@ def gerar_dados_mock_dinamico(
         writer.writerows(linhas_csv)
 
     arquivos_gerados = [caminho_saida]
+    pasta_destino = Path(os.path.abspath(caminho_saida)).parent
+
+    # Se houver múltiplas tabelas Fato no DW, gera também um CSV dedicado por Fato adicional
+    if len(fatos) > 1:
+        for f_nome_extra, f_info_extra in fatos.items():
+            if f_nome_extra == fato_principal_nome and not separar_tabelas:
+                continue
+            fks_extra = {fk["coluna"]: fk["tabela_ref"].upper() for fk in identificar_fks_fato(f_info_extra, nomes_dims)}
+            cols_extra = [c["nome_dw"] for c in f_info_extra.get("colunas", [])]
+            arq_fato_extra = pasta_destino / f"mock_{f_nome_extra.lower()}.csv"
+            with open(arq_fato_extra, mode="w", newline="", encoding="utf-8") as ff:
+                w_fato = csv.writer(ff, delimiter=";")
+                w_fato.writerow(cols_extra)
+                for idx_f in range(1, num_linhas + 1):
+                    dt_f = data_ini + timedelta(days=random.randint(0, 90))
+                    row_f = []
+                    for c in f_info_extra.get("colunas", []):
+                        cn = c["nome_dw"]
+                        ct = c.get("tipo_oracle", "VARCHAR2(100)")
+                        if cn in fks_extra:
+                            row_f.append(-1 if (idx_f == 1 or random.random() < 0.03) else random.randint(1, qtd_membros_dim))
+                        else:
+                            row_f.append(_gerar_valor_coluna(cn, ct, idx_f, dt_f, eh_sentinela=False))
+                    w_fato.writerow(row_f)
+            if str(arq_fato_extra) not in arquivos_gerados:
+                arquivos_gerados.append(str(arq_fato_extra))
 
     if separar_tabelas:
-        pasta_destino = Path(os.path.abspath(caminho_saida)).parent
         for d_nome, d_meta in catalogo_dims.items():
             arq_dim = pasta_destino / f"mock_{d_nome.lower()}.csv"
             with open(arq_dim, mode="w", newline="", encoding="utf-8") as fd:

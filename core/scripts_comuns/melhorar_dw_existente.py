@@ -39,7 +39,9 @@ Uso:
 import sys
 import re
 import html
+import zipfile
 import argparse
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
 
@@ -183,11 +185,11 @@ def humanizar_identificador(texto: str) -> str:
 def classificar_tabela_dw(tab: dict) -> str:
     """Classifica uma tabela do DDL entre FATO, DIM, STG ou OUTRA."""
     nome = tab["nome_tabela"].upper()
-    if nome.startswith(("FATO_", "FAT_", "FT_")):
+    if nome.startswith(("FATO_", "FAT_", "FT_")) or "_FATO_" in nome or "_FAT_" in nome:
         return "FATO"
-    if nome.startswith(("DIM_", "DM_")):
+    if nome.startswith(("DIM_", "DM_")) or "_DIM_" in nome or "_DM_" in nome:
         return "DIM"
-    if nome.startswith(("STG_", "ODI_DIM_", "TMP_")):
+    if nome.startswith(("STG_", "ODI_DIM_", "TMP_")) or "_STG_" in nome:
         return "STG"
 
     cols = [c["nome_dw"].upper() for c in tab["colunas"]]
@@ -217,6 +219,10 @@ def extrair_schema_e_projeto(tabelas: list, schema_cli: str = None, projeto_cli:
     if not projeto_detectado:
         for t in tabelas:
             nome = t["nome_tabela"].upper()
+            m_mvw = re.match(r"^(?:MVW|VW)_([A-Z0-9]+)_(?:DIM|FATO|FAT|STG)_", nome)
+            if m_mvw and m_mvw.group(1) not in ("TEMPO", "CALENDARIO", "DATA"):
+                projeto_detectado = m_mvw.group(1)
+                break
             m = re.match(r"^(?:DIM|FATO|FAT|STG|ODI_DIM)_([A-Z0-9]+)_", nome)
             if m and m.group(1) not in ("TEMPO", "CALENDARIO", "DATA"):
                 projeto_detectado = m.group(1)
@@ -253,7 +259,9 @@ def gerar_comentario_tabela(tab: dict, categoria: str, projeto: str) -> str:
     """Retorna o comentário existente (garantindo declaração de grão) ou infere um novo comentário semântico."""
     existente = (tab.get("comentario_tabela") or "").strip()
     nome = tab["nome_tabela"].upper()
-    sufixo = re.sub(r"^(DIM|FATO|FAT|STG|ODI_DIM)_([A-Z0-9]+_)?", "", nome)
+    sufixo = re.sub(r"^(?:MVW_|VW_)?(?:[A-Z0-9]+_)?(?:DIM|DM|FATO|FAT|STG|ODI_DIM)_", "", nome)
+    if projeto and sufixo.startswith(f"{projeto.upper()}_"):
+        sufixo = sufixo[len(projeto) + 1 :]
     entidade_legivel = humanizar_identificador(sufixo or nome)
 
     if existente:
@@ -334,8 +342,10 @@ def identificar_fks_fato(tab: dict, nomes_dimensoes: set) -> list:
         if alvo_exato in nomes_dims_up:
             return alvo_exato
         for d in sorted(nomes_dims_up):
-            ent_d = re.sub(r"^(DIM|FATO|FAT)_", "", d)
+            ent_d = re.sub(r"^(?:MVW_|VW_)?(?:[A-Z0-9]+_)?(?:DIM|DM|FATO|FAT)_", "", d)
             if ent_d == radical or ent_d.startswith(radical + "_") or radical.startswith(ent_d + "_"):
+                return d
+            if radical.startswith("TEMPO") and "TEMPO" in d:
                 return d
         return None
 
@@ -936,68 +946,402 @@ def construir_testes_integridade(dims: list, fatos: list, schema: str, projeto: 
     return "\n".join(linhas)
 
 
-def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str) -> str:
-    """Gera o Guia do Analista de BI (08_datasets_bi/) com diagrama Mermaid ER e medidas DAX extraídas do DDL."""
+def _col_letter_to_idx(col_ref: str) -> int:
+    """Converte referência de coluna Excel (ex: 'A12' -> 0, 'G2' -> 6)."""
+    letras = re.sub(r"[^A-Z]", "", col_ref.upper())
+    idx = 0
+    for ch in letras:
+        idx = idx * 26 + (ord(ch) - ord("A") + 1)
+    return max(0, idx - 1)
+
+
+def carregar_indicadores_negocio_entrega(base_dir: Path = None) -> list:
+    """
+    Inspeciona automaticamente planilhas .xlsx em entrega/planejador_dw/ (usando apenas
+    zipfile + xml.etree.ElementTree da stdlib) em busca de matrizes de Indicadores/Metas
+    do cliente (ex: 'Indicadores - PRAES.xlsx').
+    """
+    if base_dir is None:
+        base_dir = get_base_dir()
+    pasta_dw = base_dir / "entrega" / "planejador_dw"
+    if not pasta_dw.exists():
+        return []
+
+    planilhas = sorted(
+        f for f in pasta_dw.rglob("*.xlsx")
+        if f.is_file() and not f.name.startswith("~$")
+    )
+    indicadores = []
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+
+    for arq in planilhas:
+        try:
+            with zipfile.ZipFile(arq, "r") as zf:
+                shared = []
+                if "xl/sharedStrings.xml" in zf.namelist():
+                    root_ss = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+                    for si in root_ss.findall(f".//{ns}si"):
+                        shared.append("".join(t.text or "" for t in si.findall(f".//{ns}t")).strip())
+
+                sheets = sorted(n for n in zf.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"))
+                for sh in sheets:
+                    root_sh = ET.fromstring(zf.read(sh))
+                    rows_parsed = []
+                    for row in root_sh.findall(f".//{ns}row"):
+                        cells_map = {}
+                        max_idx = -1
+                        for c in row.findall(f"{ns}c"):
+                            ref = c.attrib.get("r", "")
+                            c_idx = _col_letter_to_idx(ref) if ref else (max_idx + 1)
+                            max_idx = max(max_idx, c_idx)
+                            t_attr = c.attrib.get("t", "")
+                            v_el = c.find(f"{ns}v")
+                            is_el = c.find(f"{ns}is")
+                            val = ""
+                            if t_attr == "s" and v_el is not None and v_el.text is not None:
+                                s_idx = int(v_el.text)
+                                val = shared[s_idx] if 0 <= s_idx < len(shared) else v_el.text
+                            elif is_el is not None:
+                                val = "".join(t.text or "" for t in is_el.findall(f".//{ns}t"))
+                            elif v_el is not None and v_el.text is not None:
+                                val = v_el.text
+                            cells_map[c_idx] = val.strip()
+                        if max_idx >= 0:
+                            linha = [cells_map.get(i, "") for i in range(max_idx + 1)]
+                            if any(linha):
+                                rows_parsed.append(linha)
+
+                    if len(rows_parsed) < 2:
+                        continue
+
+                    header = [h.strip().lower() for h in rows_parsed[0]]
+                    if not any(
+                         any(k in h for k in ("indicador", "kpi", "métrica", "metrica"))
+                        for h in header
+                    ):
+                        continue
+
+                    def _achar_col(termos: tuple, default_idx: int = -1) -> int:
+                        for idx_h, h_val in enumerate(header):
+                            if any(t in h_val for t in termos):
+                                return idx_h
+                        return default_idx
+
+                    idx_ind = _achar_col(("indicador", "kpi", "métrica", "metrica"), 0)
+                    idx_desc = _achar_col(("descri", "objetivo", "defini"), 1)
+                    idx_form = _achar_col(("fórmula", "formula", "cálculo", "calculo", "regra"), 2)
+                    idx_unid = _achar_col(("unidade", "formato", "medida"), 3)
+                    idx_per = _achar_col(("periodicidade", "frequência", "frequencia", "período"), 4)
+                    idx_meta = _achar_col(("meta", "target", "alvo"), 5)
+                    idx_filt = _achar_col(("filtro", "segmenta", "dimens"), 6)
+
+                    for r in rows_parsed[1:]:
+                        get_c = lambda i: r[i].strip() if 0 <= i < len(r) else ""
+                        nome_ind = get_c(idx_ind)
+                        if not nome_ind:
+                            continue
+                        meta_txt = get_c(idx_meta)
+                        metas_num = []
+                        if meta_txt and "não se aplica" not in meta_txt.lower():
+                            for m_num in re.finditer(
+                                r"(\d+(?:\.\d{3})+(?:,\d+)?|\d+(?:[\.,]\d+)?)\s*(%|bolsas\s+(?:de\s+|do\s+)?[^,\.;]+)?",
+                                meta_txt,
+                                flags=re.IGNORECASE,
+                            ):
+                                raw_n = m_num.group(1)
+                                if re.match(r"^\d+(?:\.\d{3})+$", raw_n):
+                                    num_raw = raw_n.replace(".", "")
+                                else:
+                                    num_raw = raw_n.replace(".", "").replace(",", ".") if "," in raw_n else raw_n
+                                ctx_raw = (m_num.group(2) or "").strip()
+                                metas_num.append({"valor": num_raw, "contexto": ctx_raw})
+
+                        indicadores.append({
+                            "arquivo_origem": arq.name,
+                            "indicador": nome_ind,
+                            "descricao": get_c(idx_desc),
+                            "formula": get_c(idx_form),
+                            "unidade": get_c(idx_unid),
+                            "periodicidade": get_c(idx_per),
+                            "meta": meta_txt or "Não se aplica",
+                            "filtros": get_c(idx_filt),
+                            "metas_numericas": metas_num,
+                        })
+        except Exception:
+            continue
+
+    return indicadores
+
+
+def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str, base_dir: Path = None) -> str:
+    """Gera o Guia Completo de Implementação no Power BI (08_datasets_bi/) com Star Schema, Tempo, DAX, Slicers, Mockup, Queries SQL e Checklist."""
     nomes_dims = {d["nome_tabela"].upper(): d for d in dims}
     linhas_er = ["```mermaid", "erDiagram"]
+    linhas_rel_matrix = []
+    dim_tempo_nome = "DIM_TEMPO"
+    for d in dims:
+        dn = d["nome_tabela"].upper()
+        if "TEMPO" in dn or "CALENDARIO" in dn:
+            dim_tempo_nome = dn
+            break
+
+    tempo_count_por_fato = {}
     for f in fatos:
         nt_f = f["nome_tabela"].upper()
         for fk in identificar_fks_fato(f, set(nomes_dims.keys())):
-            linhas_er.append(f'    {fk["tabela_ref"]} ||--o{{ {nt_f} : "{fk["coluna"]}"')
+            tab_r = fk["tabela_ref"].upper()
+            col_fk = fk["coluna"].upper()
+            d_obj = nomes_dims.get(tab_r)
+            pk_dim = _obter_sk_dim(d_obj) if d_obj else "DIMENSION_KEY"
+            is_tempo = "TEMPO" in tab_r or "CALENDARIO" in tab_r or "TEMPO" in col_fk
+            if is_tempo:
+                tempo_count_por_fato[nt_f] = tempo_count_por_fato.get(nt_f, 0) + 1
+                ativo = tempo_count_por_fato[nt_f] == 1
+                conector = "||--o{" if ativo else "||..o{"
+                status_txt = "**Ativo**" if ativo else "**Inativo** (`USERELATIONSHIP`)"
+            else:
+                conector = "||--o{"
+                status_txt = "**Ativo**"
+            linhas_er.append(f'    {tab_r} {conector} {nt_f} : "{pk_dim} = {col_fk}"')
+            linhas_rel_matrix.append(
+                f"| `{tab_r}` | `{pk_dim}` | `{nt_f}` | `{col_fk}` | `1 : *` | **Única** (`Dim ➔ Fato`) | {status_txt} |"
+            )
     linhas_er.append("```")
 
+    indicadores_negocio = carregar_indicadores_negocio_entrega(base_dir)
     medidas_dax = []
+    radar_rows = []
+    sql_conferencia = []
+    slicers_rows = [
+        f"| **Ano / Semestre / Mês** | `NUM_ANO`, `DES_SEMESTRE`, `DES_MES` | `{dim_tempo_nome}` | Habilitar *Sync Slicers* em todas as páginas; ordenar `DES_MES` por `NUM_MES`. |"
+    ]
+
+    for d in dims:
+        nt_d = d["nome_tabela"].upper()
+        if nt_d == dim_tempo_nome:
+            continue
+        cols_desc = [
+            c["nome_dw"].upper()
+            for c in d["colunas"]
+            if c["nome_dw"].upper().startswith(("DES_", "NOM_", "DSC_", "SIG_"))
+        ]
+        if cols_desc:
+            slicers_rows.append(
+                f"| **{humanizar_identificador(nt_d)}** | `{', '.join(cols_desc[:3])}` | `{nt_d}` | Segmentador dimensional (`1:*`) com filtro simples. |"
+            )
+
     for f in fatos:
         nt_f = f["nome_tabela"].upper()
         medidas_dax.append(
-            f"### Tabela Fato: `{nt_f}`\n\n"
+            f"### 🔹 Tabela Fato: `{nt_f}`\n\n"
             f"```dax\n"
-            f"Qtd Registros ({humanizar_identificador(nt_f)}) = COUNTROWS('{nt_f}')\n"
+            f"// Contagem Total de Registros\n"
+            f"Qtd Registros ({humanizar_identificador(nt_f)}) = COALESCE(COUNTROWS('{nt_f}'), 0)\n"
         )
+        cols_metricas_sql = []
         for c in f["colunas"]:
             cn = c["nome_dw"].upper()
-            if cn.startswith(("VAL_", "VLR_", "QTD_", "QT_")):
+            if cn.startswith(("SK_", "DIM_")) and cn != _obter_sk_dim(f) and "TEMPO" not in cn:
+                ent_sk = humanizar_identificador(re.sub(r"^(SK|DIM)_", "", cn))
+                medidas_dax.append(
+                    f"// Contagem Distinta de {ent_sk} (Excluindo Linha Sentinela -1)\n"
+                    f"Distintos {ent_sk} = \n"
+                    f"COALESCE(\n"
+                    f"    CALCULATE(\n"
+                    f"        DISTINCTCOUNT('{nt_f}'[{cn}]),\n"
+                    f"        '{nt_f}'[{cn}] <> -1\n"
+                    f"    ),\n"
+                    f"    0\n"
+                    f")\n"
+                )
+            elif cn.startswith(("VAL_", "VLR_", "QTD_", "QT_")):
                 leg = humanizar_identificador(re.sub(r"^(VAL|VLR|QTD|QT)_", "", cn))
-                medidas_dax.append(f"Total {leg} = SUM('{nt_f}'[{cn}])\n")
+                medidas_dax.append(f"Total {leg} = COALESCE(SUM('{nt_f}'[{cn}]), 0)\n")
+                cols_metricas_sql.append(f"    SUM(f.{cn}) AS TOTAL_{cn}")
+                radar_rows.append(
+                    f"| **Análise de {leg}** | `{nt_f}.{cn}` | Permite acompanhar a evolução, média e concentração de `{cn}` por recorte dimensional. |"
+                )
             elif cn.startswith(("PER_", "PRC_")):
                 leg = humanizar_identificador(re.sub(r"^(PER|PRC)_", "", cn))
-                medidas_dax.append(f"Média {leg} = AVERAGE('{nt_f}'[{cn}])\n")
+                medidas_dax.append(f"Media {leg} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)\n")
+            elif cn.startswith(("IND_", "FLG_", "SIN_")):
+                leg = humanizar_identificador(re.sub(r"^(IND|FLG|SIN)_", "", cn))
+                slicers_rows.append(
+                    f"| **Flag {leg}** | `{cn}` | `{nt_f}` | Segmentador binário/status na Fato. |"
+                )
         medidas_dax.append("```\n")
+
+        expr_sql = ",\n".join(cols_metricas_sql[:4]) if cols_metricas_sql else "    COUNT(*) AS QTD_REGISTROS"
+        sql_conferencia.append(
+            f"-- Conferência Geral da Fato {schema}.{nt_f}\n"
+            f"SELECT\n"
+            f"{expr_sql}\n"
+            f"FROM {schema}.{nt_f} f;"
+        )
+
+    secao_indicadores_negocio = ""
+    if indicadores_negocio:
+        arq_origem_ind = indicadores_negocio[0].get("arquivo_origem", "Planilha de Indicadores")
+        linhas_tab_ind = []
+        dax_metas = ["### 🎯 Medidas DAX de Indicadores e Metas Oficiais do Negócio\n\n```dax"]
+        nt_fato_princ = fatos[0]["nome_tabela"].upper() if fatos else "FATO"
+        medida_base_ref = f"[Qtd Registros ({humanizar_identificador(nt_fato_princ)})]"
+
+        for idx_i, ind in enumerate(indicadores_negocio, 1):
+            linhas_tab_ind.append(
+                f"| **{idx_i}. {ind['indicador']}** | {ind['formula'] or '-'} | `{ind['unidade'] or '-'}` | `{ind['periodicidade'] or '-'}` | {ind['meta'] or '-'} | `{ind['filtros'] or '-'}` |"
+            )
+            for m_num in ind.get("metas_numericas", []):
+                val_m = m_num["valor"]
+                ctx_m = m_num["contexto"]
+                if ctx_m and ctx_m != "%":
+                    sufixo_meta = re.sub(r"^bolsas\s+(?:de\s+|do\s+)?", "", ctx_m, flags=re.IGNORECASE).strip().title()
+                    nome_med_meta = f"Meta {sufixo_meta}"
+                else:
+                    nome_med_meta = f"Meta {ind['indicador']}"
+                val_dax = f"{float(val_m) / 100.0:.2f}" if ctx_m == "%" else val_m
+                dax_metas.append(f"{nome_med_meta} = {val_dax}")
+                dax_metas.append(
+                    f"% Atingimento {nome_med_meta} = DIVIDE({medida_base_ref}, [{nome_med_meta}], 0)\n"
+                )
+        dax_metas.append("```\n")
+        if len(dax_metas) > 2:
+            medidas_dax.append("\n".join(dax_metas))
+
+        secao_indicadores_negocio = (
+            f"\n### 4.1 Matriz Oficial de Indicadores e Metas do Negócio (`{arq_origem_ind}`)\n\n"
+            "| Indicador Oficial | Fórmula de Cálculo | Unidade | Periodicidade | Meta Estabelecida | Filtros Obrigatórios |\n"
+            "| :--- | :--- | :---: | :---: | :--- | :--- |\n"
+            + "\n".join(linhas_tab_ind)
+            + "\n"
+        )
 
     linhas_cat = []
     for f in fatos:
         nt = f["nome_tabela"].upper()
-        linhas_cat.append(f"| `{schema}.{nt}` | **Fato** | {gerar_comentario_tabela(f, 'FATO', projeto)} |")
+        pk_f = _obter_sk_dim(f)
+        linhas_cat.append(f"| `{schema}.{nt}` | **Tabela Fato** | `{pk_f}` | {gerar_comentario_tabela(f, 'FATO', projeto)} |")
     for d in dims:
         nt = d["nome_tabela"].upper()
-        linhas_cat.append(f"| `{schema}.{nt}` | **Dimensão** | {gerar_comentario_tabela(d, 'DIM', projeto)} |")
+        pk_d = _obter_sk_dim(d)
+        linhas_cat.append(f"| `{schema}.{nt}` | **Dimensão** | `{pk_d}` | {gerar_comentario_tabela(d, 'DIM', projeto)} |")
 
-    return f"""# Guia do Analista de BI (Fast-Track DW Existente) — {projeto}
+    matriz_rel_txt = "\n".join(linhas_rel_matrix) if linhas_rel_matrix else "| _Sem FKs detectadas_ | - | - | - | - | - | - |"
+    radar_txt = "\n".join(radar_rows[:6]) if radar_rows else "| **Evolução Temporal e Concentração** | Colunas de Métricas e FKs | Permite avaliar sazonalidade, participação percentual (Pareto) e desvios em relação à meta. |"
+    sql_conf_txt = "\n\n".join(sql_conferencia) if sql_conferencia else f"SELECT COUNT(*) FROM {schema}.{fatos[0]['nome_tabela']};" if fatos else "-- Sem fatos"
+
+    return f"""# 📊 Guia de Implementação no Power BI — Projeto {projeto}
 
 > **Schema Oracle:** `{schema}` | **Data de Geração:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  
-> **Modo:** Melhoria Rápida sobre DW Existente (Sem alteração de carga)
+> **Público-Alvo:** Analistas de BI, Engenheiros de Analytics e Designers de Mockup  
+> **Padrão Arquitetural:** Modelo Estrela (`Star Schema`) em Modo Importação (`Import Mode`)
 
 ---
 
-## 1. Catálogo de Tabelas do Modelo Dimensional
+## 1. Visão Geral, Estratégia de Conexão e Catálogo de Tabelas
 
-| Objeto Oracle | Papel | Descrição e Granularidade |
-| :--- | :--- | :--- |
+- **Modo de Conexão Recomendado:** **Importação (`Import Mode`)** para máxima performance em cálculos `DISTINCTCOUNT`, inteligência temporal e cruzamento entre dimensões.
+- **Padrão de Modelagem:** Modelo Estrela (`Star Schema`) conectando a(s) Tabela(s) Fato às Dimensões com cardinalidade `1:*` e filtro cruzado **Único (`Single`)**.
+
+### 1.1 Objetos a Importar do Schema `{schema}`
+
+| Objeto Oracle | Papel no Star Schema | Chave Primária (PK) | Descrição Funcional e Granularidade |
+| :--- | :--- | :--- | :--- |
 {chr(10).join(linhas_cat)}
 
 ---
 
-## 2. Diagrama de Relacionamentos (Star Schema no Power BI)
+## 2. Diagrama e Matriz de Relacionamentos (Star Schema no Power BI)
 
-Configure todos os relacionamentos no Power BI em modo **Import**, cardinalidade **1 para Muitos (`1:*`)** e direção de filtro cruzado **Única (`Single`)**:
+Configure todos os relacionamentos na aba **Exibição de Modelo** com **cardinalidade 1 para Muitos (`1:*`)** e **direção de filtro simples (`Single`)**:
 
 {chr(10).join(linhas_er)}
 
+### 2.1 Matriz de Configuração de Relacionamentos
+
+| Tabela Dimensão (Lado `1`) | Coluna PK (Dimensão) | Tabela Fato (Lado `*`) | Coluna FK (Fato) | Cardinalidade | Direção do Filtro | Status |
+| :--- | :--- | :--- | :--- | :---: | :---: | :---: |
+{matriz_rel_txt}
+
+> [!WARNING]
+> **Proibição de Filtro Bidirecional (`Ambos`):** Mantenha todos os relacionamentos com direção **Única (`1 ➔ *`)** para evitar ambiguidade de caminhos e degradação de performance.
+
 ---
 
-## 3. Medidas DAX Base Sugeridas
+## 3. Dimensão Tempo (`{dim_tempo_nome}`) e Tratamento da Linha Sentinela (`-1`)
+
+### 3.1 Como Configurar a Dimensão Calendário no Power BI
+1. **Desative a Data/Hora Automática:** Em *Arquivo ➔ Opções ➔ Carregamento de Dados*, desmarque *"Data/hora automática"*.
+2. **Marque como Tabela de Datas:** Clique com o botão direito em `{dim_tempo_nome}` ➔ *Marcar como tabela de data* ➔ selecione a coluna de data completa (`DTC_COMPLETA` ou `DTC_DATA`).
+3. **Ordenação Cronológica (*Classificar por Coluna*):**
+   - Ordene `DES_MES` pela coluna numérica `NUM_MES`.
+   - Ordene `DES_MES_ANO` pela coluna `DES_MES_ANO_NUMERICO` (ou `COD_ANO_MES`).
+   - Ordene `DES_SEMESTRE` pela coluna `NUM_SEMESTRE`.
+
+### 3.2 Tratamento do Registro Sentinela (`-1` — Não Informado)
+- **Em somatórios (`SUM`):** Mantenha os registros com FK igual a `-1` para que o total geral bata 100% com o banco, exibindo-os sob a categoria `"Não Informado"` nas dimensões.
+- **Em contagens distintas (`DISTINCTCOUNT`):** Sempre filtre `FK <> -1` na medida DAX para não contabilizar a linha técnica `-1` como uma entidade real.
+
+---
+
+## 4. Dicionário de Métricas e Fórmulas DAX
+{secao_indicadores_negocio}
+Crie uma tabela vazia chamada **`_Medidas_{projeto}`** no Power BI e adicione as medidas abaixo:
 
 {chr(10).join(medidas_dax) if medidas_dax else "_Nenhuma coluna numérica de métrica explícita (`VAL_`, `QTD_`) detectada nas tabelas Fato._"}
+
+---
+
+## 5. Configuração de Filtros e Segmentadores (*Sync Slicers*)
+
+| Filtro no Dashboard | Campo(s) a Utilizar | Tabela de Origem | Observações de Configuração |
+| :--- | :--- | :--- | :--- |
+{chr(10).join(slicers_rows)}
+
+---
+
+## 6. Proposta de Estrutura Visual para o Mockup (3 Páginas)
+
+### 📄 Página 1: Visão Geral e Indicadores Estratégicos
+- **Topo:** Barra de filtros globais sincronizados (`Ano`, `Mês`, principais dimensões de negócio) e faixa de Cartões KPI com os totais consolidados.
+- **Corpo:** Gráfico de evolução temporal (Ano/Semestre/Mês), gráfico de barras por categoria/modalidade com linha de meta e distribuição por unidade/regional.
+
+### 📄 Página 2: Acompanhamento de Metas e Detalhamento Operacional
+- **Topo:** Velocímetros (*Gauges*) ou cartões com barra de progresso (`% Atingimento da Meta`).
+- **Corpo:** Gráfico de colunas empilhadas por status/situação e Matriz Analítica com hierarquia drill-down (`Unidade ➔ Categoria ➔ Detalhe`).
+
+### 📄 Página 3: Recortes Específicos e Perfil Analítico
+- **Corpo:** Visuais dedicados a recortes demográficos, socioeconômicos ou modalidades específicas do domínio `{projeto}`.
+
+---
+
+## 7. Consultas Rápidas de Conferência (Power BI vs. Oracle `{schema}`)
+
+Execute as consultas abaixo no Oracle antes de publicar o painel para garantir reconciliação de **100%** com os cartões do Power BI:
+
+```sql
+{sql_conf_txt}
+```
+
+---
+
+## 8. 💡 Radar Consultivo da IA — Potencial Analítico Adicional no Modelo
+
+> [!TIP]
+> **Escopo Consultivo Separado:** Métricas e cruzamentos adicionais já suportados pelas colunas físicas de `{schema}` para evolução futura do dashboard:
+
+| Análise / KPI Sugerido | Coluna Física no DW | Valor Estratégico |
+| :--- | :--- | :--- |
+{radar_txt}
+
+---
+
+## 9. Checklist de Homologação Pré-Publicação
+
+- [ ] **Check 1 (Star Schema):** Todos os relacionamentos estão configurados como `1:*` com filtro cruzado **Único (`Single`)**.
+- [ ] **Check 2 (Calendário):** `{dim_tempo_nome}` marcada como Tabela de Data e colunas de mês/semestre ordenadas numericamente.
+- [ ] **Check 3 (Reconciliação SQL):** Os valores dos cartões principais conferem 100% com as queries SQL da **Seção 7**.
+- [ ] **Check 4 (Segmentadores Sincronizados):** Filtros globais configurados com *Sync Slicers* entre as páginas do relatório.
 """
 
 
@@ -1460,7 +1804,7 @@ def executar_melhoria_rapida(
     elif caminho_ddl.is_dir():
         arquivos_sql = sorted([
             f for f in caminho_ddl.rglob("*")
-            if f.is_file() and f.suffix.lower() in (".sql", ".txt", ".ddl") and f.name.lower() != "readme.md"
+            if f.is_file() and f.suffix.lower() in (".sql", ".txt", ".ddl", ".csv") and f.name.lower() != "readme.md"
         ])
     else:
         arquivos_sql = []
@@ -1606,7 +1950,7 @@ def executar_melhoria_rapida(
 
     # 6. Guia do Analista de BI
     if gerar_guia_bi:
-        md_bi = construir_guia_bi_rapido(dims, fatos, schema, projeto)
+        md_bi = construir_guia_bi_rapido(dims, fatos, schema, projeto, base_dir=base_dir)
         p_bi = saida_dw / "08_datasets_bi" / f"GUIA_ANALISTA_BI_{projeto}.md"
         p_bi.parent.mkdir(parents=True, exist_ok=True)
         p_bi.write_text(md_bi, encoding="utf-8")
@@ -1646,13 +1990,14 @@ def executar_melhoria_rapida(
             arquivos_gerados.append(str(p_g.relative_to(base_dir).as_posix()))
             print(f"  {VERDE}[OK]{RESET} Guia Modular ODI 12c -> {p_g.relative_to(base_dir)}")
 
-    # Sempre gera o diagnóstico resumido do Fast-Track em 09_relatorio_estrategias/
-    rel_md = construir_relatorio_diagnostico(tabelas_classificadas, schema, projeto, modo_norm, arquivos_gerados)
-    p_rel = saida_dw / "09_relatorio_estrategias" / "DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md"
-    p_rel.parent.mkdir(parents=True, exist_ok=True)
-    p_rel.write_text(rel_md, encoding="utf-8")
-    arquivos_gerados.append(str(p_rel.relative_to(base_dir).as_posix()))
-    print(f"  {VERDE}[OK]{RESET} Relatório Diagnóstico -> {p_rel.relative_to(base_dir)}")
+    # Gera o diagnóstico consolidado apenas nos modos de auditoria/patch amplo (evita poluir micro-processos isolados como guia-bi)
+    if modo_norm in ("patch", "melhorias", "ajustes", "tudo", "all", "diagnostico"):
+        rel_md = construir_relatorio_diagnostico(tabelas_classificadas, schema, projeto, modo_norm, arquivos_gerados)
+        p_rel = saida_dw / "09_relatorio_estrategias" / "DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md"
+        p_rel.parent.mkdir(parents=True, exist_ok=True)
+        p_rel.write_text(rel_md, encoding="utf-8")
+        arquivos_gerados.append(str(p_rel.relative_to(base_dir).as_posix()))
+        print(f"  {VERDE}[OK]{RESET} Relatório Diagnóstico -> {p_rel.relative_to(base_dir)}")
 
     print(f"\n{VERDE}{NEGRITO}✅ Micro-processo '{modo_norm}' concluído com sucesso! {len(arquivos_gerados)} artefato(s) gerado(s) em 'saida/planejador_dw/'.{RESET}")
     print(f"{CIANO}🧭 O que você pode fazer agora:{RESET}")

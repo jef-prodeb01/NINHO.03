@@ -227,6 +227,35 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
                 except Exception:
                     pass
 
+    # Se os arquivos de saida/planejador_dw/ forem apenas patches Fast-Track (sem CREATE TABLE),
+    # inclui também os DDLs originais de entrega/planejador_dw/ddl/ (incluindo CSVs com DDL)
+    tem_create_table = any("CREATE TABLE" in txt.upper() for _, txt in conteudos_sql)
+    pasta_ddl_entrega = base_dir / "entrega" / "planejador_dw" / "ddl"
+    if not tem_create_table and pasta_ddl_entrega.exists():
+        try:
+            from inspecionar_ddl_origem import _desempacotar_ddl_csv_se_necessario
+        except ImportError:
+            _desempacotar_ddl_csv_se_necessario = lambda t: t
+        for f in sorted(pasta_ddl_entrega.iterdir()):
+            if not f.is_file() or f.name.startswith(".") or f.name.upper() == "README.MD":
+                continue
+            ext = f.suffix.lower()
+            if ext not in (".sql", ".ddl", ".csv", ".txt"):
+                continue
+            try:
+                raw_text = f.read_text(encoding="utf-8", errors="ignore")
+            except Exception:
+                continue
+            if ext in (".csv", ".txt") and "CREATE TABLE" not in raw_text.upper():
+                continue
+            sql_limpo = _desempacotar_ddl_csv_se_necessario(raw_text)
+            nome_dest = f.stem + ".sql" if ext in (".csv", ".txt") else f.name
+            dest_file = dest_ddl / nome_dest
+            dest_file.write_text(sql_limpo, encoding="utf-8")
+            if dest_file.name not in arquivos_copiados:
+                arquivos_copiados.insert(0, dest_file.name)
+                conteudos_sql.insert(0, (dest_file.name, sql_limpo))
+
     # Cria o DDL consolidado DDL_COMPLETO_DW_<PROJETO>.sql
     ddl_completo_nome = f"DDL_COMPLETO_DW_{projeto}.sql"
     ddl_completo_path = dest_ddl / ddl_completo_nome
@@ -743,7 +772,13 @@ def main():
         script_val = base_dir / "core" / "scripts_comuns" / "validar_entrega.py"
         if script_val.exists():
             import subprocess
-            res = subprocess.run([sys.executable, str(script_val), "semantica"], capture_output=True, text=True)
+            res = subprocess.run(
+                [sys.executable, str(script_val), "semantica"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             print(res.stdout)
     except Exception as e:
         print_warn(f"Não foi possível rodar auditoria automática: {e}")

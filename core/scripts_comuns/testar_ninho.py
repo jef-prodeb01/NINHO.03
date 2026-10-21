@@ -133,6 +133,11 @@ def _limpar_artefatos_workspace() -> None:
                         item.rmdir()
                 except OSError:
                     pass
+    pasta_cat = BASE_DIR / "documentacao" / "catalogo_projetos"
+    for nome_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
+        arq_cat = pasta_cat / nome_cat
+        if arq_cat.exists():
+            arq_cat.unlink(missing_ok=True)
 
 
 def _contar_arquivos_workspace() -> Tuple[int, int]:
@@ -830,6 +835,134 @@ def teste_11_regressao_e5_e12_blindagem() -> str:
     return "Blindagem E5 a E12 (DDL META_*, XSS HTML, SCD2/DIM_TEMPO, PBIX Agnóstico, ODI FK/SCD2, CLI/Templates) aprovada."
 
 
+def _criar_xlsx_indicadores_teste(caminho_xlsx: Path) -> None:
+    """Gera um arquivo .xlsx mínimo válido (OpenXML stdlib) com especificações de indicadores de negócio."""
+    workbook_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        '<sheets><sheet name="Indicadores" sheetId="1" r:id="rId1"/></sheets></workbook>'
+    )
+    sheet_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+        "<sheetData>"
+        '<row r="1">'
+        '<c r="B1" t="inlineStr"><is><t>Indicador</t></is></c>'
+        '<c r="C1" t="inlineStr"><is><t>Descrição</t></is></c>'
+        '<c r="D1" t="inlineStr"><is><t>Fórmula de Cálculo</t></is></c>'
+        '<c r="E1" t="inlineStr"><is><t>Periodicidade</t></is></c>'
+        '<c r="F1" t="inlineStr"><is><t>Meta</t></is></c>'
+        '<c r="G1" t="inlineStr"><is><t>Filtros Necessários</t></is></c>'
+        "</row>"
+        '<row r="2">'
+        '<c r="B2" t="inlineStr"><is><t>Quantitativo de estudantes contemplados</t></is></c>'
+        '<c r="C2" t="inlineStr"><is><t>Total de discentes beneficiados pela assistência estudantil</t></is></c>'
+        '<c r="D2" t="inlineStr"><is><t>Contagem distinta de matrículas deferidas</t></is></c>'
+        '<c r="E2" t="inlineStr"><is><t>Mensal</t></is></c>'
+        '<c r="F2" t="inlineStr"><is><t>Meta de 8.000 estudantes contemplados por ano</t></is></c>'
+        '<c r="G2" t="inlineStr"><is><t>Campus, Benefício, Ano/Mês</t></is></c>'
+        "</row>"
+        "</sheetData></worksheet>"
+    )
+    with zipfile.ZipFile(caminho_xlsx, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("xl/workbook.xml", workbook_xml)
+        zf.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+
+
+def teste_12_regressao_m1_m7_praes_csv_ddl_guia_bi() -> str:
+    _limpar_artefatos_workspace()
+    pasta_ddl = BASE_DIR / "entrega" / "planejador_dw" / "ddl"
+    pasta_ddl.mkdir(parents=True, exist_ok=True)
+
+    # M1 + M2: DDL exportado como CSV (DBeaver/SQL Developer) com MVW_<PROJETO>_DIM_*, MVW_<PROJETO>_FATO_* e DIM_TEMPO_*
+    ddl_csv_content = '''DDL_GERADO
+;"'
+  CREATE TABLE ""UNEB_OLAP"".""MVW_PRAES_DIM_CAMPUS"" 
+   (	""SK_CAMPUS"" NUMBER(10,0) NOT NULL ENABLE, 
+	""COD_CAMPUS"" NUMBER(10,0), 
+	""NOM_CAMPUS"" VARCHAR2(120 BYTE), 
+	""NOM_MUNICIPIO"" VARCHAR2(100 BYTE), 
+	""SIN_ATIVO"" CHAR(1 BYTE), 
+	 CONSTRAINT ""PK_MVW_PRAES_DIM_CAMPUS"" PRIMARY KEY (""SK_CAMPUS"") ENABLE
+   ) ;'"
+;"'
+  CREATE TABLE ""UNEB_OLAP"".""MVW_PRAES_DIM_BENEFICIO"" 
+   (	""SK_BENEFICIO"" NUMBER(10,0) NOT NULL ENABLE, 
+	""COD_BENEFICIO"" NUMBER(10,0), 
+	""NOM_BENEFICIO"" VARCHAR2(120 BYTE), 
+	""SIN_ATIVO"" CHAR(1 BYTE), 
+	 CONSTRAINT ""PK_MVW_PRAES_DIM_BENEFICIO"" PRIMARY KEY (""SK_BENEFICIO"") ENABLE
+   ) ;'"
+;"'
+  CREATE TABLE ""UNEB_OLAP"".""DIM_TEMPO_ASSISTENCIA"" 
+   (	""SK_TEMPO"" NUMBER(10,0) NOT NULL ENABLE, 
+	""DTC_DATA"" DATE, 
+	""NUM_ANO"" NUMBER(4,0), 
+	""NUM_MES"" NUMBER(2,0), 
+	""NOM_MES"" VARCHAR2(30 BYTE), 
+	 CONSTRAINT ""PK_DIM_TEMPO_ASSISTENCIA"" PRIMARY KEY (""SK_TEMPO"") ENABLE
+   ) ;'"
+;"'
+  CREATE TABLE ""UNEB_OLAP"".""MVW_PRAES_FATO_INSCRICAO"" 
+   (	""SK_FATO_INSCRICAO"" NUMBER(12,0) NOT NULL ENABLE, 
+	""SK_CAMPUS"" NUMBER(10,0) NOT NULL ENABLE, 
+	""SK_BENEFICIO"" NUMBER(10,0) NOT NULL ENABLE, 
+	""SK_TEMPO_INSCRICAO"" NUMBER(10,0) NOT NULL ENABLE, 
+	""SK_TEMPO_STATUS"" NUMBER(10,0) NOT NULL ENABLE, 
+	""NUM_MATRICULA"" VARCHAR2(30 BYTE), 
+	""DES_STATUS_INSCRICAO"" VARCHAR2(40 BYTE), 
+	""QTD_INSCRICOES"" NUMBER(5,0), 
+	""VAL_AUXILIO"" NUMBER(12,2), 
+	 CONSTRAINT ""PK_MVW_PRAES_FATO_INSCRICAO"" PRIMARY KEY (""SK_FATO_INSCRICAO"") ENABLE
+   ) ;'"
+'''
+    (pasta_ddl / "DDL_tab.csv").write_text(ddl_csv_content, encoding="utf-8")
+
+    # M3: Planilha .xlsx de indicadores de negócio em entrega/planejador_dw/
+    arq_xlsx = BASE_DIR / "entrega" / "planejador_dw" / "Indicadores - PRAES.xlsx"
+    _criar_xlsx_indicadores_teste(arq_xlsx)
+
+    # M5: Verifica que /doctor não move .xlsx de indicadores de BI nem .csv com CREATE TABLE para fora de planejador_dw
+    from ajuda_ninho import detectar_arquivos_fora_do_lugar
+    desalinhados = detectar_arquivos_fora_do_lugar()
+    caminhos_desalinhados = [p.name for p, _, _ in desalinhados]
+    assert "Indicadores - PRAES.xlsx" not in caminhos_desalinhados, "/doctor marcou planilha de indicadores do DW como desalinhada"
+    assert "DDL_tab.csv" not in caminhos_desalinhados, "/doctor marcou DDL_tab.csv em entrega/planejador_dw/ddl/ como desalinhado"
+
+    # M3 + M4: Executa /gerar-guia-bi via ninho.py (modo isolado guia-bi)
+    rc_bi, out_bi, err_bi = _executar_cli(["ninho.py", "/gerar-guia-bi"])
+    assert rc_bi == 0, f"ninho.py /gerar-guia-bi falhou: {err_bi}\n{out_bi}"
+
+    arq_guia = BASE_DIR / "saida" / "planejador_dw" / "08_datasets_bi" / "GUIA_ANALISTA_BI_PRAES.md"
+    arq_diag = BASE_DIR / "saida" / "planejador_dw" / "09_relatorio_estrategias" / "DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md"
+    assert arq_guia.exists(), "GUIA_ANALISTA_BI_PRAES.md não foi gerado em 08_datasets_bi/"
+    assert not arq_diag.exists(), "DIAGNOSTICO_MELHORIAS_DW_EXISTENTE.md não deveria ser gerado no modo isolado guia-bi"
+
+    txt_guia = arq_guia.read_text(encoding="utf-8")
+    assert "UNEB_OLAP" in txt_guia and "PRAES" in txt_guia, "Schema UNEB_OLAP ou projeto PRAES ausente no Guia BI"
+    for secao in ("## 1.", "## 2.", "## 3.", "## 4.", "### 4.1 Matriz Oficial de Indicadores", "## 5.", "## 6.", "## 7.", "## 8.", "## 9."):
+        assert secao in txt_guia, f"Seção '{secao}' ausente em GUIA_ANALISTA_BI_PRAES.md"
+    assert "Quantitativo de estudantes contemplados" in txt_guia, "Indicador da planilha .xlsx não foi injetado no Guia BI"
+    assert "8000" in txt_guia and "% Atingimento Meta" in txt_guia, "Medida DAX de Meta / % Atingimento não gerada"
+    assert "USERELATIONSHIP" in txt_guia and "DIM_TEMPO_ASSISTENCIA" in txt_guia, (
+        "Role-Playing Dimension DIM_TEMPO_ASSISTENCIA não mapeada com USERELATIONSHIP"
+    )
+
+    # M2 (Camada Semântica): Verifica que VW_EVENTO não gera colunas duplicadas (ORA-00957) com Role-Playing Dimension
+    rc_sem, out_sem, err_sem = _executar_cli(["core/scripts_comuns/modular_semantica.py", "--modo", "views-evento"])
+    assert rc_sem == 0, f"modular_semantica.py --modo views-evento falhou com DDL_tab.csv: {err_sem}\n{out_sem}"
+    vw_ev_path = BASE_DIR / "saida" / "camada_semantica" / "vw_analiticas" / "02_vw_eventos.sql"
+    assert vw_ev_path.exists(), "02_vw_eventos.sql não foi gerado a partir de DDL_tab.csv"
+    txt_vw_ev = vw_ev_path.read_text(encoding="utf-8")
+    assert " AS DTC_DATA_TEMPO_STATUS" in txt_vw_ev or " AS NUM_ANO_TEMPO_STATUS" in txt_vw_ev, (
+        "Colunas da Role-Playing Dimension DIM_TEMPO_ASSISTENCIA não receberam alias desambiguado contra ORA-00957"
+    )
+
+    _limpar_artefatos_workspace()
+    return "Melhorias M1 a M7 (DDL em CSV, MVW_*, Role-Playing DIM_TEMPO, Guia BI 9 seções + .xlsx, Modo Isolado) aprovadas."
+
+
 def executar_suite_completa(manter_arquivos: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
@@ -847,6 +980,7 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T09: Experiência Conversacional UX (/comecar, /onde-estou, /duvida, /doctor, /demo)", teste_09_experiencia_ux_conversacional),
         ("T10: Regressão de Confiabilidade (Erros E1 a E4 Resolvidos)", teste_10_regressao_e1_e4_robustez),
         ("T11: Regressão de Blindagem Arquitetural (Erros E5 a E12 Resolvidos)", teste_11_regressao_e5_e12_blindagem),
+        ("T12: Regressão M1..M7 (DDL em CSV, MVW_*, Role-Playing DIM_TEMPO, Guia BI + .xlsx)", teste_12_regressao_m1_m7_praes_csv_ddl_guia_bi),
     ]
 
     passou = 0

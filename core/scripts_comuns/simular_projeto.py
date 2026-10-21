@@ -138,7 +138,14 @@ def _eh_tabela_tecnica(nome_tabela: str) -> bool:
 
 
 def _eh_tabela_dw(nome_tabela: str) -> bool:
-    return nome_tabela.upper().startswith(("DIM_", "DM_", "FATO_", "FAT_", "FT_"))
+    u = nome_tabela.upper()
+    return (
+        u.startswith(("DIM_", "DM_", "FATO_", "FAT_", "FT_"))
+        or "_DIM_" in u
+        or "_DM_" in u
+        or "_FATO_" in u
+        or "_FAT_" in u
+    )
 
 
 _PALAVRAS_CHAVE_METRICAS = {

@@ -659,10 +659,31 @@ def detectar_arquivos_fora_do_lugar() -> List[Dict[str, Path]]:
                 destino = ENTREGA_DIR / "planejador_dw" / "hop" / item.name
                 motivo = "Pipelines/Workflows Apache Hop (.hpl/.hwf) devem ficar em `entrega/planejador_dw/hop/`."
             elif ext == ".xlsx":
-                destino = ENTREGA_DIR / "governanca_dados" / "planilhas" / item.name
-                motivo = "Planilhas de Governança (.xlsx) devem ficar em `entrega/governanca_dados/planilhas/`."
+                if pasta == ENTREGA_DIR / "planejador_dw":
+                    # Planilhas de indicadores/metas de BI (ex: Indicadores - PRAES.xlsx) são legítimas em entrega/planejador_dw/
+                    destino = None
+                elif pasta == ENTREGA_DIR and any(k in item.name.lower() for k in ("indicador", "kpi", "meta", "bi", "dw")):
+                    destino = ENTREGA_DIR / "planejador_dw" / item.name
+                    motivo = "Planilhas de Indicadores/Metas de BI (.xlsx) devem ficar em `entrega/planejador_dw/`."
+                else:
+                    destino = ENTREGA_DIR / "governanca_dados" / "planilhas" / item.name
+                    motivo = "Planilhas de Governança (.xlsx) devem ficar em `entrega/governanca_dados/planilhas/`."
             elif ext == ".csv":
-                if pasta == ENTREGA_DIR / "governanca_dados":
+                eh_ddl_csv = False
+                try:
+                    amostra_csv = item.read_text(encoding="utf-8", errors="ignore")[:8192].upper()
+                    if "CREATE TABLE" in amostra_csv:
+                        eh_ddl_csv = True
+                except Exception:
+                    pass
+                if eh_ddl_csv:
+                    if pasta == ENTREGA_DIR / "camada_semantica":
+                        destino = ENTREGA_DIR / "camada_semantica" / "sql_fontes" / item.name
+                        motivo = "Arquivos CSV contendo DDL (`CREATE TABLE`) devem ficar em `entrega/camada_semantica/sql_fontes/`."
+                    else:
+                        destino = ENTREGA_DIR / "planejador_dw" / "ddl" / item.name
+                        motivo = "Arquivos CSV contendo DDL (`CREATE TABLE`) devem ficar em `entrega/planejador_dw/ddl/`."
+                elif pasta == ENTREGA_DIR / "governanca_dados":
                     destino = ENTREGA_DIR / "governanca_dados" / "amostras" / item.name
                     motivo = "Amostras CSV de Governança devem ficar em `entrega/governanca_dados/amostras/`."
                 else:
@@ -680,7 +701,20 @@ ARQUIVOS_PRESERVADOS_TEMPLATE = {".gitkeep", "README.md", "01_create_meta_tables
 
 def renderizar_onde_estou() -> str:
     """Escaneia o workspace e renderiza a Bússola Contextual (/onde-estou ou /status)."""
-    ddls_dw = list((ENTREGA_DIR / "planejador_dw" / "ddl").glob("*.sql")) if (ENTREGA_DIR / "planejador_dw" / "ddl").exists() else []
+    pasta_ddl_dw = ENTREGA_DIR / "planejador_dw" / "ddl"
+    ddls_dw = (
+        [
+            p for p in pasta_ddl_dw.iterdir()
+            if p.is_file() and p.suffix.lower() in (".sql", ".ddl", ".csv", ".txt") and p.name.lower() != "readme.md"
+        ]
+        if pasta_ddl_dw.exists()
+        else []
+    )
+    ind_xlsx_dw = (
+        [p for p in (ENTREGA_DIR / "planejador_dw").glob("*.xlsx") if not p.name.startswith("~$")]
+        if (ENTREGA_DIR / "planejador_dw").exists()
+        else []
+    )
     pbix_dw = list((ENTREGA_DIR / "planejador_dw" / "pbix").glob("*.pbix")) if (ENTREGA_DIR / "planejador_dw" / "pbix").exists() else []
     gov_xlsx = [
         p for p in (ENTREGA_DIR / "governanca_dados" / "planilhas").glob("*.xlsx")
@@ -716,7 +750,7 @@ def renderizar_onde_estou() -> str:
     fora_do_lugar = detectar_arquivos_fora_do_lugar()
 
     # Determina a Fase Atual (0 a 5)
-    tem_insumos = bool(ddls_dw or pbix_dw or gov_xlsx)
+    tem_insumos = bool(ddls_dw or ind_xlsx_dw or pbix_dw or gov_xlsx)
     tem_blueprints = bool(bp_dw_existe or bp_sem_existe)
     tem_saida_dw = len(arqs_saida_dw) > 0
     tem_saida_sem = len(arqs_saida_sem) > 0
@@ -779,7 +813,7 @@ def renderizar_onde_estou() -> str:
         "",
         "| Camada do Workspace | Estado Atual | Detalhes Detectados |",
         "| :--- | :---: | :--- |",
-        f"| **1. Insumos DW (`entrega/planejador_dw/`)** | {'🟢 Ativo' if (ddls_dw or pbix_dw) else '⚪ Vazio'} | `{len(ddls_dw)}` arquivo(s) `.sql`, `{len(pbix_dw)}` arquivo(s) `.pbix` |",
+        f"| **1. Insumos DW (`entrega/planejador_dw/`)** | {'🟢 Ativo' if (ddls_dw or ind_xlsx_dw or pbix_dw) else '⚪ Vazio'} | `{len(ddls_dw)}` DDL(s) (`.sql`/`.csv`), `{len(ind_xlsx_dw)}` planilha(s) `.xlsx`, `{len(pbix_dw)}` `.pbix` |",
         f"| **2. Blueprint DW (`SIMULACAO_BLUEPRINT_DW.md`)** | {'🟢 Aprovada `[x]`' if bp_dw_aprovada else ('🟡 Pendente `[ ]`' if bp_dw_existe else '⚪ Não gerada')} | {'Pronta para `/executar-simulacao`' if bp_dw_aprovada else ('Aguardando revisão do engenheiro' if bp_dw_existe else 'Use `/simular-dw` para criar')} |",
         f"| **3. Blueprint Semântica (`SIMULACAO_BLUEPRINT_SEMANTICA.md`)** | {'🟢 Aprovada `[x]`' if bp_sem_aprovada else ('🟡 Pendente `[ ]`' if bp_sem_existe else '⚪ Não gerada')} | {'Pronta para `/executar-simulacao`' if bp_sem_aprovada else ('Aguardando revisão do engenheiro' if bp_sem_existe else 'Use `/simular-semantica` para criar')} |",
         f"| **4. Saída Física DW (`saida/planejador_dw/`)** | {'🟢 Populada' if arqs_saida_dw else '⚪ Vazia'} | `{len(arqs_saida_dw)}` artefato(s) gerado(s) |",
@@ -908,6 +942,15 @@ def limpar_demo() -> str:
                     removidos += 1
                 except OSError:
                     pass
+    cat_dir = ROOT_DIR / "documentacao" / "catalogo_projetos"
+    for arq_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
+        p_cat = cat_dir / arq_cat
+        if p_cat.exists():
+            try:
+                p_cat.unlink()
+                removidos += 1
+            except OSError:
+                pass
     return (
         "# 🧹 Modo Playground Encerrado (`/limpar-demo`)\n\n"
         f"- Foram removidos **`{removidos}` arquivos de demonstração** de `entrega/` e `saida/`.\n"

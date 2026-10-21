@@ -1,11 +1,11 @@
 ---
 name: inspecionar-fontes
-description: Inspeciona DDLs SQL depositados em entrega/planejador_dw/ddl/, extrai metadados e gera sugestões analíticas.
+description: Inspeciona DDLs SQL/CSV depositados em entrega/planejador_dw/ddl/, extrai metadados e gera sugestões analíticas.
 ---
 
 # /inspecionar-fontes
 
-Inspeciona DDLs SQL depositados em entrega/planejador_dw/ddl/, extrai metadados e gera sugestões analíticas.
+Inspeciona DDLs SQL/CSV depositados em entrega/planejador_dw/ddl/, extrai metadados e gera sugestões analíticas.
 
 ## Execução Determinística
 

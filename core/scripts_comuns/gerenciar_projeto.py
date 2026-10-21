@@ -171,6 +171,13 @@ def resetar_workspace(confirmar: bool, manter_entrega: bool = False) -> int:
     if not manter_entrega:
         alvos.extend(gerados["entrega"])
 
+    # Incluir fichas transitórias geradas em documentacao/catalogo_projetos/
+    pasta_catalogo = BASE_DIR / "documentacao" / "catalogo_projetos"
+    for nome_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
+        arq_cat = pasta_catalogo / nome_cat
+        if arq_cat.exists():
+            alvos.append(arq_cat)
+
     if not alvos:
         print("✅ Nenhum arquivo gerado para remover. O workspace já está limpo.")
         return 0

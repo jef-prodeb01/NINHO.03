@@ -167,13 +167,35 @@ def _lista_identificadores(texto_lista: str) -> list:
     return [_nome_dw(_limpar_identificador(p)) for p in texto_lista.split(",") if p.strip()]
 
 
+def _desempacotar_ddl_csv_se_necessario(sql_text: str) -> str:
+    """Desempacota DDLs exportados dentro de arquivos CSV (ex: DBeaver / SQL Developer / Excel com `""SCHEMA"".""TABELA""` e prefixo `;"'`)."""
+    if '""' not in sql_text and ';"\'' not in sql_text and ',"\'' not in sql_text:
+        return sql_text
+    if not re.search(r"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\b", sql_text, re.IGNORECASE):
+        return sql_text
+    texto = sql_text
+    # Remove prefixos de linha CSV antes da célula que abre o DDL (ex: DIM_TEMPO;1;"')
+    texto = re.sub(
+        r'(?m)^[^\n]*?[;,]"' + r"'?\s*(?=\n|\r|CREATE\b|ALTER\b|COMMENT\b|--|/\*)",
+        "\n",
+        texto,
+        flags=re.IGNORECASE,
+    )
+    # Remove aspas de fechamento de célula CSV ao final do bloco DDL (ex: TABLESPACE ""UNEB_DATA"" ")
+    texto = re.sub(r'(?m)(?<!")\'?"\s*$', ";\n", texto)
+    # Desescapa aspas duplas duplicadas do CSV (""IDENT"" -> "IDENT")
+    texto = texto.replace('""', '"')
+    return texto
+
+
 def detectar_ctas(sql_text: str) -> list:
     """Lista tabelas criadas via `CREATE TABLE ... AS SELECT` (sem lista de colunas, não extraíveis do DDL)."""
+    sql_norm = _desempacotar_ddl_csv_se_necessario(sql_text)
     padrao = re.compile(
         rf"CREATE\s+(?:GLOBAL\s+TEMPORARY\s+)?TABLE\s+({_IDENT_QUALIFICADO})\s+AS\s+(?:WITH|SELECT)\b",
         re.IGNORECASE,
     )
-    return [_ultima_parte(m.group(1)) for m in padrao.finditer(_remover_comentarios_sql(sql_text))]
+    return [_ultima_parte(m.group(1)) for m in padrao.finditer(_remover_comentarios_sql(sql_norm))]
 
 
 def _extrair_blocos_create_table(sql_text: str) -> list:
@@ -294,6 +316,7 @@ _RE_FIM_TIPO = re.compile(
 def parse_ddl_text(sql_text: str, arquivo_origem: str) -> list:
     """Extrai definições de tabelas, colunas, PKs, FKs, índices e comentários de um texto SQL."""
     tabelas = {}
+    sql_text = _desempacotar_ddl_csv_se_necessario(sql_text)
     sql_text = _remover_comentarios_sql(sql_text)
 
     # 1. Localizar blocos CREATE TABLE com balanceamento de parênteses
@@ -822,7 +845,8 @@ def main():
         if p.is_file():
             alvos.append(p)
         elif p.is_dir():
-            alvos.extend(sorted(p.glob("*.sql")) + sorted(p.glob("*.txt")))
+            for ext in ("*.sql", "*.ddl", "*.csv", "*.txt"):
+                alvos.extend(sorted(p.glob(ext)))
     else:
         for d in [
             base_dir / "entrega" / "planejador_dw" / "ddl",
@@ -832,7 +856,7 @@ def main():
         ]:
             if d.exists():
                 alvos.extend(
-                    [f for f in sorted(d.iterdir()) if f.is_file() and f.suffix.lower() in [".sql", ".txt"] and f.name.lower() != "readme.md"]
+                    [f for f in sorted(d.iterdir()) if f.is_file() and f.suffix.lower() in [".sql", ".ddl", ".csv", ".txt"] and f.name.lower() != "readme.md"]
                 )
 
     print(f"\n{CIANO}{NEGRITO}{'=' * 75}{RESET}")
