@@ -233,3 +233,17 @@ Quando o Engenheiro de Dados já possui o DDL do DW (`DIM_*`, `FATO_*`) e deseja
   ```
   Combina `selects-odi` + `guia-odi` + `06_init_default_records.sql`.
 
+---
+
+## 🏆 Regras Corporativas de Produção (Padrão Dimension Pattern, Limite de 30 Caracteres e Simetria de Lookup)
+
+1. **Padrão Nativo de Dimensão SCD Tipo 2 no ODI 12c (`Dimension Pattern` / `Asterisco` com Mapa Único `CARGA_DIM_*`):**
+   - Cada dimensão é configurada em *Dimensões e Cubos* com `Esquema de Geração: Asterisco`, `[x] Usar Padrão de Dimensão` e `Armazenamento de Dados de Teste: ODI_DIM_*`, sendo carregada por **um único mapeamento (`CARGA_DIM_*`)**.
+   - **Regra Inviolável da `ODI_DIM_*` (`100% NULLABLE`):** Na expansão física (`STG_DIM`), o ODI grava na `ODI_DIM_*` apenas NK + descrições + flags `'S'`, avaliando a Sequence `SEQ_DIM_*` apenas em `TGT_INS_DIM_*`. Por isso, `03_create_odi_dim_tables.sql` **NUNCA** deve conter `NOT NULL` ou `PRIMARY KEY` em `DIMENSION_KEY`, `DTC_EFETIVACAO` ou `DTC_EXPIRACAO` (prevenindo `ORA-01400`).
+   - **Setas Brancas no Canvas:** Em `CARGA_DIM_*`, deixe `DIMENSION_KEY`, `DTC_EFETIVACAO` e `DTC_EXPIRACAO` **sem mapeamento (setas brancas)**.
+2. **Limite Estrito de 30 Caracteres no ODI 12c (`ORA-00972`) e Sigla Curta (`SIGLA_CURTA_ODI`):**
+   - O repositório do ODI 12c aplica o limite de **30 bytes** nos objetos temporários (`C$_0<ALVO>`, `I$_<ALVO>`, `TGT_INS_<DIM>`). Use sempre uma sigla curta de 2 a 4 letras (`SIGLA_CURTA_ODI`), mantendo `DIM_* <= 22` caracteres e `ODI_DIM_* / FATO_* / STG_* / SEQ_* <= 26` caracteres.
+3. **Simetria de Chave Natural (`UPPER(TRIM)`) e Regra do `AGGREGATE` na Fato:**
+   - Quando a Dimensão padroniza a NK textual com `UPPER(TRIM(STG.NK))`, o Lookup na Fato **DEVE** usar `UPPER(TRIM(STG.NK)) = UPPER(TRIM(DIM.NK)) AND DIM.DTC_EXPIRACAO IS NULL`.
+   - No componente `AGGREGATE` do ODI 12c, qualquer coluna do alvo sem função `SUM`/`COUNT`/`MAX` entra automaticamente no `GROUP BY`.
+

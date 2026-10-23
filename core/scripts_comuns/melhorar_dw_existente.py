@@ -343,7 +343,12 @@ def identificar_fks_fato(tab: dict, nomes_dimensoes: set) -> list:
             return alvo_exato
         for d in sorted(nomes_dims_up):
             ent_d = re.sub(r"^(?:MVW_|VW_)?(?:[A-Z0-9]+_)?(?:DIM|DM|FATO|FAT)_", "", d)
-            if ent_d == radical or ent_d.startswith(radical + "_") or radical.startswith(ent_d + "_"):
+            if (
+                ent_d == radical
+                or ent_d.startswith(radical + "_")
+                or radical.startswith(ent_d + "_")
+                or ent_d.endswith("_" + radical)
+            ):
                 return d
             if radical.startswith("TEMPO") and "TEMPO" in d:
                 return d
@@ -362,6 +367,8 @@ def identificar_fks_fato(tab: dict, nomes_dimensoes: set) -> list:
         if cn in fks_map:
             continue
         if cn in pks_up and len(pks_up) == 1 and not cn.startswith("DIM_"):
+            continue
+        if cn == first_col_up and cn.startswith("SK_") and not _resolver_dim(cn[3:]):
             continue
         if cn.startswith("DIM_"):
             rad = cn[4:]
@@ -693,7 +700,7 @@ def construir_scripts_indices(
                     linhas_dim.append(
                         f"-- Índice B-Tree de Lookup por Chave Natural\n"
                         f"CREATE INDEX {schema}.{nome_idx} ON {schema}.{nt} ({nat_principal})"
-                        f"{clausula_ts} PARALLEL 4 NOLOGGING;\n"
+                        f" COMPRESS 1{clausula_ts} PARALLEL 4 NOLOGGING;\n"
                         f"ALTER INDEX {schema}.{nome_idx} NOPARALLEL LOGGING;\n"
                     )
                 qtd_idx_dim += 1
@@ -703,13 +710,17 @@ def construir_scripts_indices(
         for idx_num, col_f in enumerate(filtros[:2], start=1):
             nome_idx_f = f"IDX_{curto}_FLT{idx_num}"[:30]
             linhas_dim.append(
-                f"CREATE INDEX {schema}.{nome_idx_f} ON {schema}.{nt} ({col_f}){clausula_ts};\n"
+                f"CREATE INDEX {schema}.{nome_idx_f} ON {schema}.{nt} ({col_f})"
+                f" COMPRESS 1{clausula_ts} PARALLEL 4 NOLOGGING;\n"
+                f"ALTER INDEX {schema}.{nome_idx_f} NOPARALLEL LOGGING;\n"
             )
             qtd_idx_dim += 1
 
         if nt == "DIM_TEMPO" and "DTC_COMPLETA" in cols_d and not coluna_ja_indexada(d, "DTC_COMPLETA"):
             linhas_dim.append(
-                f"CREATE UNIQUE INDEX {schema}.IDX_DIM_TEMPO_DTC ON {schema}.DIM_TEMPO (DTC_COMPLETA){clausula_ts};\n"
+                f"CREATE UNIQUE INDEX {schema}.IDX_DIM_TEMPO_DTC ON {schema}.DIM_TEMPO (DTC_COMPLETA)"
+                f"{clausula_ts} PARALLEL 4 NOLOGGING;\n"
+                f"ALTER INDEX {schema}.IDX_DIM_TEMPO_DTC NOPARALLEL LOGGING;\n"
             )
             qtd_idx_dim += 1
 
@@ -732,12 +743,17 @@ def construir_scripts_indices(
     for f in fatos:
         nt = f["nome_tabela"].upper()
         curto = nt[:16]
+        cols_fato_reais = {c["nome_dw"].upper() for c in f["colunas"]}
         linhas_fato.append(f"-- -----------------------------------------------------------------------------")
         linhas_fato.append(f"-- Fato: {schema}.{nt}")
         linhas_fato.append(f"-- -----------------------------------------------------------------------------")
         fks = identificar_fks_fato(f, nomes_dims)
+        cols_fks_validas = []
         for seq_fk, fk_info in enumerate(fks, start=1):
             col_fk = fk_info["coluna"].upper()
+            if col_fk not in cols_fato_reais:
+                continue
+            cols_fks_validas.append(col_fk)
             if coluna_ja_indexada(f, col_fk):
                 linhas_fato.append(f"-- [OK] Coluna FK {col_fk} já possui índice no DDL original.")
                 continue
@@ -756,6 +772,26 @@ def construir_scripts_indices(
                     f" COMPRESS 1{clausula_ts} PARALLEL 4 NOLOGGING;\n"
                     f"ALTER INDEX {schema}.{nome_idx} NOPARALLEL LOGGING;\n"
                 )
+            qtd_idx_fato += 1
+
+        # Índice composto do Grão da Fato (Update Key do IKM MERGE / filtro composto de alta seletividade)
+        # Estritamente restrito às colunas que existem fisicamente na tabela Fato (evita ORA-00904)
+        degeneradas_grao = [
+            c["nome_dw"].upper()
+            for c in f["colunas"]
+            if c["nome_dw"].upper().startswith(("COD_", "ID_", "NUM_"))
+            and c["nome_dw"].upper() not in cols_fks_validas
+            and not c["nome_dw"].upper().startswith(("SK_FATO", "SK_FAT", "ID_FATO", "ID_FAT"))
+        ]
+        cols_grao_composto = (cols_fks_validas + degeneradas_grao)[:4]
+        if len(cols_grao_composto) >= 2:
+            nome_idx_grao = f"IDX_{curto}_GRAO"[:30].rstrip("_")
+            linhas_fato.append(
+                f"-- Índice composto B-Tree sobre o Grão / Update Key da Fato (colunas validadas no DDL)\n"
+                f"CREATE INDEX {schema}.{nome_idx_grao} ON {schema}.{nt} ({', '.join(cols_grao_composto)})"
+                f" COMPRESS 1{clausula_ts} PARALLEL 4 NOLOGGING;\n"
+                f"ALTER INDEX {schema}.{nome_idx_grao} NOPARALLEL LOGGING;\n"
+            )
             qtd_idx_fato += 1
 
         linhas_fato.append(
@@ -1074,21 +1110,39 @@ def carregar_indicadores_negocio_entrega(base_dir: Path = None) -> list:
 
 
 def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str, base_dir: Path = None) -> str:
-    """Gera o Guia Completo de Implementação no Power BI (08_datasets_bi/) com Star Schema, Tempo, DAX, Slicers, Mockup, Queries SQL e Checklist."""
+    """
+    Gera o Guia Completo de Implementação no Power BI (08_datasets_bi/) em nível executivo e técnico:
+    1. Contexto Executivo, Dores Resolvidas, Estratégia Import Mode e Catálogo Detalhado (Fatos e Dimensões)
+    2. Diagrama Star Schema (Mermaid), Matriz de Relacionamentos 1:* e Regras de Ouro (Sem Ambos, Sem Fato-Fato)
+    3. Dimensão Tempo (Sort by Column), Comportamento SCD Tipo 2 no BI e Tratamento da Linha Sentinela (-1)
+    4. Dicionário Completo de Fórmulas DAX (SCD2-Safe via SUMMARIZE na NK, Somas, Médias, Taxas DIVIDE, YoY/MoM, Metas .xlsx e Qualidade)
+    5. Matriz Completa de Segmentadores Globais (Sync Slicers)
+    6. Proposta Detalhada de Estrutura Visual e Wireframe em 4 Páginas (com medidas DAX e colunas reais)
+    7. Consultas SQL Completas de Reconciliação (com JOIN em DIM_TEMPO e Dimensões + Auditoria de -1)
+    8. Radar Consultivo da IA
+    9. Checklist de Homologação Pré-Publicação
+    """
     nomes_dims = {d["nome_tabela"].upper(): d for d in dims}
     linhas_er = ["```mermaid", "erDiagram"]
     linhas_rel_matrix = []
     dim_tempo_nome = "DIM_TEMPO"
+    dim_tempo_obj = None
     for d in dims:
         dn = d["nome_tabela"].upper()
         if "TEMPO" in dn or "CALENDARIO" in dn:
             dim_tempo_nome = dn
+            dim_tempo_obj = d
             break
 
+    pk_tempo = _obter_sk_dim(dim_tempo_obj) if dim_tempo_obj else "DIMENSION_KEY"
+
     tempo_count_por_fato = {}
+    fks_por_fato = {}
     for f in fatos:
         nt_f = f["nome_tabela"].upper()
-        for fk in identificar_fks_fato(f, set(nomes_dims.keys())):
+        fks_f = identificar_fks_fato(f, set(nomes_dims.keys()))
+        fks_por_fato[nt_f] = fks_f
+        for fk in fks_f:
             tab_r = fk["tabela_ref"].upper()
             col_fk = fk["coluna"].upper()
             d_obj = nomes_dims.get(tab_r)
@@ -1098,7 +1152,7 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
                 tempo_count_por_fato[nt_f] = tempo_count_por_fato.get(nt_f, 0) + 1
                 ativo = tempo_count_por_fato[nt_f] == 1
                 conector = "||--o{" if ativo else "||..o{"
-                status_txt = "**Ativo**" if ativo else "**Inativo** (`USERELATIONSHIP`)"
+                status_txt = "**Ativo** (Data Principal)" if ativo else "**Inativo** (Usar `USERELATIONSHIP`)"
             else:
                 conector = "||--o{"
                 status_txt = "**Ativo**"
@@ -1108,76 +1162,328 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
             )
     linhas_er.append("```")
 
-    indicadores_negocio = carregar_indicadores_negocio_entrega(base_dir)
-    medidas_dax = []
-    radar_rows = []
-    sql_conferencia = []
-    slicers_rows = [
-        f"| **Ano / Semestre / Mês** | `NUM_ANO`, `DES_SEMESTRE`, `DES_MES` | `{dim_tempo_nome}` | Habilitar *Sync Slicers* em todas as páginas; ordenar `DES_MES` por `NUM_MES`. |"
-    ]
+    # 1.3 Catálogo separado de Fatos e Dimensões
+    linhas_cat_fatos = []
+    for f in fatos:
+        nt_f = f["nome_tabela"].upper()
+        pk_f = _obter_sk_dim(f)
+        fks_nomes = [fk["coluna"].upper() for fk in fks_por_fato.get(nt_f, [])]
+        metricas_nomes = [
+            c["nome_dw"].upper()
+            for c in f["colunas"]
+            if c["nome_dw"].upper().startswith(("VAL_", "VLR_", "QTD_", "QT_", "PER_", "PRC_", "IND_", "FLG_", "SIN_"))
+        ]
+        grao_txt = ", ".join(f"`{k}`" for k in fks_nomes[:5]) if fks_nomes else f"`{pk_f}`"
+        met_txt = ", ".join(f"`{m}`" for m in metricas_nomes[:5]) if metricas_nomes else "`COUNT(*)`"
+        linhas_cat_fatos.append(
+            f"| `{schema}.{nt_f}` | `{pk_f}` | {grao_txt} | {met_txt} | {gerar_comentario_tabela(f, 'FATO', projeto)} |"
+        )
 
+    linhas_cat_dims = []
+    dims_negocio = []
     for d in dims:
         nt_d = d["nome_tabela"].upper()
-        if nt_d == dim_tempo_nome:
-            continue
+        pk_d = _obter_sk_dim(d)
+        nk_d = _obter_nk_dim(d)
+        is_tempo = nt_d == dim_tempo_nome or "TEMPO" in nt_d or "CALENDARIO" in nt_d
+        if not is_tempo:
+            dims_negocio.append(d)
         cols_desc = [
             c["nome_dw"].upper()
             for c in d["colunas"]
             if c["nome_dw"].upper().startswith(("DES_", "NOM_", "DSC_", "SIG_"))
         ]
-        if cols_desc:
+        cols_scd = [
+            c["nome_dw"].upper()
+            for c in d["colunas"]
+            if c["nome_dw"].upper() in ("DTC_EFETIVACAO", "DTC_INICIO", "DTC_EXPIRACAO", "DTC_FIM", "SIN_ATIVO", "FLG_ATIVO", "DES_ATUALIZAR")
+        ]
+        desc_txt = ", ".join(f"`{c}`" for c in cols_desc[:4]) if cols_desc else f"`{nk_d}`"
+        scd_txt = ", ".join(f"`{c}`" for c in cols_scd) if cols_scd else "Dimensão Fixa / Calendário"
+        linhas_cat_dims.append(
+            f"| `{schema}.{nt_d}` | `{pk_d}` | `{nk_d}` | {desc_txt} | {scd_txt} |"
+        )
+
+    # 4 & 5 & 7: Medidas DAX, Slicers, Queries SQL e Nomes de Medidas para o Mockup
+    indicadores_negocio = carregar_indicadores_negocio_entrega(base_dir)
+    medidas_dax = []
+    radar_rows = []
+    sql_conferencia = []
+    medidas_kpi_topo = []
+    medidas_eficiencia = []
+    medidas_qualidade = []
+
+    slicers_rows = [
+        f"| **Ano / Semestre / Mês** | `NUM_ANO`, `DES_SEMESTRE`, `DES_MES` | `{dim_tempo_nome}` | *Dropdown* / Botões Horizontais | **Global (Todas as Páginas)** — ordenar `DES_MES` por `NUM_MES`. |"
+    ]
+
+    for d in dims_negocio:
+        nt_d = d["nome_tabela"].upper()
+        nk_d = _obter_nk_dim(d)
+        cols_desc = [
+            c["nome_dw"].upper()
+            for c in d["colunas"]
+            if c["nome_dw"].upper().startswith(("DES_", "NOM_", "DSC_", "SIG_"))
+        ]
+        campos_slicer = ", ".join(f"`{c}`" for c in cols_desc[:3]) if cols_desc else f"`{nk_d}`"
+        slicers_rows.append(
+            f"| **{humanizar_identificador(nt_d)}** | {campos_slicer} | `{nt_d}` | *Dropdown* com Busca | **Global (Páginas 1, 2 e 3)** — filtra as Fatos via relacionamento `1:*`. |"
+        )
+        if any(c["nome_dw"].upper() == "SIN_ATIVO" for c in d["colunas"]):
             slicers_rows.append(
-                f"| **{humanizar_identificador(nt_d)}** | `{', '.join(cols_desc[:3])}` | `{nt_d}` | Segmentador dimensional (`1:*`) com filtro simples. |"
+                f"| **Vigência SCD2 ({humanizar_identificador(nt_d)})** | `SIN_ATIVO` (`'S'` / `'N'`) | `{nt_d}` | Botão (*Tile*) | **Opcional (Página 4 / Auditoria)** — permite isolar cadastro atual vs histórico. |"
             )
 
-    for f in fatos:
+    for idx_f, f in enumerate(fatos, 1):
         nt_f = f["nome_tabela"].upper()
-        medidas_dax.append(
-            f"### 🔹 Tabela Fato: `{nt_f}`\n\n"
-            f"```dax\n"
-            f"// Contagem Total de Registros\n"
-            f"Qtd Registros ({humanizar_identificador(nt_f)}) = COALESCE(COUNTROWS('{nt_f}'), 0)\n"
-        )
+        leg_f = humanizar_identificador(re.sub(r"^(FATO_|FAT_)", "", nt_f))
+        fks_f = fks_por_fato.get(nt_f, [])
+        fk_tempo_col = None
+        fk_dim_princ = None
+        for fk in fks_f:
+            if "TEMPO" in fk["tabela_ref"].upper() or "TEMPO" in fk["coluna"].upper():
+                if not fk_tempo_col:
+                    fk_tempo_col = fk["coluna"].upper()
+            elif not fk_dim_princ:
+                fk_dim_princ = fk
+
+        nome_med_qtd_reg = f"Qtd Registros ({leg_f})"
+        medidas_kpi_topo.append(f"[{nome_med_qtd_reg}]")
+
+        bloco_dax = [
+            f"### 4.{idx_f + 1} Grupo de Medidas da Tabela Fato `{nt_f}` ({leg_f})",
+            "",
+            f"* **Conceito de Negócio:** Consolida os indicadores de **{leg_f}** no grão das chaves estrangeiras ({', '.join('`' + fk['coluna'].upper() + '`' for fk in fks_f) or 'registro transacional'}).",
+            "",
+            "#### A. Volumetria e Contagens Distintas Blindadas contra SCD Tipo 2 (`SCD2 Safe`)",
+            "```dax",
+            f"// Total de lançamentos/eventos na tabela {nt_f}",
+            f"{nome_med_qtd_reg} = COALESCE(COUNTROWS('{nt_f}'), 0)",
+            "",
+        ]
+
+        medida_entidade_principal = None
+        for fk in fks_f:
+            tab_r = fk["tabela_ref"].upper()
+            col_fk = fk["coluna"].upper()
+            if "TEMPO" in tab_r or "CALENDARIO" in tab_r or "TEMPO" in col_fk:
+                continue
+            d_obj = nomes_dims.get(tab_r)
+            nk_dim = _obter_nk_dim(d_obj) if d_obj else "DIMENSION_KEY"
+            ent_leg = humanizar_identificador(re.sub(r"^DIM_", "", tab_r))
+            nome_med_scd2 = f"Qtd {ent_leg} Ativos (SCD2 Safe)"
+            if not medida_entidade_principal:
+                medida_entidade_principal = (nome_med_scd2, ent_leg, tab_r, nk_dim, col_fk)
+                medidas_kpi_topo.append(f"[{nome_med_scd2}]")
+            bloco_dax.extend([
+                f"// Contagem Distinta de {ent_leg} pela Chave Natural ({tab_r}[{nk_dim}])",
+                f"// Evita dupla contagem caso a entidade possua mais de 1 versão histórica SCD Tipo 2 no período",
+                f"{nome_med_scd2} = ",
+                "COALESCE(",
+                "    COUNTROWS(",
+                "        SUMMARIZE(",
+                f"            FILTER('{nt_f}', '{nt_f}'[{col_fk}] <> -1),",
+                f"            '{tab_r}'[{nk_dim}]",
+                "        )",
+                "    ),",
+                "    0",
+                ")",
+                "",
+                f"// Contagem Distinta de Versões SK de {ent_leg} (Excluindo Linha Sentinela -1)",
+                f"Distintos {ent_leg} (SK) = ",
+                "COALESCE(",
+                "    CALCULATE(",
+                f"        DISTINCTCOUNT('{nt_f}'[{col_fk}]),",
+                f"        '{nt_f}'[{col_fk}] <> -1",
+                "    ),",
+                "    0",
+                ")",
+                "",
+            ])
+
+        bloco_dax.append("```\n")
+
+        # B. Somatórios Base, Médias e Percentuais
+        bloco_somas = ["#### B. Somatórios Base, Médias Operacionais e Taxas Ponderadas (`SUM`, `AVERAGE`, `DIVIDE`)", "```dax"]
         cols_metricas_sql = []
+        cols_val_num = []
         for c in f["colunas"]:
             cn = c["nome_dw"].upper()
-            if cn.startswith(("SK_", "DIM_")) and cn != _obter_sk_dim(f) and "TEMPO" not in cn:
-                ent_sk = humanizar_identificador(re.sub(r"^(SK|DIM)_", "", cn))
-                medidas_dax.append(
-                    f"// Contagem Distinta de {ent_sk} (Excluindo Linha Sentinela -1)\n"
-                    f"Distintos {ent_sk} = \n"
-                    f"COALESCE(\n"
-                    f"    CALCULATE(\n"
-                    f"        DISTINCTCOUNT('{nt_f}'[{cn}]),\n"
-                    f"        '{nt_f}'[{cn}] <> -1\n"
-                    f"    ),\n"
-                    f"    0\n"
-                    f")\n"
-                )
-            elif cn.startswith(("VAL_", "VLR_", "QTD_", "QT_")):
+            if cn.startswith(("VAL_", "VLR_", "QTD_", "QT_")):
                 leg = humanizar_identificador(re.sub(r"^(VAL|VLR|QTD|QT)_", "", cn))
-                medidas_dax.append(f"Total {leg} = COALESCE(SUM('{nt_f}'[{cn}]), 0)\n")
-                cols_metricas_sql.append(f"    SUM(f.{cn}) AS TOTAL_{cn}")
+                nome_tot = f"Total {leg}"
+                nome_med = f"Media {leg}"
+                cols_val_num.append((cn, leg, nome_tot))
+                medidas_kpi_topo.append(f"[{nome_tot}]")
+                bloco_somas.extend([
+                    f"// Somatório e Média de {leg} ({nt_f}[{cn}])",
+                    f"{nome_tot} = COALESCE(SUM('{nt_f}'[{cn}]), 0)",
+                    f"{nome_med} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
+                    "",
+                ])
+                cols_metricas_sql.append(f"    SUM(NVL(f.{cn}, 0)) AS TOTAL_{cn}")
                 radar_rows.append(
-                    f"| **Análise de {leg}** | `{nt_f}.{cn}` | Permite acompanhar a evolução, média e concentração de `{cn}` por recorte dimensional. |"
+                    f"| **Curva ABC e Concentração de {leg}** | `{nt_f}.{cn}` | Identifica os 20% das categorias/entidades que concentram 80% do volume de `{cn}` (Análise de Pareto). |"
                 )
             elif cn.startswith(("PER_", "PRC_")):
                 leg = humanizar_identificador(re.sub(r"^(PER|PRC)_", "", cn))
-                medidas_dax.append(f"Media {leg} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)\n")
+                nome_per = f"Taxa Media {leg}"
+                medidas_eficiencia.append(f"[{nome_per}]")
+                bloco_somas.extend([
+                    f"// Atenção: Coluna de percentual ({cn}) — NUNCA usar SUM()!",
+                    f"{nome_per} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
+                    "",
+                ])
+                cols_metricas_sql.append(f"    ROUND(AVG(NVL(f.{cn}, 0)), 2) AS MEDIA_{cn}")
             elif cn.startswith(("IND_", "FLG_", "SIN_")):
                 leg = humanizar_identificador(re.sub(r"^(IND|FLG|SIN)_", "", cn))
                 slicers_rows.append(
-                    f"| **Flag {leg}** | `{cn}` | `{nt_f}` | Segmentador binário/status na Fato. |"
+                    f"| **Flag {leg}** | `{cn}` | `{nt_f}` | Botão (*Tile*) | Filtro rápido de status/indicador direto na Fato `{nt_f}`. |"
                 )
-        medidas_dax.append("```\n")
 
+        # Se houver pelo menos 2 métricas numéricas, cria razão ponderada DIVIDE entre elas; e média por entidade
+        if len(cols_val_num) >= 2:
+            c1, leg1, tot1 = cols_val_num[0]
+            c2, leg2, tot2 = cols_val_num[1]
+            nome_rel = f"% Relacao {leg1} vs {leg2}"
+            medidas_eficiencia.append(f"[{nome_rel}]")
+            bloco_somas.extend([
+                f"// Taxa Ponderada (Regra de Ouro: Soma do Numerador dividida pela Soma do Denominador)",
+                f"{nome_rel} = DIVIDE([{tot1}], [{tot2}], 0)",
+                "",
+            ])
+
+        if cols_val_num and medida_entidade_principal:
+            c1, leg1, tot1 = cols_val_num[0]
+            nome_med_scd2, ent_leg, _, _, _ = medida_entidade_principal
+            nome_med_por_ent = f"Media {leg1} por {ent_leg}"
+            medidas_eficiencia.append(f"[{nome_med_por_ent}]")
+            bloco_somas.extend([
+                f"// Intensidade Média de {leg1} por {ent_leg} Ativo (SCD2 Safe)",
+                f"{nome_med_por_ent} = DIVIDE([{tot1}], [{nome_med_scd2}], 0)",
+                "",
+            ])
+
+        med_base_share = f"[{cols_val_num[0][2]}]" if cols_val_num else f"[{nome_med_qtd_reg}]"
+        leg_base_share = cols_val_num[0][1] if cols_val_num else leg_f
+        bloco_somas.extend([
+            f"// Participação Percentual (% Share) sobre o Total Selecionado",
+            f"% Participacao {leg_base_share} = ",
+            "DIVIDE(",
+            f"    {med_base_share},",
+            f"    CALCULATE({med_base_share}, ALLSELECTED('{nt_f}')),",
+            "    0",
+            ")",
+            "```",
+            "",
+        ])
+        bloco_dax.extend(bloco_somas)
+
+        # C. Inteligência Temporal e Auditoria de Qualidade (-1)
+        bloco_tempo_qual = [
+            "#### C. Inteligência Temporal (`YoY`, `MoM`) e Auditoria da Linha Sentinela (`-1`)",
+            "```dax",
+            f"// Valor no Ano Anterior (SamePeriodLastYear) — requer {dim_tempo_nome} marcada como Tabela de Data",
+            f"{leg_base_share} (Ano Anterior) = ",
+            "CALCULATE(",
+            f"    {med_base_share},",
+            f"    SAMEPERIODLASTYEAR('{dim_tempo_nome}'[DTC_DATA])",
+            ")",
+            "",
+            f"// Variação Percentual Ano contra Ano (% YoY)",
+            f"% Variacao YoY ({leg_base_share}) = ",
+            "DIVIDE(",
+            f"    {med_base_share} - [{leg_base_share} (Ano Anterior)],",
+            f"    [{leg_base_share} (Ano Anterior)],",
+            "    0",
+            ")",
+        ]
+
+        if fk_dim_princ:
+            col_fk_p = fk_dim_princ["coluna"].upper()
+            nome_med_orfao = f"Qtd Nao Informado -1 ({leg_f})"
+            nome_per_orfao = f"% Nao Informado -1 ({leg_f})"
+            medidas_qualidade.append(f"[{nome_med_orfao}]")
+            medidas_qualidade.append(f"[{nome_per_orfao}]")
+            bloco_tempo_qual.extend([
+                "",
+                f"// Monitoramento de Governança: Registros com Chave Sentinela -1 em {col_fk_p}",
+                f"{nome_med_orfao} = ",
+                "COALESCE(",
+                f"    CALCULATE(COUNTROWS('{nt_f}'), '{nt_f}'[{col_fk_p}] = -1),",
+                "    0",
+                ")",
+                "",
+                f"{nome_per_orfao} = DIVIDE([{nome_med_orfao}], [{nome_med_qtd_reg}], 0)",
+            ])
+
+        bloco_tempo_qual.append("```\n")
+        bloco_dax.extend(bloco_tempo_qual)
+        medidas_dax.append("\n".join(bloco_dax))
+
+        # Queries SQL de Reconciliação completas com JOIN em DIM_TEMPO e Dimensão Principal
         expr_sql = ",\n".join(cols_metricas_sql[:4]) if cols_metricas_sql else "    COUNT(*) AS QTD_REGISTROS"
-        sql_conferencia.append(
-            f"-- Conferência Geral da Fato {schema}.{nt_f}\n"
-            f"SELECT\n"
-            f"{expr_sql}\n"
-            f"FROM {schema}.{nt_f} f;"
-        )
+        if fk_dim_princ:
+            tab_d_p = fk_dim_princ["tabela_ref"].upper()
+            col_fk_p = fk_dim_princ["coluna"].upper()
+            d_obj_p = nomes_dims.get(tab_d_p)
+            pk_d_p = _obter_sk_dim(d_obj_p) if d_obj_p else "DIMENSION_KEY"
+            nk_d_p = _obter_nk_dim(d_obj_p) if d_obj_p else pk_d_p
+            cols_desc_p = [
+                c["nome_dw"].upper()
+                for c in (d_obj_p["colunas"] if d_obj_p else [])
+                if c["nome_dw"].upper().startswith(("DES_", "NOM_", "DSC_", "SIG_"))
+            ]
+            col_agrup_p = cols_desc_p[0] if cols_desc_p else nk_d_p
+            join_tempo_sql = (
+                f"LEFT JOIN {schema}.{dim_tempo_nome} t ON t.{pk_tempo} = f.{fk_tempo_col}\n"
+                if fk_tempo_col
+                else ""
+            )
+            sel_tempo_sql = "    t.NUM_ANO,\n    t.NUM_MES,\n" if fk_tempo_col else ""
+            grp_tempo_sql = "\nGROUP BY t.NUM_ANO, t.NUM_MES\nORDER BY t.NUM_ANO DESC, t.NUM_MES DESC" if fk_tempo_col else ""
+
+            sql_conferencia.append(
+                f"-- =====================================================================\n"
+                f"-- 1. Reconciliação Mensal e Contagem SCD2-Safe: {schema}.{nt_f}\n"
+                f"-- =====================================================================\n"
+                f"SELECT\n"
+                f"{sel_tempo_sql}"
+                f"    COUNT(*) AS QTD_REGISTROS_FATO,\n"
+                f"    COUNT(DISTINCT CASE WHEN f.{col_fk_p} <> -1 THEN d.{nk_d_p} END) AS QTD_DISTINTOS_NK_SCD2_SAFE,\n"
+                f"{expr_sql}\n"
+                f"FROM {schema}.{nt_f} f\n"
+                f"{join_tempo_sql}"
+                f"LEFT JOIN {schema}.{tab_d_p} d ON d.{pk_d_p} = f.{col_fk_p}{grp_tempo_sql};\n\n"
+                f"-- =====================================================================\n"
+                f"-- 2. Conferência por Recorte Dimensional ({tab_d_p}.{col_agrup_p})\n"
+                f"-- =====================================================================\n"
+                f"SELECT\n"
+                f"    NVL(TO_CHAR(d.{col_agrup_p}), 'NAO INFORMADO (-1)') AS CATEGORIA_DIMENSAO,\n"
+                f"    COUNT(*) AS QTD_REGISTROS,\n"
+                f"    COUNT(DISTINCT CASE WHEN f.{col_fk_p} <> -1 THEN d.{nk_d_p} END) AS QTD_ENTIDADES_UNICAS_NK,\n"
+                f"{expr_sql}\n"
+                f"FROM {schema}.{nt_f} f\n"
+                f"LEFT JOIN {schema}.{tab_d_p} d ON d.{pk_d_p} = f.{col_fk_p}\n"
+                f"GROUP BY NVL(TO_CHAR(d.{col_agrup_p}), 'NAO INFORMADO (-1)')\n"
+                f"ORDER BY QTD_REGISTROS DESC;\n\n"
+                f"-- =====================================================================\n"
+                f"-- 3. Auditoria de Qualidade: Taxa de Chave Sentinela (-1) em {nt_f}\n"
+                f"-- =====================================================================\n"
+                f"SELECT\n"
+                f"    COUNT(*) AS TOTAL_LINHAS_FATO,\n"
+                f"    SUM(CASE WHEN f.{col_fk_p} = -1 THEN 1 ELSE 0 END) AS QTD_SENTINELA_MENOS_1,\n"
+                f"    ROUND(SUM(CASE WHEN f.{col_fk_p} = -1 THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS PERC_NAO_INFORMADO\n"
+                f"FROM {schema}.{nt_f} f;"
+            )
+        else:
+            sql_conferencia.append(
+                f"-- Conferência Geral da Fato {schema}.{nt_f}\n"
+                f"SELECT\n"
+                f"    COUNT(*) AS QTD_REGISTROS,\n"
+                f"{expr_sql}\n"
+                f"FROM {schema}.{nt_f} f;"
+            )
 
     secao_indicadores_negocio = ""
     if indicadores_negocio:
@@ -1185,7 +1491,7 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
         linhas_tab_ind = []
         dax_metas = ["### 🎯 Medidas DAX de Indicadores e Metas Oficiais do Negócio\n\n```dax"]
         nt_fato_princ = fatos[0]["nome_tabela"].upper() if fatos else "FATO"
-        medida_base_ref = f"[Qtd Registros ({humanizar_identificador(nt_fato_princ)})]"
+        medida_base_ref = f"[Qtd Registros ({humanizar_identificador(re.sub(r'^(FATO_|FAT_)', '', nt_fato_princ))})]"
 
         for idx_i, ind in enumerate(indicadores_negocio, 1):
             linhas_tab_ind.append(
@@ -1216,108 +1522,184 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
             + "\n"
         )
 
-    linhas_cat = []
-    for f in fatos:
-        nt = f["nome_tabela"].upper()
-        pk_f = _obter_sk_dim(f)
-        linhas_cat.append(f"| `{schema}.{nt}` | **Tabela Fato** | `{pk_f}` | {gerar_comentario_tabela(f, 'FATO', projeto)} |")
-    for d in dims:
-        nt = d["nome_tabela"].upper()
-        pk_d = _obter_sk_dim(d)
-        linhas_cat.append(f"| `{schema}.{nt}` | **Dimensão** | `{pk_d}` | {gerar_comentario_tabela(d, 'DIM', projeto)} |")
+    # Elementos dinâmicos para a Seção 6 (Mockup detalhado página a página)
+    dim1_nome = dims_negocio[0]["nome_tabela"].upper() if dims_negocio else dim_tempo_nome
+    dim1_col = next(
+        (c["nome_dw"].upper() for c in (dims_negocio[0]["colunas"] if dims_negocio else []) if c["nome_dw"].upper().startswith(("DES_", "NOM_", "SIG_"))),
+        _obter_nk_dim(dims_negocio[0]) if dims_negocio else "NUM_ANO",
+    )
+    dim1_nk = _obter_nk_dim(dims_negocio[0]) if dims_negocio else "DIMENSION_KEY"
+
+    dim2_nome = dims_negocio[1]["nome_tabela"].upper() if len(dims_negocio) > 1 else dim1_nome
+    dim2_col = next(
+        (c["nome_dw"].upper() for c in (dims_negocio[1]["colunas"] if len(dims_negocio) > 1 else []) if c["nome_dw"].upper().startswith(("DES_", "NOM_", "SIG_"))),
+        dim1_col,
+    )
+
+    kpis_p1_txt = " | ".join(f"`{m}`" for m in (medidas_kpi_topo[:5] or ["[Qtd Registros]"]))
+    kpis_p2_txt = " | ".join(f"`{m}`" for m in (medidas_eficiencia[:4] + medidas_kpi_topo[:2]))
+    kpis_p4_txt = " | ".join(f"`{m}`" for m in (medidas_qualidade[:4] or ["[Qtd Registros]"]))
 
     matriz_rel_txt = "\n".join(linhas_rel_matrix) if linhas_rel_matrix else "| _Sem FKs detectadas_ | - | - | - | - | - | - |"
-    radar_txt = "\n".join(radar_rows[:6]) if radar_rows else "| **Evolução Temporal e Concentração** | Colunas de Métricas e FKs | Permite avaliar sazonalidade, participação percentual (Pareto) e desvios em relação à meta. |"
-    sql_conf_txt = "\n\n".join(sql_conferencia) if sql_conferencia else f"SELECT COUNT(*) FROM {schema}.{fatos[0]['nome_tabela']};" if fatos else "-- Sem fatos"
+    radar_txt = "\n".join(radar_rows[:8]) if radar_rows else "| **Evolução Temporal e Concentração (Pareto 80/20)** | Colunas de Métricas e FKs | Permite avaliar sazonalidade, participação percentual (`% Share`) e desvios em relação à meta. |"
+    sql_conf_txt = "\n\n".join(sql_conferencia) if sql_conferencia else (f"SELECT COUNT(*) FROM {schema}.{fatos[0]['nome_tabela']};" if fatos else "-- Sem fatos")
 
-    return f"""# 📊 Guia de Implementação no Power BI — Projeto {projeto}
+    return f"""# 📊 Guia Completo do Analista de BI e Especificação de Painel — Projeto {projeto}
 
 > **Schema Oracle:** `{schema}` | **Data de Geração:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  
-> **Público-Alvo:** Analistas de BI, Engenheiros de Analytics e Designers de Mockup  
-> **Padrão Arquitetural:** Modelo Estrela (`Star Schema`) em Modo Importação (`Import Mode`)
+> **Público-Alvo:** Analistas de BI, Engenheiros de Analytics, Gestores de Negócio e Designers de UI/UX  
+> **Padrão Arquitetural:** Modelo Estrela (`Star Schema` / *Fact Constellation*) em Modo Importação (`Import Mode`)
 
 ---
 
-## 1. Visão Geral, Estratégia de Conexão e Catálogo de Tabelas
+## 1. Visão Geral, Contexto Executivo e Catálogo de Dados
 
-- **Modo de Conexão Recomendado:** **Importação (`Import Mode`)** para máxima performance em cálculos `DISTINCTCOUNT`, inteligência temporal e cruzamento entre dimensões.
-- **Padrão de Modelagem:** Modelo Estrela (`Star Schema`) conectando a(s) Tabela(s) Fato às Dimensões com cardinalidade `1:*` e filtro cruzado **Único (`Single`)**.
+### 1.1 Dores de Negócio Resolvidas por esta Arquitetura
+Este guia documenta a camada analítica do projeto **{projeto}** no schema `{schema}`, projetada para eliminar quatro riscos clássicos em painéis executivos:
+1. **Proteção contra Dupla Contagem em Dimensões SCD Tipo 2:** Quando uma entidade (`{dim1_nome}`) muda de atributo ao longo do tempo e ganha uma nova versão histórica (`DIMENSION_KEY`), contagens ingênuas pela chave substituta inflam os indicadores. Este guia fornece as fórmulas DAX blindadas via `SUMMARIZE` na Chave Natural (`{dim1_nk}`).
+2. **Integridade Referencial Total via Linha Sentinela (`-1`):** Nenhum registro de Fato é perdido por ausência de cadastro dimensional; ocorrências órfãs ou não aplicáveis convergem para a chave `-1` (`"Não Informado"`), garantindo batimento de **100%** entre o Power BI e o Oracle.
+3. **Proibição de Somatórios Inválidos em Taxas e Percentuais (`PER_*`):** Percentuais pré-calculados nunca são somados (`SUM`); toda taxa agregada utiliza razão ponderada (`DIVIDE(SUM(numerador), SUM(denominador), 0)`).
+4. **Independência entre Tabelas Fato (*Conformed Dimensions*):** Múltiplas tabelas Fato compartilham as mesmas dimensões conformadas (`{dim_tempo_nome}`, `{dim1_nome}`) sem jamais se relacionarem diretamente entre si (`Fato <-> Fato`).
 
-### 1.1 Objetos a Importar do Schema `{schema}`
+### 1.2 Estratégia de Conexão Recomendada
+- **Modo de Armazenamento:** **Importação (`Import Mode`)** no motor colunar *VertiPaq* do Power BI.
+- **Justificativa Técnica:** O modo Importação entrega tempo de resposta sub-segundo para cálculos de cardinalidade dinâmica (`SUMMARIZE` + `COUNTROWS`), inteligência temporal (`SAMEPERIODLASTYEAR`) e cruzamento simultâneo entre múltiplas tabelas Fato.
+- **Janela de Atualização Sugerida:** Agendar refresh no Power BI Service logo após o término do pacote de carga no ODI 12c (`PACK_CARGA_*`).
 
-| Objeto Oracle | Papel no Star Schema | Chave Primária (PK) | Descrição Funcional e Granularidade |
-| :--- | :--- | :--- | :--- |
-{chr(10).join(linhas_cat)}
+### 1.3 Catálogo Detalhado de Tabelas Fato (Métricas e Eventos)
+
+| Tabela Fato Oracle | Chave Primária (PK) | Grão Analítico (Chaves Estrangeiras) | Colunas de Métricas / Flags | Papel Funcional no Painel |
+| :--- | :--- | :--- | :--- | :--- |
+{chr(10).join(linhas_cat_fatos)}
+
+### 1.4 Catálogo Detalhado de Tabelas Dimensão (Contexto, Filtros e Vigência SCD2)
+
+| Tabela Dimensão Oracle | Chave Primária (SK) | Chave Natural (NK) | Atributos Descritivos Principais | Colunas de Controle SCD Tipo 2 |
+| :--- | :--- | :--- | :--- | :--- |
+{chr(10).join(linhas_cat_dims)}
 
 ---
 
 ## 2. Diagrama e Matriz de Relacionamentos (Star Schema no Power BI)
 
-Configure todos os relacionamentos na aba **Exibição de Modelo** com **cardinalidade 1 para Muitos (`1:*`)** e **direção de filtro simples (`Single`)**:
+Configure todos os relacionamentos na aba **Exibição de Modelo** do Power BI Desktop seguindo estritamente o diagrama abaixo:
 
 {chr(10).join(linhas_er)}
 
 ### 2.1 Matriz de Configuração de Relacionamentos
 
-| Tabela Dimensão (Lado `1`) | Coluna PK (Dimensão) | Tabela Fato (Lado `*`) | Coluna FK (Fato) | Cardinalidade | Direção do Filtro | Status |
+| Tabela Dimensão (Lado `1`) | Coluna PK (Dimensão) | Tabela Fato (Lado `*`) | Coluna FK (Fato) | Cardinalidade | Direção do Filtro Cruzado | Status |
 | :--- | :--- | :--- | :--- | :---: | :---: | :---: |
 {matriz_rel_txt}
 
-> [!WARNING]
-> **Proibição de Filtro Bidirecional (`Ambos`):** Mantenha todos os relacionamentos com direção **Única (`1 ➔ *`)** para evitar ambiguidade de caminhos e degradação de performance.
+### 2.2 Regras Críticas de Modelagem na Exibição de Modelo
+1. **Proibição de Filtro Bidirecional (`Ambos`):** Mantenha **100%** dos relacionamentos com direção **Única (`1 ➔ *`)**. O filtro bidirecional gera caminhos ambíguos entre Fatos que compartilham as mesmas dimensões e degrada severamente a performance do *VertiPaq*.
+2. **Proibição de Ligação Direta `Fato <-> Fato`:** Quando houver mais de uma tabela Fato no modelo, o cruzamento de medidas no mesmo visual deve ocorrer **exclusivamente** através das dimensões compartilhadas (`{dim_tempo_nome}`, `{dim1_nome}`).
+3. **Ocultação de Colunas Técnicas:** Na *Exibição de Modelo*, clique com o botão direito e marque **"Ocultar na exibição de relatório"** em todas as colunas `DIMENSION_KEY`, `SK_*`, `DTC_CARGA` e nas colunas brutas de métrica das Fatos (exponha apenas as Medidas DAX da tabela `_Medidas_{projeto}`).
 
 ---
 
-## 3. Dimensão Tempo (`{dim_tempo_nome}`) e Tratamento da Linha Sentinela (`-1`)
+## 3. Dimensão Tempo (`{dim_tempo_nome}`), SCD Tipo 2 e Linha Sentinela (`-1`)
 
-### 3.1 Como Configurar a Dimensão Calendário no Power BI
-1. **Desative a Data/Hora Automática:** Em *Arquivo ➔ Opções ➔ Carregamento de Dados*, desmarque *"Data/hora automática"*.
-2. **Marque como Tabela de Datas:** Clique com o botão direito em `{dim_tempo_nome}` ➔ *Marcar como tabela de data* ➔ selecione a coluna de data completa (`DTC_COMPLETA` ou `DTC_DATA`).
-3. **Ordenação Cronológica (*Classificar por Coluna*):**
-   - Ordene `DES_MES` pela coluna numérica `NUM_MES`.
-   - Ordene `DES_MES_ANO` pela coluna `DES_MES_ANO_NUMERICO` (ou `COD_ANO_MES`).
-   - Ordene `DES_SEMESTRE` pela coluna `NUM_SEMESTRE`.
+### 3.1 Configuração Obrigatória da Dimensão Calendário (`{dim_tempo_nome}`)
+1. **Desative a Data/Hora Automática:** Em *Arquivo ➔ Opções e configurações ➔ Opções ➔ Carregamento de Dados*, desmarque **"Data/hora automática para novos arquivos"**.
+2. **Marque como Tabela de Data:** Clique com o botão direito em `{dim_tempo_nome}` ➔ *Marcar como tabela de data* ➔ selecione a coluna de data (`DTC_DATA` ou `DTC_COMPLETA`).
+3. **Regra de Ordenação Cronológica (*Classificar por Coluna* / *Sort by Column*):**
 
-### 3.2 Tratamento do Registro Sentinela (`-1` — Não Informado)
-- **Em somatórios (`SUM`):** Mantenha os registros com FK igual a `-1` para que o total geral bata 100% com o banco, exibindo-os sob a categoria `"Não Informado"` nas dimensões.
-- **Em contagens distintas (`DISTINCTCOUNT`):** Sempre filtre `FK <> -1` na medida DAX para não contabilizar a linha técnica `-1` como uma entidade real.
+| Coluna Exibida nos Visuais (Texto) | Classificar Pela Coluna (Numérica) | Evita o Erro Clássico de... |
+| :--- | :--- | :--- |
+| `DES_MES` (`Janeiro`, `Fevereiro`...) | `NUM_MES` (`1` a `12`) | Ordenar alfabeticamente (`Abril`, `Agosto`, `Dezembro`...) |
+| `DES_MES_ANO` (`Jan/2026`, `Fev/2026`...) | `COD_ANO_MES` / `NUM_ANO_MES` (`202601`) | Misturar meses de anos diferentes fora de ordem |
+| `DES_SEMESTRE` (`1º Semestre`, `2º Semestre`) | `NUM_SEMESTRE` (`1`, `2`) | Inversão de semestres em gráficos de linha |
+| `DES_DIA_SEMANA` (`Segunda`, `Terça`...) | `NUM_DIA_SEMANA` (`1` a `7`) | Exibir `Domingo, Quarta, Quinta, Sábado...` |
+
+### 3.2 Como Analisar Dimensões SCD Tipo 2 no Power BI sem Distorcer Contagens
+As dimensões do `{schema}` utilizam **SCD Tipo 2** (`DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `SIN_ATIVO`):
+- **Ao filtrar por um atributo descritivo (ex: `{dim1_nome}[{dim1_col}]`):** O Power BI mostra exatamente os fatos ocorridos enquanto a entidade estava naquela classificação histórica (*análise ponto-no-tempo*).
+- **Ao contar quantas entidades reais atuaram no período:** Uma mesma entidade (mesma Chave Natural `{dim1_nk}`) pode ter tido 2 versões de `DIMENSION_KEY` no ano. Por isso, **nunca use `DISTINCTCOUNT` direto na FK da Fato** para contar pessoas/entidades; utilize sempre as medidas **`(SCD2 Safe)`** da Seção 4, que agrupam pela Chave Natural `{dim1_nk}` da dimensão.
+
+### 3.3 Tratamento do Registro Sentinela (`-1` — Não Informado / Não Aplicável)
+- **Nos Somatórios (`SUM`):** Mantenha os registros com FK igual a `-1` para que os cartões de volume/valor total fechem em **100%** com o banco Oracle. Nos gráficos por categoria, eles aparecerão rotulados como `"Não Informado"`.
+- **Nas Contagens Distintas de Entidades:** A condição `'{fatos[0]['nome_tabela'].upper() if fatos else 'FATO'}'[FK] <> -1` já está embutida nas fórmulas DAX abaixo para impedir que o código técnico `-1` seja contado como um indivíduo real.
 
 ---
 
-## 4. Dicionário de Métricas e Fórmulas DAX
+## 4. Dicionário Completo de Métricas e Fórmulas DAX
+
+> [!IMPORTANT]
+> **Duas Regras de Ouro DAX neste Projeto:**
+> 1. **Proibição de `SUM()` em Colunas `PER_*` / Taxas:** Jamais some percentuais pré-calculados linha a linha. Utilize sempre `DIVIDE([Total Numerador], [Total Denominador], 0)` ou `AVERAGE()`.
+> 2. **Contagem Distinta `SCD2 Safe` pela Chave Natural (`NK`):** Para contar entidades reais sem duplicar quem mudou de versão histórica no SCD2, utilize o padrão `COUNTROWS(SUMMARIZE(FILTER(FATO, FK <> -1), DIM[NK]))`.
 {secao_indicadores_negocio}
-Crie uma tabela vazia chamada **`_Medidas_{projeto}`** no Power BI e adicione as medidas abaixo:
+Crie uma tabela vazia no Power BI chamada **`_Medidas_{projeto}`** (*Inserir Dados ➔ Carregar*) e cadastre as medidas abaixo organizadas por pasta (*Display Folder*):
 
 {chr(10).join(medidas_dax) if medidas_dax else "_Nenhuma coluna numérica de métrica explícita (`VAL_`, `QTD_`) detectada nas tabelas Fato._"}
 
 ---
 
-## 5. Configuração de Filtros e Segmentadores (*Sync Slicers*)
+## 5. Configuração de Filtros Globais e Segmentadores (*Sync Slicers*)
 
-| Filtro no Dashboard | Campo(s) a Utilizar | Tabela de Origem | Observações de Configuração |
-| :--- | :--- | :--- | :--- |
+Configure o painel de filtros e os segmentadores no topo das páginas sincronizando-os via *Exibição ➔ Sincronizar Segmentações de Dados*:
+
+| Filtro no Dashboard | Campo(s) Físicos a Utilizar | Tabela de Origem | Tipo de Visual Recomendado | Escopo de Sincronização (*Sync Slicers*) |
+| :--- | :--- | :--- | :--- | :--- |
 {chr(10).join(slicers_rows)}
 
 ---
 
-## 6. Proposta de Estrutura Visual para o Mockup (3 Páginas)
+## 6. Proposta Detalhada de Estrutura Visual para o Painel (Power BI)
 
-### 📄 Página 1: Visão Geral e Indicadores Estratégicos
-- **Topo:** Barra de filtros globais sincronizados (`Ano`, `Mês`, principais dimensões de negócio) e faixa de Cartões KPI com os totais consolidados.
-- **Corpo:** Gráfico de evolução temporal (Ano/Semestre/Mês), gráfico de barras por categoria/modalidade com linha de meta e distribuição por unidade/regional.
+### 6.1 Mapa de Navegação Superior (Wireframe do Painel)
 
-### 📄 Página 2: Acompanhamento de Metas e Detalhamento Operacional
-- **Topo:** Velocímetros (*Gauges*) ou cartões com barra de progresso (`% Atingimento da Meta`).
-- **Corpo:** Gráfico de colunas empilhadas por status/situação e Matriz Analítica com hierarquia drill-down (`Unidade ➔ Categoria ➔ Detalhe`).
+```text
++---------------------------------------------------------------------------------------------------+
+|  [Logo / Título: Painel Executivo {projeto}]                   [Última Carga: MAX(DTC_CARGA)]     |
+|  +-------------------------+-------------------------+-------------------------+---------------+  |
+|  | 1. Visão Executiva      | 2. Metas e Eficiência   | 3. Perfil e Pareto 80/20| 4. Governança |  |
+|  +-------------------------+-------------------------+-------------------------+---------------+  |
+|  [Filtros Globais: Ano | Semestre | Mês ({dim_tempo_nome}) | {dim1_nome}[{dim1_col}] | {dim2_nome}[{dim2_col}] ] |
++---------------------------------------------------------------------------------------------------+
+```
 
-### 📄 Página 3: Recortes Específicos e Perfil Analítico
-- **Corpo:** Visuais dedicados a recortes demográficos, socioeconômicos ou modalidades específicas do domínio `{projeto}`.
+### 📄 Página 1: Visão Executiva e KPIs Estratégicos
+* **Objetivo:** Entregar à alta gestão uma leitura imediata do volume, valores consolidados, entidades ativas (SCD2 Safe) e tendência temporal do domínio **{projeto}**.
+* **Filtros no Topo:** `{dim_tempo_nome}[NUM_ANO]`, `{dim_tempo_nome}[DES_MES]`, `{dim1_nome}[{dim1_col}]` e `{dim2_nome}[{dim2_col}]`.
+* **Linha Superior (Faixa de Cartões KPI):**
+  * Exibir lado a lado: {kpis_p1_txt}.
+  * Adicionar rótulo de referência secundário com `[% Variacao YoY]`.
+* **Corpo Principal (4 Quadrantes):**
+  * **Superior Esquerdo (Evolução Mensal):** Gráfico de Colunas Agrupadas e Linha — Eixo X: `{dim_tempo_nome}[DES_MES_ANO]` (ordenado por `COD_ANO_MES`); Colunas: métrica principal de volume/valor; Linha secundária: entidade ativa `(SCD2 Safe)` ou meta.
+  * **Superior Direito (Ranking Top 10 por `{dim1_nome}`):** Gráfico de Barras Horizontais — Eixo Y: `{dim1_nome}[{dim1_col}]`; Valores: medida principal de volume/valor com rótulo de dados e formatação condicional de gradiente.
+  * **Inferior Esquerdo (Composição por `{dim2_nome}`):** Gráfico de Rosca ou Barras 100% Empilhadas — Legenda/Eixo: `{dim2_nome}[{dim2_col}]`; Valores: `[% Participacao ...]`.
+  * **Inferior Direito (Matriz Resumo Executiva):** Visual de Matriz cruzando `{dim1_nome}[{dim1_col}]` nas linhas com os principais indicadores DAX nas colunas e barra de dados embutida.
+
+### 📄 Página 2: Acompanhamento de Metas, Eficiência e Detalhamento Operacional
+* **Objetivo:** Avaliar produtividade média por entidade ativa, taxas ponderadas (`DIVIDE`) e permitir *drill-down* até o nível individual da Chave Natural (`{dim1_nk}`).
+* **Linha Superior (Cartões de Eficiência e Metas):**
+  * Exibir: {kpis_p2_txt}.
+* **Corpo Principal:**
+  * **Esquerda (Análise de Intensidade / Dispersão):** Gráfico de Combo ou Dispersão comparando o total de registros/valores versus a quantidade de entidades ativas `(SCD2 Safe)` por `{dim1_nome}[{dim1_col}]`.
+  * **Direita / Rodapé (Matriz Analítica com Drill-Down):** Hierarquia nas linhas: `{dim1_nome}[{dim1_col}]` ➔ `{dim2_nome}[{dim2_col}]` ➔ `{dim1_nome}[{dim1_nk}]`, permitindo exportar o detalhamento nominal auditável.
+
+### 📄 Página 3: Análise de Perfil, Cruzamentos Dimensionais e Concentração (Pareto 80/20)
+* **Objetivo:** Identificar sazonalidade, concentração de recursos e comparativos Ano contra Ano (`YoY`).
+* **Corpo Principal:**
+  * **Esquerda (Curva de Concentração / Pareto):** Gráfico de Colunas e Linha mostrando o valor absoluto por categoria e o acumulado percentual (`% Participacao`).
+  * **Direita (Comparativo Atual vs. Ano Anterior):** Gráfico de Barras Agrupadas comparando a medida principal com a medida `(Ano Anterior)` e cartão de destaque para `[% Variacao YoY]`.
+
+### 📄 Página 4: Governança de Dados, Qualidade e Monitoramento de Sentinela (`-1`)
+* **Objetivo:** Garantir transparência técnica para a equipe de Engenharia de Dados e gestores sobre registros órfãos (`FK = -1`) e histórico de versões SCD Tipo 2 (`SIN_ATIVO`).
+* **Linha Superior (Cartões de Qualidade):**
+  * Exibir: {kpis_p4_txt}.
+* **Corpo Principal:**
+  * **Esquerda:** Gráfico de Colunas Empilhadas por `{dim_tempo_nome}[DES_MES_ANO]` exibindo a proporção de registros válidos (`FK <> -1`) vs. registros na linha sentinela (`FK = -1`).
+  * **Direita:** Tabela de Auditoria listando `{dim1_nome}[{dim1_nk}]`, `{dim1_nome}[{dim1_col}]`, `SIN_ATIVO`, `DTC_EFETIVACAO` e `DTC_EXPIRACAO` para conferência das versões históricas abertas pelo ODI 12c.
 
 ---
 
-## 7. Consultas Rápidas de Conferência (Power BI vs. Oracle `{schema}`)
+## 7. Consultas SQL Rápidas de Conferência (Power BI vs. Oracle `{schema}`)
 
-Execute as consultas abaixo no Oracle antes de publicar o painel para garantir reconciliação de **100%** com os cartões do Power BI:
+Execute as consultas abaixo no DBeaver / SQL Developer antes de publicar o painel. Os valores retornados pelo banco **devem bater em 100%** com os cartões da Página 1 e da Página 4 do Power BI:
 
 ```sql
 {sql_conf_txt}
@@ -1328,20 +1710,23 @@ Execute as consultas abaixo no Oracle antes de publicar o painel para garantir r
 ## 8. 💡 Radar Consultivo da IA — Potencial Analítico Adicional no Modelo
 
 > [!TIP]
-> **Escopo Consultivo Separado:** Métricas e cruzamentos adicionais já suportados pelas colunas físicas de `{schema}` para evolução futura do dashboard:
+> **Escopo Consultivo Separado:** Cruzamentos e indicadores de alto valor já suportados pelas colunas físicas de `{schema}` que podem ser ativados na fase evolutiva do dashboard:
 
-| Análise / KPI Sugerido | Coluna Física no DW | Valor Estratégico |
+| Análise / KPI Sugerido | Coluna Física no DW | Valor Estratégico para a Gestão |
 | :--- | :--- | :--- |
 {radar_txt}
 
 ---
 
-## 9. Checklist de Homologação Pré-Publicação
+## 9. Checklist de Homologação Pré-Publicação (Quality Gate BI)
 
-- [ ] **Check 1 (Star Schema):** Todos os relacionamentos estão configurados como `1:*` com filtro cruzado **Único (`Single`)**.
-- [ ] **Check 2 (Calendário):** `{dim_tempo_nome}` marcada como Tabela de Data e colunas de mês/semestre ordenadas numericamente.
-- [ ] **Check 3 (Reconciliação SQL):** Os valores dos cartões principais conferem 100% com as queries SQL da **Seção 7**.
-- [ ] **Check 4 (Segmentadores Sincronizados):** Filtros globais configurados com *Sync Slicers* entre as páginas do relatório.
+- [ ] **Check 1 (Star Schema `1:*` Único):** Todos os relacionamentos estão ativos como `1:*` com direção de filtro **Única (`Single`)** e não há nenhum relacionamento direto entre tabelas Fato.
+- [ ] **Check 2 (Dimensão Calendário e Ordenação):** `{dim_tempo_nome}` foi marcada como *Tabela de Data* e as colunas `DES_MES`, `DES_MES_ANO` e `DES_SEMESTRE` estão classificadas pelas respectivas colunas numéricas (`Sort by Column`).
+- [ ] **Check 3 (Blindagem SCD Tipo 2):** Todas as contagens de entidades/pessoas utilizam as medidas **`(SCD2 Safe)`** baseadas em `SUMMARIZE(..., DIM[NK])` em vez de `DISTINCTCOUNT` ingênuo na `DIMENSION_KEY`.
+- [ ] **Check 4 (Proibição de Soma de Percentuais):** Nenhuma coluna `PER_*` ou taxa possui agregação `SUM`; todas utilizam `DIVIDE` ponderado ou `AVERAGE`.
+- [ ] **Check 5 (Tratamento da Linha Sentinela `-1`):** Somatórios gerais incluem a linha `-1` (`"Não Informado"`) e contagens distintas de entidades filtram `FK <> -1`.
+- [ ] **Check 6 (*Sync Slicers*):** Os filtros globais de Ano, Mês e dimensões principais estão sincronizados entre as Páginas 1, 2 e 3.
+- [ ] **Check 7 (Reconciliação SQL 100%):** Os números exibidos nos Cartões KPI do Power BI foram confrontados com as 3 queries SQL da **Seção 7** e apresentaram divergência **zero**.
 """
 
 
@@ -1424,6 +1809,238 @@ def _obter_sk_dim(d: dict) -> str:
     return cols[0]["nome_dw"].upper() if cols else "DIMENSION_KEY"
 
 
+def derivar_sigla_curta_odi(projeto: str) -> str:
+    """
+    Deriva uma sigla curta de 2 a 4 caracteres para uso em objetos sujeitos ao
+    limite estrito de 30 caracteres do ODI 12c (ORA-00972: identifier is too long),
+    evitando que prefixos de steps internos (ex: C$_0, I$_, E$_, TGT_INS_, LKP_)
+    ultrapassem 30 bytes no repositório do ODI 12c.
+    """
+    limpo = re.sub(r"[^A-Z0-9_]", "_", (projeto or "DW").upper()).strip("_")
+    partes = [p for p in limpo.split("_") if p and p not in ("DW", "PROJETO", "SISTEMA", "DE", "DA", "DO", "DOS", "DAS", "E")]
+    if not partes:
+        return limpo[:4] or "DW"
+    if len(partes) == 1:
+        p0 = partes[0]
+        return p0[:4] if len(p0) > 4 else p0
+    iniciais = "".join(p[0] for p in partes)
+    if 2 <= len(iniciais) <= 4:
+        return iniciais
+    return iniciais[:4]
+
+
+def validar_tamanho_identificador_odi(nome_obj: str, tipo_obj: str = "GERAL") -> tuple:
+    """
+    Valida se o identificador físico respeita a margem de segurança do ODI 12c (<= 30 bytes com prefixos).
+    Retorna (aprovado: bool, tamanho_atual: int, limite_recomendado: int).
+    - DIM_*: máx 22 chars (para caber ODI_DIM_* <= 26 e TGT_INS_DIM_* <= 30)
+    - ODI_DIM_* / SEQ_* / FATO_* / STG_*: máx 26 chars (para caber C$_0 / I$_ <= 30)
+    """
+    up = (nome_obj or "").upper().strip()
+    tam = len(up)
+    if tipo_obj.upper() == "DIM" or (up.startswith("DIM_") and not up.startswith("ODI_DIM_")):
+        lim = 22
+    else:
+        lim = 26
+    return (tam <= lim, tam, lim)
+
+
+def abreviar_identificador_odi(prefixo: str, raw_name: str, sigla_curta: str = "", max_len: int = 22) -> str:
+    """
+    Gera um nome físico `<PREFIXO>_[<SIGLA>_]<TEMA>` garantidamente `<= max_len` caracteres
+    (22 para DIM_*, 26 para FATO_*/STG_*/ODI_DIM_*) para evitar `ORA-00972` no ODI 12c.
+    """
+    pref = prefixo.upper().rstrip("_")
+    corpo = re.sub(r"[^A-Z0-9_]", "_", (raw_name or "").upper()).strip("_")
+    sig = (sigla_curta or "").upper().strip("_")
+    if sig and not corpo.startswith(f"{sig}_") and corpo != sig:
+        candidato = f"{pref}_{sig}_{corpo}"
+    else:
+        candidato = f"{pref}_{corpo}"
+    if len(candidato) <= max_len:
+        return candidato
+
+    # Sem duplicar sigla se ainda couber
+    candidato_sem_sig = f"{pref}_{corpo}"
+    if len(candidato_sem_sig) <= max_len and not sig:
+        return candidato_sem_sig
+
+    mapa_abrev = {
+        "PROFISSIONAL": "PROF",
+        "PROFISSIONAIS": "PROF",
+        "DEPARTAMENTO": "DEPTO",
+        "SECRETARIA": "SEC",
+        "ALOCACAO": "ALOC",
+        "ATENDIMENTO": "ATEND",
+        "FORNECEDOR": "FORN",
+        "MOVIMENTACAO": "MOV",
+        "PAGAMENTO": "PAG",
+        "ORCAMENTO": "ORC",
+        "INDICADOR": "IND",
+        "ORGANIZACAO": "ORG",
+        "CAPACIDADE": "CAPAC",
+        "SUSTENTACAO": "SUST",
+        "GESTAO": "GS",
+        "MENSAL": "MENS",
+        "RESUMO": "RES",
+        "HISTORICO": "HIST",
+        "CONTRATO": "CONTR",
+        "UNIDADE": "UNID",
+    }
+    tokens = [mapa_abrev.get(tok, tok) for tok in corpo.split("_") if tok]
+    corpo_abrev = "_".join(tokens)
+    if sig and not corpo_abrev.startswith(f"{sig}_") and corpo_abrev != sig:
+        cand = f"{pref}_{sig}_{corpo_abrev}"
+    else:
+        cand = f"{pref}_{corpo_abrev}"
+    if len(cand) <= max_len:
+        return cand
+    return cand[:max_len].rstrip("_")
+
+
+def _fato_possui_sk_propria(f: dict, nomes_dims: set) -> tuple[bool, str]:
+    """
+    Verifica se a tabela Fato possui uma coluna de Surrogate Key própria (ex: SK_FATO_*, SK_RESUMO, ID_FATO_*)
+    distinta das chaves estrangeiras (FKs) para Dimensões.
+    Retorna `(possui_sk_propria: bool, nome_coluna_sk: str)`.
+    Quando a Fato possui grão composto apenas pelas FKs de dimensão + chaves degeneradas (como em COPSD),
+    retorna `(False, "")` para que não seja referenciada uma `SEQ_FATO_*.NEXTVAL` inexistente.
+    """
+    cols = f.get("colunas", [])
+    if not cols:
+        return False, ""
+    fks_cols = {fk["coluna"].upper() for fk in identificar_fks_fato(f, nomes_dims)}
+    pks = [p.upper() for p in f.get("pks", [])]
+
+    for c in cols:
+        cn = c["nome_dw"].upper()
+        if cn.startswith(("SK_FATO", "SK_FAT", "ID_FATO", "ID_FAT")):
+            return True, cn
+
+    if len(pks) == 1:
+        pk0 = pks[0]
+        if pk0 not in fks_cols and not pk0.startswith("DIM_"):
+            return True, pk0
+
+    c0 = cols[0]["nome_dw"].upper()
+    if c0.startswith("SK_") and c0 not in fks_cols:
+        # Verificar se c0 aponta para alguma dimensão pelo sufixo
+        suf = re.sub(r"^SK_", "", c0)
+        aponta_dim = any(
+            d_up.endswith(f"_{suf}") or d_up == f"DIM_{suf}" or "TEMPO" in suf
+            for d_up in nomes_dims
+        )
+        if not aponta_dim:
+            return True, c0
+
+    return False, ""
+
+
+def construir_script_controle_carga_eta(
+    dims: list,
+    fatos: list,
+    schema: str,
+    projeto: str,
+    ts_dat: str,
+    ts_idx: str,
+) -> str:
+    """
+    Gera o script `01_tb_controle_carga.sql` com o padrão corporativo completo:
+      1) `ETA_ETAPAS_CARGA` (bloco PL/SQL idempotente seguro contra ORA-00955, comentários 100% nas 5 colunas e MERGE INTO das etapas STG/DIM/FATO)
+      2) `TB_CONTROLE_CARGA` (telemetria detalhada de execução por lote)
+    """
+    linhas = [
+        "-- =============================================================================",
+        f"-- NINHO — 01_tb_controle_carga.sql (PROJETO: {projeto} | SCHEMA: {schema})",
+        "-- Padrão Corporativo: ETA_ETAPAS_CARGA (Idempotente ORA-00955 Safe) + TB_CONTROLE_CARGA",
+        "-- =============================================================================",
+        "",
+        "-- 1. Criação idempotente de ETA_ETAPAS_CARGA (Padrão Apache Hop / ODI 12c)",
+        "DECLARE",
+        "    e_table_exists EXCEPTION;",
+        "    PRAGMA EXCEPTION_INIT(e_table_exists, -955);",
+        "BEGIN",
+        "    EXECUTE IMMEDIATE '",
+        f"        CREATE TABLE {schema}.ETA_ETAPAS_CARGA (",
+        "            ETA_COD_ETAPA           NUMBER(10)          NOT NULL,",
+        "            ETA_DES_ETAPA           VARCHAR2(200 CHAR)  NOT NULL,",
+        "            ETA_TABELA_ALVO         VARCHAR2(100 CHAR)  NOT NULL,",
+        "            ETA_DATA_ULT_ATUALIZACAO DATE               DEFAULT SYSDATE NOT NULL,",
+        "            ETA_STATUS_ULT_EXECUCAO VARCHAR2(30 CHAR)   DEFAULT ''PENDENTE'' NOT NULL,",
+        f"            CONSTRAINT PK_ETA_ETAPAS_CARGA PRIMARY KEY (ETA_COD_ETAPA) USING INDEX TABLESPACE {ts_idx}",
+        f"        ) TABLESPACE {ts_dat}",
+        "    ';",
+        "EXCEPTION",
+        "    WHEN e_table_exists THEN NULL;",
+        "END;",
+        "/",
+        "",
+        f"COMMENT ON TABLE {schema}.ETA_ETAPAS_CARGA IS 'Tabela corporativa de controle de etapas de carga ETL (Apache Hop / ODI 12c). Uma linha representa uma etapa monitorada do pipeline.';",
+        f"COMMENT ON COLUMN {schema}.ETA_ETAPAS_CARGA.ETA_COD_ETAPA IS 'Código identificador sequencial da etapa de carga (PK).';",
+        f"COMMENT ON COLUMN {schema}.ETA_ETAPAS_CARGA.ETA_DES_ETAPA IS 'Descrição funcional da etapa de extração/transformação/carga.';",
+        f"COMMENT ON COLUMN {schema}.ETA_ETAPAS_CARGA.ETA_TABELA_ALVO IS 'Nome físico da tabela alvo (STG_*, DIM_* ou FATO_*) atualizada pela etapa.';",
+        f"COMMENT ON COLUMN {schema}.ETA_ETAPAS_CARGA.ETA_DATA_ULT_ATUALIZACAO IS 'Data e hora da última execução bem-sucedida da etapa.';",
+        f"COMMENT ON COLUMN {schema}.ETA_ETAPAS_CARGA.ETA_STATUS_ULT_EXECUCAO IS 'Status operacional da última execução (SUCESSO, ERRO, EM_ANDAMENTO, PENDENTE).';",
+        "",
+    ]
+
+    etapas = []
+    cod = 1
+    for d in dims:
+        dn = d["nome_tabela"].upper()
+        if "TEMPO" in dn or "CALENDARIO" in dn:
+            continue
+        stg_n = re.sub(r"^DIM_", "STG_", dn)
+        etapas.append((cod, f"Carga Stage {stg_n}", stg_n))
+        cod += 1
+        etapas.append((cod, f"Carga Dimensão SCD2 {dn}", dn))
+        cod += 1
+    for f in fatos:
+        fn = f["nome_tabela"].upper()
+        stg_f = re.sub(r"^(FATO|FAT)_", "STG_", fn)
+        etapas.append((cod, f"Carga Stage {stg_f}", stg_f))
+        cod += 1
+        etapas.append((cod, f"Carga Tabela Fato {fn}", fn))
+        cod += 1
+
+    if etapas:
+        linhas.append("-- Registro idempotente das etapas do projeto em ETA_ETAPAS_CARGA")
+        for c_etapa, desc_etapa, tab_alvo in etapas:
+            linhas.extend([
+                f"MERGE INTO {schema}.ETA_ETAPAS_CARGA T",
+                f"USING (SELECT {c_etapa} AS COD, '{desc_etapa}' AS DES, '{tab_alvo}' AS ALVO FROM DUAL) S",
+                "ON (T.ETA_COD_ETAPA = S.COD)",
+                "WHEN NOT MATCHED THEN",
+                "    INSERT (ETA_COD_ETAPA, ETA_DES_ETAPA, ETA_TABELA_ALVO, ETA_DATA_ULT_ATUALIZACAO, ETA_STATUS_ULT_EXECUCAO)",
+                "    VALUES (S.COD, S.DES, S.ALVO, SYSDATE, 'PENDENTE');",
+            ])
+        linhas.append("COMMIT;")
+        linhas.append("")
+
+    linhas.extend([
+        "-- 2. Tabela complementar de telemetria detalhada de lotes (TB_CONTROLE_CARGA)",
+        f"CREATE TABLE {schema}.TB_CONTROLE_CARGA (",
+        "    COD_CARGA         NUMBER(10)          GENERATED BY DEFAULT AS IDENTITY NOT NULL,",
+        f"    SGL_PROJETO       VARCHAR2(50 CHAR)   DEFAULT '{projeto}' NOT NULL,",
+        "    NOM_OBJETO_ALVO   VARCHAR2(128 CHAR)  NOT NULL,",
+        "    TIP_CAMADA        VARCHAR2(20 CHAR)   NOT NULL,",
+        "    DTC_INICIO_CARGA  TIMESTAMP           DEFAULT SYSTIMESTAMP NOT NULL,",
+        "    DTC_FIM_CARGA     TIMESTAMP           NULL,",
+        "    QTD_LIDOS         NUMBER(15)          DEFAULT 0,",
+        "    QTD_INSERIDOS     NUMBER(15)          DEFAULT 0,",
+        "    QTD_ATUALIZADOS   NUMBER(15)          DEFAULT 0,",
+        "    QTD_REJEITADOS    NUMBER(15)          DEFAULT 0,",
+        "    IND_STATUS        VARCHAR2(20 CHAR)   DEFAULT 'EM_ANDAMENTO' NOT NULL,",
+        "    DES_MENSAGEM_ERRO VARCHAR2(4000 CHAR) NULL,",
+        f"    CONSTRAINT PK_TB_CONTROLE_CARGA PRIMARY KEY (COD_CARGA) USING INDEX TABLESPACE {ts_idx}",
+        f") TABLESPACE {ts_dat};",
+        "",
+        f"COMMENT ON TABLE {schema}.TB_CONTROLE_CARGA IS 'Tabela corporativa de auditoria e telemetria de execução de cargas ETL (STG/DIM/FATO). Uma linha representa uma execução de lote.';",
+        "",
+    ])
+    return "\n".join(linhas)
+
+
 def _obter_nk_dim(d: dict) -> str:
     sk = _obter_sk_dim(d)
     for c in d.get("colunas", []):
@@ -1432,9 +2049,19 @@ def _obter_nk_dim(d: dict) -> str:
             return cn
     for c in d.get("colunas", []):
         cn = c["nome_dw"].upper()
-        if cn not in (sk, "VERSION", "DTC_INICIO", "DTC_EXPIRACAO", "FLG_ATUAL"):
+        if cn not in (sk, "VERSION", "DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATUAL", "SIN_ATIVO", "DES_ATUALIZAR"):
             return cn
     return sk
+
+
+def _eh_nk_textual(d: dict, nk_col: str) -> bool:
+    """Retorna True se a coluna de Chave Natural (NK) for textual (VARCHAR2/CHAR/CLOB)."""
+    nk_up = (nk_col or "").upper()
+    for c in d.get("colunas", []):
+        if c["nome_dw"].upper() == nk_up:
+            tp = c.get("tipo_oracle", "").upper()
+            return any(t in tp for t in ("CHAR", "CLOB", "TEXT"))
+    return False
 
 
 def construir_script_linha_default(dims: list, schema: str) -> str:
@@ -1492,9 +2119,9 @@ def construir_scripts_odi(
 ) -> tuple:
     """
     Gera os 3 scripts SQL corporativos do ODI 12c a partir do DDL:
-      1. 03_create_odi_dim_tables.sql (Tabelas auxiliares ODI_DIM_*)
-      2. 03_selects_odi_dimensoes.sql (Consultas analíticas SCD2 com ROW_NUMBER + LEAD)
-      3. 04_select_odi_fato.sql (Consulta da Fato com LEFT JOIN nas Dimensões e NVL -1)
+      1. 03_create_odi_dim_tables.sql (Tabelas auxiliares ODI_DIM_* 100% NULLABLE para Dimension Pattern)
+      2. 03_selects_odi_dimensoes.sql (Consultas analíticas SCD2 com UPPER(TRIM(NK)) + ROW_NUMBER + LEAD)
+      3. 04_select_odi_fato.sql (Consulta da Fato com LEFT JOIN simétrico nas Dimensões e NVL -1)
     """
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     schema_s = (schema_stg or schema).upper()
@@ -1504,14 +2131,20 @@ def construir_scripts_odi(
         "-- =============================================================================",
         f"-- TABELAS AUXILIARES DE PREPARAÇÃO SCD2 DO ODI (ODI_DIM_*) — PROJETO {projeto}",
         f"-- Schema Alvo: {schema} | Gerado em: {agora}",
+        "-- Padrão ODI : Utilizadas como 'Armazenamento de Dados de Teste' (STG_DIM_*)",
+        "--              no componente nativo de Dimensão (Dimension Pattern / Asterisco).",
+        "--              ATENÇÃO: Todas as colunas (inclusive DIMENSION_KEY, DTC_EFETIVACAO",
+        "--              e DTC_EXPIRACAO) DEVEM ser NULLABLE e sem PK para evitar ORA-01400",
+        "--              na etapa intermediária STG_DIM antes do disparo da Sequence no Target.",
         "-- =============================================================================",
         "",
     ]
     linhas_odi_sel_dim = [
         "-- =============================================================================",
-        f"-- CONSULTAS ANALÍTICAS SQL PARA O ODI 12c (MAP_001_ODI_DIM_*) — PROJETO {projeto}",
+        f"-- CONSULTAS ANALÍTICAS SQL PARA O ODI 12c (CARGA_DIM_* / MAP_001) — PROJETO {projeto}",
         f"-- Schema Alvo: {schema} | Stage Origem: {schema_s} | Gerado em: {agora}",
-        "-- Instrução  : Cole cada SELECT na propriedade Custom SQL do Dataset no ODI 12c.",
+        "-- Instrução  : No padrão Dimension Pattern (CARGA_DIM_*), aplique UPPER(TRIM(NK))",
+        "--              no componente EXPRESSION; ou cole este SELECT na aba Custom SQL.",
         "-- =============================================================================",
         "",
     ]
@@ -1538,13 +2171,15 @@ def construir_scripts_odi(
         stg_origem = stg_map.get(entidade, f"STG_{entidade}")
         sk_col = _obter_sk_dim(d)
         nk_col = _obter_nk_dim(d)
+        nk_textual = _eh_nk_textual(d, nk_col)
 
         col_defs = []
         cols_negocio = []
         nomes_cols_dim = {c["nome_dw"].upper() for c in d["colunas"]}
         for c in d["colunas"]:
             cname = c["nome_dw"].upper()
-            ctype = c["tipo_oracle"]
+            # Remover qualquer NOT NULL residual para garantir 100% NULLABLE na ODI_DIM_* (evita ORA-01400 no STG_DIM)
+            ctype = re.sub(r"\bNOT\s+NULL\b", "", c["tipo_oracle"], flags=re.IGNORECASE).strip()
             col_defs.append(f"    {cname:<28} {ctype}")
             if cname not in (sk_col, nk_col) and cname not in cols_scd_controle:
                 cols_negocio.append(cname)
@@ -1556,16 +2191,17 @@ def construir_scripts_odi(
         clausula_idx_cols = f"{nk_col}, {col_dt_idx} DESC" if col_dt_idx else nk_col
 
         linhas_odi_ddl.extend([
-            f"-- Tabela Auxiliar ODI para {tname}",
+            f"-- Tabela Auxiliar ODI para {tname} (100% NULLABLE para STG_DIM do Dimension Pattern)",
             f"CREATE TABLE {schema}.{odi_table} (",
             ",\n".join(col_defs),
             ");",
             f"CREATE INDEX {schema}.IDX_{odi_table[:18]}_NK ON {schema}.{odi_table} ({clausula_idx_cols});",
-            f"COMMENT ON TABLE {schema}.{odi_table} IS 'Tabela intermediária de stage analítico do ODI 12c para cálculo de versão e vigência SCD2 de {tname}.';",
+            f"COMMENT ON TABLE {schema}.{odi_table} IS 'Tabela intermediária de stage analítico (Armazenamento de Dados de Teste) do ODI 12c para cálculo de versão e vigência SCD2 de {tname}.';",
             "",
         ])
 
-        sel_cols = ",\n        ".join([f"S.{c}" for c in cols_negocio]) if cols_negocio else f"S.{nk_col}"
+        expr_nk_stg = f"UPPER(TRIM(S.{nk_col}))" if nk_textual else f"S.{nk_col}"
+        sel_cols = ",\n        ".join([f"S.{c}" for c in cols_negocio]) if cols_negocio else f"{expr_nk_stg}"
         outer_cols = ",\n    ".join([f"B.{c}" for c in cols_negocio]) if cols_negocio else f"B.{nk_col}"
 
         scd_outer_exprs = []
@@ -1593,13 +2229,13 @@ def construir_scripts_odi(
             "-- -----------------------------------------------------------------------------",
             "WITH BASE_DEDUP AS (",
             "    SELECT",
-            f"        S.{nk_col},",
+            f"        {expr_nk_stg} AS {nk_col},",
             f"        {sel_cols},",
             "        SYSDATE AS DTC_MOVIMENTO,",
-            f"        ROW_NUMBER() OVER (PARTITION BY S.{nk_col} ORDER BY S.{nk_col}) AS NR_VERSAO,",
-            f"        LEAD(SYSDATE, 1) OVER (PARTITION BY S.{nk_col} ORDER BY S.{nk_col}) AS PROX_DTC_INICIO",
+            f"        ROW_NUMBER() OVER (PARTITION BY {expr_nk_stg} ORDER BY {expr_nk_stg}) AS NR_VERSAO,",
+            f"        LEAD(SYSDATE, 1) OVER (PARTITION BY {expr_nk_stg} ORDER BY {expr_nk_stg}) AS PROX_DTC_INICIO",
             f"    FROM {schema_s}.{stg_origem} S",
-            f"    WHERE S.{nk_col} IS NOT NULL",
+            f"    WHERE {expr_nk_stg} IS NOT NULL",
             ")",
             "SELECT",
             f"    B.{nk_col},",
@@ -1611,7 +2247,7 @@ def construir_scripts_odi(
 
     linhas_odi_fato = [
         "-- =============================================================================",
-        f"-- CONSULTAS DE RESOLUÇÃO DE SKs PARA TABELAS FATO (MAP_FATO_*) — PROJETO {projeto}",
+        f"-- CONSULTAS DE RESOLUÇÃO DE SKs PARA TABELAS FATO (CARGA_FATO_*) — PROJETO {projeto}",
         f"-- Schema Alvo: {schema} | Stage Origem: {schema_s} | Estratégia: {estrategia.upper()} | Gerado em: {agora}",
         "-- =============================================================================",
         "",
@@ -1628,7 +2264,7 @@ def construir_scripts_odi(
         fname = f["nome_tabela"].upper()
         ent_fato = re.sub(r"^(FATO_|FAT_)", "", fname)
         stg_fato = stg_map.get(ent_fato, f"STG_{ent_fato}")
-        sk_fato = f["colunas"][0]["nome_dw"].upper() if f["colunas"] else f"SK_{ent_fato}"
+        tem_sk_fato, sk_fato = _fato_possui_sk_propria(f, nomes_dims_set)
         fks_f_map = {fk["coluna"].upper(): fk["tabela_ref"].upper() for fk in identificar_fks_fato(f, nomes_dims_set)}
 
         select_parts = []
@@ -1637,7 +2273,7 @@ def construir_scripts_odi(
 
         for c in f["colunas"]:
             cname = c["nome_dw"].upper()
-            if cname == sk_fato and cname not in fks_f_map:
+            if tem_sk_fato and cname == sk_fato and cname not in fks_f_map:
                 continue
             if cname in fks_f_map or cname.startswith(("SK_", "DIM_")) or cname.endswith("_KEY"):
                 dim_match = dims_by_name.get(fks_f_map.get(cname, ""))
@@ -1656,19 +2292,25 @@ def construir_scripts_odi(
                     d_name = dim_match["nome_tabela"].upper()
                     d_sk = _obter_sk_dim(dim_match)
                     d_nk = _obter_nk_dim(dim_match)
+                    d_nk_textual = _eh_nk_textual(dim_match, d_nk)
+                    cond_join_nk = (
+                        f"UPPER(TRIM(S.{d_nk})) = UPPER(TRIM({alias}.{d_nk}))"
+                        if d_nk_textual
+                        else f"S.{d_nk} = {alias}.{d_nk}"
+                    )
                     tem_scd2 = any(col["nome_dw"].upper() in ("DTC_EXPIRACAO", "DTC_FIM_VIGENCIA") for col in dim_match["colunas"])
                     col_exp = "DTC_FIM_VIGENCIA" if any(col["nome_dw"].upper() == "DTC_FIM_VIGENCIA" for col in dim_match["colunas"]) else "DTC_EXPIRACAO"
                     select_parts.append(f"    NVL({alias}.{d_sk}, -1) AS {cname}")
                     if tem_scd2:
                         join_parts.append(
                             f"LEFT JOIN {schema}.{d_name} {alias}\n"
-                            f"    ON S.{d_nk} = {alias}.{d_nk}\n"
+                            f"    ON {cond_join_nk}\n"
                             f"   AND {alias}.{col_exp} IS NULL"
                         )
                     else:
                         join_parts.append(
                             f"LEFT JOIN {schema}.{d_name} {alias}\n"
-                            f"    ON S.{d_nk} = {alias}.{d_nk}"
+                            f"    ON {cond_join_nk}"
                         )
                 else:
                     select_parts.append(f"    NVL(S.{cname}, -1) AS {cname}")
@@ -1699,90 +2341,679 @@ def construir_scripts_odi(
 def construir_guias_odi_modulares(
     dims: list, fatos: list, schema: str, projeto: str, estrategia: str
 ) -> dict:
-    """Gera os guias modulares de construção no Canvas do ODI 12c (09_relatorio_estrategias/)."""
+    """
+    Gera os guias modulares completos de construção no Canvas do ODI 12c (09_relatorio_estrategias/):
+    1. RELATORIO_ESTRATEGIAS.md (auditoria <= 30 chars, Dimension Pattern, diagrama ASCII do pacote PACK_CARGA_* e matriz ok/ko)
+    2. guia_estrategias_odi_dim_*.md (5 seções com Atributos de Nível SCD2 coluna por coluna e tabela completa do EXPRESSION com setas brancas)
+    3. guia_estrategias_odi_fato_*.md (5 seções com SQL deduplicado RN_DEDUP, comparativo 3 estratégias, Canvas ASCII, Lookups exatos, tabela coluna por coluna da Fato e Generate Inline View = true)
+    """
     agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    sigla_odi = derivar_sigla_curta_odi(projeto)
     arquivos = {}
 
-    resumo_linhas = [
-        f"# 📘 Relatório de Estratégias e Orquestração ODI 12c — Projeto `{projeto}`",
-        "",
-        f"> **Schema Alvo:** `{schema}` | **Estratégia da Fato:** `Estratégia {estrategia.upper()}` | **Gerado em:** `{agora}`",
-        "",
-        "## 1. Visão Geral da Esteira no ODI 12c",
-        "",
-        "| Ordem | Objeto ODI | Tipo | Alvo Físico | IKM Recomendado |",
-        "| :---: | :--- | :--- | :--- | :--- |",
-    ]
-    ordem = 1
+    dims_by_name = {d["nome_tabela"].upper(): d for d in dims}
+    nomes_dims_set = set(dims_by_name.keys())
+    dim_tempo_nome = "DIM_TEMPO"
+    for d in dims:
+        dn = d["nome_tabela"].upper()
+        if "TEMPO" in dn or "CALENDARIO" in dn:
+            dim_tempo_nome = dn
+            break
+
+    linhas_conformidade_30 = []
+    linhas_tab_dims_resumo = []
+    linhas_tab_fatos_resumo = []
+    passos_pacote_ascii_dims = []
+    passos_pacote_ascii_fatos = []
+    matriz_pacote_rows = []
+    ordem_pkg = 1
+
     for d in dims:
         tname = d["nome_tabela"].upper()
         if "TEMPO" in tname or "CALENDARIO" in tname:
             continue
         ent = re.sub(r"^DIM_", "", tname)
         ent_low = ent.lower()
-        resumo_linhas.append(f"| {ordem} | `TRT_TRUNC_ODI_DIM_{ent}` | Procedure | `{schema}.ODI_{tname}` | `TRUNCATE TABLE` |")
-        ordem += 1
-        resumo_linhas.append(f"| {ordem} | `MAP_001_ODI_DIM_{ent}` | Mapping (Custom SQL) | `{schema}.ODI_{tname}` | `IKM Oracle Insert` (`APPEND`) |")
-        ordem += 1
-        resumo_linhas.append(f"| {ordem} | `MAP_002_DIM_{ent}` | Mapping (SCD2) | `{schema}.{tname}` | `IKM Oracle Incremental Update (MERGE)` |")
-        ordem += 1
+        odi_tname = f"ODI_{tname}"
+        seq_tname = f"SEQ_{tname}"
+        stg_tname = f"STG_{ent}"
+        mapa_dim = f"CARGA_{tname}"
+        guia_dim_arq = f"guia_estrategias_odi_dim_{ent_low}.md"
+
+        nk_col = _obter_nk_dim(d)
+        sk_col = _obter_sk_dim(d)
+        nk_textual = _eh_nk_textual(d, nk_col)
+        expr_nk_odi = (
+            f"UPPER(TRIM(NVL({stg_tname}.{nk_col}, 'NAO INFORMADO')))"
+            if nk_textual
+            else f"NVL({stg_tname}.{nk_col}, -1)"
+        )
+
+        tgt_ins_nome = f"TGT_INS_{tname}"
+        status_30_dim = "✅ OK" if len(tname) <= 22 and len(odi_tname) <= 26 else "⚠️ Revisar Sigla"
+        linhas_conformidade_30.append(
+            f"| **Dimensão (SCD2)** | `{tname}` | `{len(tname)}` chars | `{tgt_ins_nome}` (`{len(tgt_ins_nome)}` chars) | {status_30_dim} |"
+        )
+        linhas_conformidade_30.append(
+            f"| **Stage Teste ODI** | `{odi_tname}` | `{len(odi_tname)}` chars | `I$_{odi_tname}` (`{len('I$_' + odi_tname)}` chars) | {status_30_dim} |"
+        )
+
+        linhas_tab_dims_resumo.append(
+            f"| `{schema}.{tname}` | `{schema}.{odi_tname}` | `{schema}.{seq_tname}` | `{mapa_dim}` | [`{guia_dim_arq}`](./{guia_dim_arq}) |"
+        )
+        passos_pacote_ascii_dims.append(
+            f"   │  {ordem_pkg}. [Mapeamento] {mapa_dim:<26} (SCD Tipo 2 via {odi_tname})      │"
+        )
+        matriz_pacote_rows.append(
+            f"| **{ordem_pkg}** | Mapeamento (Dimensão) | `{mapa_dim}` | Passo {ordem_pkg + 1} | Notificar Erro / Abortar | Carrega `{tname}` via *Dimension Pattern* usando `{odi_tname}` como Stage de Teste |"
+        )
+        ordem_pkg += 1
+
+        # Construir tabelas coluna por coluna da Dimensão (Seção 3.3 e Seção 4.2)
+        linhas_atributos_nivel = []
+        linhas_expression_dim = []
+        for c in d["colunas"]:
+            cn = c["nome_dw"].upper()
+            tp_c = c.get("tipo_oracle", "VARCHAR2(255)").upper()
+            if cn == sk_col:
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | **`[x] Marcado`** | `Nenhum` | Chave Substituta (PK incremental gerada pela Sequence `{seq_tname}`) |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | *(Não mapear — deixar em branco)* | *(Seta branca)* | O ODI preenche automaticamente via Sequence `{seq_tname}` na etapa física `TGT_INS_{tname}` |"
+                )
+            elif cn == nk_col:
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | `Nenhum` | Chave Natural (NK) — declarada na grade *Membro da Chave Natural* abaixo |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | `{expr_nk_odi}` | `{stg_tname}.{cn}` ➔ `EXPRESSION` ➔ `{tname}` | **Chave Natural (NK)** higienizada (garante simetria 100% com o Lookup da Fato) |"
+                )
+            elif cn in ("DTC_EFETIVACAO", "DTC_INICIO", "DT_INICIO_VIGENCIA"):
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | **`Data de Início`** | Data de abertura da versão do registro no SCD Tipo 2 |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | *(Não mapear — deixar em branco)* | *(Seta branca)* | O ODI preenche automaticamente a data de início da vigência na etapa física |"
+                )
+            elif cn in ("DTC_EXPIRACAO", "DTC_FIM", "DTC_FIM_VIGENCIA", "DT_FIM_VIGENCIA"):
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | **`Data Final`** | Data de fechamento da versão anterior (fica `NULL` na versão ativa) |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | *(Não mapear — deixar em branco)* | *(Seta branca)* | O ODI controla o fechamento (`SYSDATE`) automaticamente na etapa física `TGT_CLS_` |"
+                )
+            elif cn in ("SIN_ATIVO", "FLG_ATIVO", "IND_ATIVO", "FLG_ATUAL"):
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | **`Histórico de Triggers`** | Flag de versão ativa (`'S'` vigente / `'N'` histórico fechado) |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | `'S'` | `EXPRESSION` ➔ `{tname}` | Literal fixo indicando registro ativo na entrada |"
+                )
+            elif cn == "DES_ATUALIZAR":
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | **`Histórico de Triggers`** | Atributo de controle operacional do padrão corporativo |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | `'S'` | `EXPRESSION` ➔ `{tname}` | Literal fixo de controle operacional |"
+                )
+            else:
+                eh_num = any(k in tp_c for k in ("NUMBER", "INT", "DECIMAL", "FLOAT")) and not cn.startswith(("DES_", "NOM_", "SIG_"))
+                eh_dt = "DATE" in tp_c or "TIMESTAMP" in tp_c or cn.startswith(("DTC_", "DT_", "DAT_"))
+                if eh_num:
+                    expr_col = f"NVL({stg_tname}.{cn}, 0)"
+                elif eh_dt:
+                    expr_col = f"{stg_tname}.{cn}"
+                else:
+                    expr_col = f"UPPER(TRIM(NVL({stg_tname}.{cn}, 'NAO INFORMADO')))"
+                linhas_atributos_nivel.append(
+                    f"| `{cn}` | `[ ] Desmarcado` | **`Histórico de Triggers`** | Se `{cn}` mudar na origem, o ODI fecha a versão antiga e abre uma nova linha vigente *(use `Nenhum` se preferir apenas sobrescrever sem versionar)* |"
+                )
+                linhas_expression_dim.append(
+                    f"| `{cn}` | `{expr_col}` | `{stg_tname}.{cn}` ➔ `EXPRESSION` ➔ `{tname}` | Atributo descritivo de negócio higienizado |"
+                )
 
         guia_dim = [
-            f"# 🛠️ Guia de Construção no ODI 12c — Dimensão `{tname}`",
+            f"# 🛠️ Guia Passo a Passo no ODI 12c: Dimensão `{tname}` (Padrão Nativo `Dimension Pattern`)",
             "",
-            f"> **Projeto:** `{projeto}` | **Schema:** `{schema}` | **Tabela Auxiliar:** `ODI_{tname}`",
+            f"> **Projeto:** `{projeto}` (`{sigla_odi}`) | **Schema:** `{schema}` | **Tabela Alvo:** `{tname}` (`{len(tname)}` chars) | **Tabela Auxiliar (Teste):** `{odi_tname}` (`{len(odi_tname)}` chars)",
             "",
-            f"## Passo 1 — Procedure `TRT_TRUNC_ODI_DIM_{ent}`",
-            "- **Target Technology:** `Oracle`",
-            f"- **Comando:** `TRUNCATE TABLE {schema}.ODI_{tname}`",
+            "Este guia documenta passo a passo como configurar o objeto Dimensão **`" + tname + "`** (em *Dimensões e Cubos*) e o seu **Mapa Único (`" + mapa_dim + "`)** no Oracle Data Integrator (ODI 12c), seguindo o padrão corporativo PRODEB.",
             "",
-            f"## Passo 2 — Mapping `MAP_001_ODI_DIM_{ent}` (Stage ➔ `ODI_{tname}`)",
-            "- Crie um Dataset com **Custom SQL Override** colando a query correspondente de `03_selects_odi_dimensoes.sql`.",
-            f"- Conecte ao datastore alvo `ODI_{tname}`.",
-            "- **IKM:** `IKM Oracle Insert` com hint `/*+ APPEND */` e `FLOW_CONTROL = FALSE`.",
+            "---",
             "",
-            f"## Passo 3 — Mapping `MAP_002_DIM_{ent}` (`ODI_{tname}` ➔ `{tname}`)",
-            f"- **Chave de Integração (Update Key):** Chave Natural (`{_obter_nk_dim(d)}`) + `DTC_INICIO`.",
-            f"- **Sequence da Surrogate Key (`{_obter_sk_dim(d)}`):** `:SEQ_{tname}.NEXTVAL` (Execute on Hint: **Target**).",
-            "- **IKM:** `IKM Oracle Incremental Update (MERGE)` com `COMMIT_INTERVAL = 100000`.",
+            "## 1. Visão Geral da Arquitetura Nativa (`Dimension Pattern` / Mapa Único)",
+            "",
+            "No ODI 12c, você **não precisa criar dois mapas manuais** para a dimensão. Ao cadastrar `" + tname + "` em **Dimensões e Cubos** com o padrão `Dimension Pattern` (`Asterisco`) e apontar o **Armazenamento de Dados de Teste** para `" + schema + "." + odi_tname + "`, você desenha apenas um mapa lógico simples e o próprio ODI gera toda a árvore física de SCD Tipo 2:",
+            "",
+            "```text",
+            f"  [ABA LÓGICO DO MAPA: {mapa_dim}]",
+            "",
+            "  +-----------------------+       +----------------+       +-------------------------------+",
+            f"  | {stg_tname:<21} | ----> |   EXPRESSION   | ----> | {tname:<29} |",
+            f"  | (Datastore Stage)     |       | (Padronização) |       | (Componente Dimensão - Nível) |",
+            "  +-----------------------+       +----------------+       +-------------------------------+",
+            "",
+            "  ==========================================================================================",
+            "  [ABA FÍSICO — EXPANSÃO AUTOMÁTICA PELO DIMENSION PATTERN DO ODI 12c]",
+            "",
+            "  EXPRESSION ──► DEDUP_EXPR ──► DEDUP_FLTR ──► FLTR_SRC ──► STG_" + tname[:18] + " (Grava em " + odi_tname + ")",
+            "                                                                  │",
+            "                                                                  ▼",
+            "                                                            SCD2_SRC_" + tname[:15] + " ──► EXTRACT_",
+            "                                                                                      │",
+            "                                                                                      ▼",
+            "                                                                                   LKP_CURR (Compara com " + tname + ")",
+            "                                                                                      │",
+            "                                                                                      ▼",
+            "                                                                                    SPLIT",
+            "                                                        ┌─────────────────────────────┼─────────────────────────────┐",
+            "                                                        ▼                             ▼                             ▼",
+            f"                                              TGT_INS_{tname:<16}      TGT_CLS_{tname:<16}      TGT_UPD_{tname:<16}",
+            "                                              (Insere Novos / Nova Versão)  (Fecha Versão Antiga)         (Atualiza Sem Mudança SCD2)",
+            "```",
+            "",
+            "---",
+            "",
+            "## 2. Pré-Requisitos no Oracle (Já Contemplados nos Scripts DDL)",
+            "",
+            f"1. **Tabela Física da Dimensão (`{schema}.{tname}` — `{len(tname)} caracteres`):** Criada em `02_create_dimensions.sql` com `{sk_col}` (`NOT NULL`), `{nk_col}`, atributos descritivos e colunas de vigência SCD2 (`SIN_ATIVO`, `DTC_EFETIVACAO`, `DTC_EXPIRACAO`, `DES_ATUALIZAR`).",
+            f"2. **Tabela Auxiliar de Stage/Teste (`{schema}.{odi_tname}` — `{len(odi_tname)} caracteres`):** Criada em `03_create_odi_dim_tables.sql` com a **mesma estrutura de colunas** da `{tname}`, porém **100% NULLABLE e sem Constraint de PK**.",
+            f"   * *Por que `100% NULLABLE`?* Porque na etapa física `STG_{tname}`, o ODI grava em `{odi_tname}` apenas os atributos vindos da `EXPRESSION` (deixando `{sk_col}`, `DTC_EFETIVACAO` e `DTC_EXPIRACAO` com `NULL` até a etapa final `TGT_INS_{tname}`). Se houvesse `NOT NULL` na tabela `ODI_DIM_*`, o mapa abortaria com `ORA-01400`.",
+            f"3. **Sequence (`{schema}.{seq_tname}` — `{len(seq_tname)} caracteres`):** Criada em `01_create_sequences.sql` (`START WITH 1 INCREMENT BY 1 CACHE 1000 NOORDER NOCYCLE`).",
+            "",
+            "---",
+            "",
+            f"## 3. Passo 1 — Configurar o Objeto `{tname}` em *Dimensões e Cubos*",
+            "",
+            f"No **ODI Studio** ➔ aba **Designer** ➔ **Projetos** ➔ sua pasta ➔ **Dimensões e Cubos**, crie (ou edite) a dimensão **`{tname}`**:",
+            "",
+            "### 3.1 Aba `Definição`",
+            "",
+            "| Propriedade no ODI Studio | Valor Exato a Configurar |",
+            "| :--- | :--- |",
+            f"| **Nome** | `{tname}` |",
+            "| **Tipo de Implementação** | **`Asterisco`** (com `[x] Usar Padrão` marcado) |",
+            "| **Nome do Padrão** | `Dimension Pattern` |",
+            f"| **Binding > Armazenamento de dados** | `{schema}.{tname}` |",
+            f"| **Binding > Sequência de Chave Substituta** | `{seq_tname}` |",
+            "",
+            "### 3.2 Aba `Níveis` (Tabela Superior `Níveis`)",
+            "",
+            "| Nome | Rótulo | Descrição | Armazenamento de dados | Armazenamento de Dados de Teste |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+            f"| `{ent}` | `{ent}` | `{ent}` | `{schema}.{tname}` | **`{schema}.{odi_tname}`** |",
+            "",
+            "> [!TIP]",
+            f"> O campo **Armazenamento de Dados de Teste** (`{schema}.{odi_tname}`) é o segredo que faz o ODI usar a tabela `ODI_DIM_*` automaticamente como *staging* intermediária da dimensão!",
+            "",
+            "### 3.3 Aba `Níveis` ➔ Grade Inferior `Atributos de Nível` (Regra SCD Tipo 2 Coluna por Coluna)",
+            "",
+            f"Com o nível `{ent}` selecionado, configure cada atributo exatamente como na tabela abaixo:",
+            "",
+            "| Nome do Atributo | Chave Substituta | Definição do Tipo 2 (SCD2) | Papel no Motor SCD2 do ODI |",
+            "| :--- | :---: | :--- | :--- |",
+            *linhas_atributos_nivel,
+            "",
+            "### 3.4 Aba `Níveis` ➔ Grade `Membro da Chave Natural do Nível`",
+            "",
+            "Logo abaixo de *Atributos de Nível*, na grade **Membro da Chave Natural do Nível**, clique no ícone **`+`** e adicione:",
+            f"* **`{ent}.{nk_col}`** *(É por esta coluna que o componente `LKP_CURR` do ODI identifica se o registro já existe na dimensão).* ",
+            "",
+            "### 3.5 Aba `Hierarquias`",
+            "",
+            f"* Mantenha a hierarquia `DEFAULT` contendo o nível `{ent}`.",
+            "",
+            "---",
+            "",
+            f"## 4. Passo 2 — Construir o Mapa Único `{mapa_dim}`",
+            "",
+            f"Em **Projetos** ➔ sua pasta ➔ **Mapeamentos**, crie o mapeamento **`{mapa_dim}`**:",
+            "",
+            "### 4.1 Montagem na Aba `Lógico`",
+            "",
+            f"1. Arraste o datastore de origem **`{stg_tname}`** (do Modelo `{schema}`) para o Canvas.",
+            "2. Da paleta de Componentes, arraste um componente **`EXPRESSION`** para o meio do Canvas.",
+            f"3. Da árvore **Dimensões e Cubos**, arraste o componente de Dimensão **`{tname}`** para a direita do Canvas.",
+            f"4. Conecte a saída de `{stg_tname}` na entrada de `EXPRESSION`, e a saída de `EXPRESSION` no conector de nível `{tname}.{ent}`.",
+            "",
+            "### 4.2 Tabela Completa de Atributos dentro do `EXPRESSION` (Coluna por Coluna)",
+            "",
+            f"Selecione o componente `EXPRESSION` (ou o alvo `{tname}`) e configure as expressões abaixo. **Atenção especial às 3 colunas que NÃO devem ser mapeadas (devem ficar com a seta branca no alvo):**",
+            "",
+            f"| Atributo na Dimensão Alvo (`{tname}`) | Expressão no Componente `EXPRESSION` | Ligação no Canvas | Observação Técnica |",
+            "| :--- | :--- | :---: | :--- |",
+            *linhas_expression_dim,
+            "",
+            "> [!WARNING]",
+            f"> **Regra de Ouro das Setas Brancas:** No componente alvo `{tname}` da aba **Lógico**, os atributos **`{sk_col}`**, **`DTC_EFETIVACAO`** e **`DTC_EXPIRACAO`** devem permanecer com o ícone de **seta branca (sem ligação vinda da `EXPRESSION`)**. O *Dimension Pattern* do ODI injeta `SEQ_{tname}.NEXTVAL` e `SYSDATE` automaticamente na aba **Físico**!",
+            "",
+            "### 4.3 Conferência na Aba `Físico`",
+            "",
+            f"Ao clicar na aba **Físico** do mapeamento `{mapa_dim}`, verifique:",
+            f"1. **`DEDUP_EXPR` + `DEDUP_FLTR`:** O ODI cria automaticamente um `ROW_NUMBER()` particionado por `{nk_col}` para descartar duplicatas vindas da `{stg_tname}`.",
+            f"2. **`STG_{tname}` (`{schema}.{odi_tname}`):** O ODI faz `TRUNCATE` e insere a carga deduplicada na tabela auxiliar `{odi_tname}`.",
+            f"3. **`LKP_CURR`:** Faz lookup com as linhas vigentes da `{schema}.{tname}`.",
+            "4. **`SPLIT`:** Divide o fluxo em 3 destinos físicos na tabela final:",
+            f"   * **`TGT_INS_{tname}`:** Insere registros novos (e novas versões de registros que mudaram de atributo `Histórico de Triggers`), acionando `{seq_tname}.NEXTVAL`.",
+            f"   * **`TGT_CLS_{tname}`:** Fecha a vigência (`DTC_EXPIRACAO = SYSDATE`, `SIN_ATIVO = 'N'`) da versão anterior.",
+            f"   * **`TGT_UPD_{tname}`:** Atualiza atributos caso configurado sem abertura de versão.",
+            "",
+            "---",
+            "",
+            "## 5. Passo 3 — Linha Default `-1` e Inclusão no Pacote",
+            "",
+            f"1. **Garantia da Linha Sentinela (`-1`):** Certifique-se de que o script `06_init_default_records.sql` (ou a Procedure `TRT_GARANTIR_LINHA_DEFAULT_DIM`) foi executado para manter `{sk_col} = -1` (`'Não Informado'`) em `{schema}.{tname}`.",
+            f"2. **Orquestração no Pacote (`PACK_CARGA_{sigla_odi}_DW`):** Arraste o mapeamento `{mapa_dim}` para a **Fase 1 (Carga de Dimensões)** do pacote, sempre **antes** dos mapeamentos das tabelas Fato.",
+            "",
+            "---",
+            "",
+            "## 📎 Apêndice Opcional — Padrão Tabular em 2 Mapas (`MAP_001` / `MAP_002`)",
+            "",
+            "Caso em algum cenário específico opte por mapeamentos tabulares tradicionais sem usar o objeto *Dimensões e Cubos*:",
+            f"- **Procedure `TRT_TRUNC_{odi_tname}`:** `TRUNCATE TABLE {schema}.{odi_tname}`",
+            f"- **Mapping `MAP_001_{odi_tname}` (`{stg_tname}` ➔ `{odi_tname}`):** utilize o SQL de `03_selects_odi_dimensoes.sql` com `IKM Oracle Insert` (`APPEND`).",
+            f"- **Mapping `MAP_002_{tname}` (`{odi_tname}` ➔ `{tname}`):** Update Key `({nk_col}, DTC_EFETIVACAO)`, Sequence `:{seq_tname}.NEXTVAL` no *Target* e `IKM Oracle Incremental Update (MERGE)`.",
             "",
         ]
-        arquivos[f"guia_estrategias_odi_dim_{ent_low}.md"] = "\n".join(guia_dim)
+        arquivos[guia_dim_arq] = "\n".join(guia_dim)
+
+    # Passo intermediário no pacote: Garantir linha default -1
+    passos_pacote_ascii_dims.append(
+        f"   │  {ordem_pkg}. [Procedure ] TRT_GARANTIR_LINHA_DEFAULT_DIM  (MERGE INTO SK = -1 nas DIMs) │"
+    )
+    matriz_pacote_rows.append(
+        f"| **{ordem_pkg}** | Procedure Oracle | `TRT_GARANTIR_LINHA_DEFAULT_DIM` | Passo {ordem_pkg + 1} | Notificar Erro / Abortar | Garante idempotentemente o registro sentinela `DIMENSION_KEY = -1` em todas as dimensões |"
+    )
+    ordem_pkg += 1
+
+    # Construir guias completos das Tabelas Fato
+    dim_by_key = {}
+    for d in dims:
+        ent_k = re.sub(r"^DIM_", "", d["nome_tabela"].upper())
+        dim_by_key[ent_k] = d
 
     for f in fatos:
         fname = f["nome_tabela"].upper()
         ent_f = re.sub(r"^(FATO_|FAT_)", "", fname)
         ent_f_low = ent_f.lower()
-        ikm_fato = "IKM Oracle Insert (TRUNCATE + APPEND)" if estrategia.upper() == "A" else "IKM Oracle Incremental Update (MERGE)"
-        resumo_linhas.append(f"| {ordem} | `MAP_{fname}` | Mapping (Fato) | `{schema}.{fname}` | `{ikm_fato}` |")
-        ordem += 1
+        stg_fato = f"STG_{ent_f}"
+        seq_fato = f"SEQ_{fname}"
+        mapa_fato = f"MAP_{fname}"
+        guia_fato_arq = f"guia_estrategias_odi_fato_{ent_f_low}.md"
+        ikm_fato = (
+            "IKM Oracle Insert (TRUNCATE + APPEND)"
+            if estrategia.upper() == "A"
+            else "IKM Oracle Incremental Update (MERGE)"
+        )
+        desc_estrat_fato = (
+            "Estratégia A — Carga Full / Janela (`PRC_PRE_CARGA_FATO` + `APPEND` + `PRC_POS_CARGA_FATO`)"
+            if estrategia.upper() == "A"
+            else "Estratégia B — Carga Incremental (`ROW_NUMBER` Dedup + Lookups Vigentes + `MERGE`)"
+        )
+
+        status_30_fato = "✅ OK" if len(fname) <= 26 else "⚠️ Revisar Sigla"
+        linhas_conformidade_30.append(
+            f"| **Tabela Fato** | `{fname}` | `{len(fname)}` chars | `I$_{fname}` (`{len('I$_' + fname)}` chars) | {status_30_fato} |"
+        )
+        linhas_tab_fatos_resumo.append(
+            f"| `{schema}.{fname}` | `{mapa_fato}` | {desc_estrat_fato} | [`{guia_fato_arq}`](./{guia_fato_arq}) |"
+        )
+
+        if estrategia.upper() == "A":
+            passos_pacote_ascii_fatos.append(
+                f"   │  {ordem_pkg}. [Procedure ] PRC_PRE_CARGA_FATO('{fname}', 'S')  (TRUNCATE + UNUSABLE) │"
+            )
+            matriz_pacote_rows.append(
+                f"| **{ordem_pkg}** | Procedure Oracle | `PRC_PRE_CARGA_FATO('{fname}', 'S')` | Passo {ordem_pkg + 1} | Notificar Erro / Abortar | Trunca `{fname}` e marca Bitmap Indexes como `UNUSABLE` antes da carga |"
+            )
+            ordem_pkg += 1
+
+        passos_pacote_ascii_fatos.append(
+            f"   │  {ordem_pkg}. [Mapeamento] {mapa_fato:<32} (Lookups + NVL -1)     │"
+        )
+        matriz_pacote_rows.append(
+            f"| **{ordem_pkg}** | Mapeamento (Fato) | `{mapa_fato}` | Passo {ordem_pkg + 1} | Notificar Erro / Abortar | Carrega `{fname}` resolvendo SKs nas dimensões vigentes (`DTC_EXPIRACAO IS NULL`) com fallback `-1` |"
+        )
+        ordem_pkg += 1
+
+        passos_pacote_ascii_fatos.append(
+            f"   │  {ordem_pkg}. [Procedure ] PRC_POS_CARGA_FATO('{fname}')       (REBUILD + STATS)   │"
+        )
+        prox_txt = f"Passo {ordem_pkg + 1}"
+        matriz_pacote_rows.append(
+            f"| **{ordem_pkg}** | Procedure Oracle | `PRC_POS_CARGA_FATO('{fname}')` | {prox_txt} | Notificar Erro / Abortar | Reconstrói índices `UNUSABLE` com `NOLOGGING` e coleta estatísticas `DBMS_STATS` |"
+        )
+        ordem_pkg += 1
+
+        # Inspecionar todas as colunas e FKs da Fato para montar:
+        # 1) SQL completo com STG_DEDUP (RN_DEDUP = 1)
+        # 2) Lista de Lookups passo a passo
+        # 3) Tabela numerada coluna por coluna da Fato
+        tem_sk_fato, sk_fato = _fato_possui_sk_propria(f, nomes_dims_set)
+        fks_f_map = {fk["coluna"].upper(): fk["tabela_ref"].upper() for fk in identificar_fks_fato(f, nomes_dims_set)}
+
+        if tem_sk_fato:
+            select_sql_parts = [f"    {schema}.{seq_fato}.NEXTVAL AS {sk_fato}"]
+            tabela_cols_passo4 = [
+                f"| 1 | `{sk_fato}` | `{schema}.{seq_fato}.NEXTVAL` *(Executar no Hint: **Destino / Target**)* | `NUMBER(10)` | **Não** (PK gerada no INSERT) |"
+            ]
+            num_col_idx = 2
+            target_canvas_note = f"{seq_fato}.NEXTVAL + NVL(LKP.DIMENSION_KEY, -1)"
+            chk_sk_line = f"- [ ] A coluna `{sk_fato}` está configurada com `{schema}.{seq_fato}.NEXTVAL` para executar no **Target (Destino)** e está **desmarcada** como *Update Key* (`UK`)."
+        else:
+            select_sql_parts = []
+            tabela_cols_passo4 = []
+            num_col_idx = 1
+            target_canvas_note = "Grão Composto pelas FKs (UK no MERGE) + NVL(LKP.DIMENSION_KEY, -1)"
+            chk_sk_line = "- [ ] O grão da Fato é composto pelas chaves estrangeiras (`FKs` marcadas como `UK` no `IKM MERGE`), sem necessidade de Sequence própria na Fato."
+
+        join_sql_parts = []
+        lookups_passo3 = []
+        ascii_lkps_names = []
+        nks_partition = []
+        alias_idx = 1
+
+        for c in f["colunas"]:
+            cname = c["nome_dw"].upper()
+            tp_c = c.get("tipo_oracle", "NUMBER").upper()
+            if tem_sk_fato and cname == sk_fato and cname not in fks_f_map:
+                continue
+
+            if cname in fks_f_map or cname.startswith(("SK_", "DIM_")) or cname.endswith("_KEY"):
+                dim_match = dims_by_name.get(fks_f_map.get(cname, ""))
+                if not dim_match:
+                    sufixo = re.sub(r"^(SK_|DIM_|ID_|COD_)", "", cname)
+                    sufixo = re.sub(r"_KEY$", "", sufixo)
+                    dim_match = dim_by_key.get(sufixo)
+                    if not dim_match:
+                        for k_ent, d_obj in dim_by_key.items():
+                            if k_ent in sufixo or sufixo in k_ent:
+                                dim_match = d_obj
+                                break
+
+                alias = f"D{alias_idx}"
+                alias_idx += 1
+                if dim_match:
+                    d_name = dim_match["nome_tabela"].upper()
+                    d_sk = _obter_sk_dim(dim_match)
+                    d_nk = _obter_nk_dim(dim_match)
+                    d_nk_textual = _eh_nk_textual(dim_match, d_nk)
+                    is_tempo_d = "TEMPO" in d_name or "CALENDARIO" in d_name or "TEMPO" in cname
+                    lkp_comp_name = f"LKP_{d_name}"
+                    ascii_lkps_names.append(f"{lkp_comp_name} ({d_name})")
+                    if d_nk not in nks_partition:
+                        nks_partition.append(f"UPPER(TRIM({d_nk}))" if d_nk_textual else d_nk)
+
+                    if is_tempo_d:
+                        cond_join_nk = f"TRUNC(S.{d_nk}) = {alias}.{d_nk}" if "DT" in d_nk or "DAT" in d_nk else f"S.{d_nk} = {alias}.{d_nk}"
+                        cond_lkp_odi = f"TRUNC(FLT_RN_IGUAL_1.{d_nk}) = {lkp_comp_name}.{d_nk}"
+                    elif d_nk_textual:
+                        cond_join_nk = f"UPPER(TRIM(S.{d_nk})) = UPPER(TRIM({alias}.{d_nk}))"
+                        cond_lkp_odi = f"UPPER(TRIM(FLT_RN_IGUAL_1.{d_nk})) = UPPER(TRIM({lkp_comp_name}.{d_nk}))"
+                    else:
+                        cond_join_nk = f"S.{d_nk} = {alias}.{d_nk}"
+                        cond_lkp_odi = f"FLT_RN_IGUAL_1.{d_nk} = {lkp_comp_name}.{d_nk}"
+
+                    tem_scd2 = any(col["nome_dw"].upper() in ("DTC_EXPIRACAO", "DTC_FIM_VIGENCIA") for col in dim_match["colunas"])
+                    col_exp = "DTC_FIM_VIGENCIA" if any(col["nome_dw"].upper() == "DTC_FIM_VIGENCIA" for col in dim_match["colunas"]) else "DTC_EXPIRACAO"
+
+                    select_sql_parts.append(f"    NVL({alias}.{d_sk}, -1) AS {cname}")
+                    if tem_scd2 and not is_tempo_d:
+                        join_sql_parts.append(
+                            f"LEFT JOIN {schema}.{d_name} {alias}\n"
+                            f"    ON {cond_join_nk}\n"
+                            f"   AND {alias}.{col_exp} IS NULL"
+                        )
+                        cond_lkp_full = f"{cond_lkp_odi} AND {lkp_comp_name}.{col_exp} IS NULL"
+                    else:
+                        join_sql_parts.append(
+                            f"LEFT JOIN {schema}.{d_name} {alias}\n"
+                            f"    ON {cond_join_nk}"
+                        )
+                        cond_lkp_full = cond_lkp_odi
+
+                    lookups_passo3.append(
+                        f"{len(lookups_passo3) + 1}. **`{lkp_comp_name}`** (Tabela `{schema}.{d_name}` para preencher `{cname}`):\n"
+                        f"   * **Tipo de Lookup no ODI:** *Left Outer Join* (ou *SQL Expression no Lookup* com Valor Padrão `-1`).\n"
+                        f"   * **Condição de Lookup Exata:**\n"
+                        f"     ```sql\n"
+                        f"     {cond_lkp_full}\n"
+                        f"     ```"
+                    )
+                    tabela_cols_passo4.append(
+                        f"| {num_col_idx} | `{cname}` | `NVL({lkp_comp_name}.{d_sk}, -1)` | `{tp_c}` | **Sim (UK)** |"
+                    )
+                else:
+                    select_sql_parts.append(f"    NVL(S.{cname}, -1) AS {cname}")
+                    tabela_cols_passo4.append(
+                        f"| {num_col_idx} | `{cname}` | `NVL(FLT_RN_IGUAL_1.{cname}, -1)` | `{tp_c}` | **Sim (UK)** |"
+                    )
+            elif cname.startswith(("VLR_", "VAL_", "QTD_", "QTDE_", "NUM_", "PER_", "PRC_")):
+                select_sql_parts.append(f"    NVL(S.{cname}, 0) AS {cname}")
+                tabela_cols_passo4.append(
+                    f"| {num_col_idx} | `{cname}` | `NVL(FLT_RN_IGUAL_1.{cname}, 0)` | `{tp_c}` | Não (Métrica) |"
+                )
+            elif cname in ("DTC_CARGA", "DT_CARGA"):
+                select_sql_parts.append(f"    SYSDATE AS {cname}")
+                tabela_cols_passo4.append(
+                    f"| {num_col_idx} | `{cname}` | `SYSDATE` | `DATE` | Não (Auditoria) |"
+                )
+            else:
+                select_sql_parts.append(f"    S.{cname} AS {cname}")
+                tabela_cols_passo4.append(
+                    f"| {num_col_idx} | `{cname}` | `FLT_RN_IGUAL_1.{cname}` | `{tp_c}` | Não (Atributo Degenerado/Flag) |"
+                )
+            num_col_idx += 1
+
+        part_by_expr = ", ".join(nks_partition[:4]) if nks_partition else "1"
+        lkps_ascii_block = "\n".join(f"                         ├──► [ {ln:<32} ]" for ln in ascii_lkps_names) if ascii_lkps_names else "                         ├──► [ LKP_DIM_* ]"
+        joins_sql_txt = ("\n" + "\n".join(join_sql_parts)) if join_sql_parts else ""
+        lookups_passo3_txt = "\n".join(lookups_passo3) if lookups_passo3 else "1. Configure os componentes `LOOKUP` conectando `FLT_RN_IGUAL_1` às dimensões correspondentes."
 
         guia_fato = [
-            f"# 🛠️ Guia de Construção no ODI 12c — Tabela Fato `{fname}`",
+            f"# 🛠️ Guia Passo a Passo no ODI 12c: Tabela Fato `{fname}`",
             "",
-            f"> **Projeto:** `{projeto}` | **Schema:** `{schema}` | **Estratégia:** `{estrategia.upper()}`",
+            f"> **Projeto:** `{projeto}` (`{sigla_odi}`) | **Schema:** `{schema}` | **Tabela Alvo:** `{fname}` (`{len(fname)}` chars) | **Estratégia:** `{estrategia.upper()}`",
             "",
-            "## Passo 1 — Pré-Carga (`PRC_PRE_CARGA_FATO`)",
-            f"- Na Estratégia A (Full/Janela), execute `BEGIN {schema}.PRC_PRE_CARGA_FATO('{fname}', 'S'); END;` antes do mapa para marcar os Bitmap Indexes como `UNUSABLE` e evitar contenção de DML.",
+            f"Este documento apresenta a consulta SQL completa de carga da tabela fato **`{schema}.{fname}`** a partir da stage **`{schema}.{stg_fato}`**, seguida do passo a passo detalhado de construção no Canvas do **Oracle Data Integrator (ODI 12c)**.",
             "",
-            f"## Passo 2 — Mapping `MAP_{fname}`",
-            "- Utilize a consulta de `04_select_odi_fato.sql` ou construa os `LEFT JOIN` no Canvas garantindo `NVL(DIM.DIMENSION_KEY, -1)` em 100% das chaves estrangeiras.",
-            f"- **Sequence da PK:** `:SEQ_{fname}.NEXTVAL` (Target).",
-            f"- **IKM:** `{ikm_fato}` (`FLOW_CONTROL = FALSE`, `COMMIT_INTERVAL = 100000`).",
+            "---",
             "",
-            "## Passo 3 — Pós-Carga (`PRC_POS_CARGA_FATO`)",
-            f"- Execute `BEGIN {schema}.PRC_POS_CARGA_FATO('{fname}'); END;` ao término do pacote para reconstruir índices `UNUSABLE` com `NOLOGGING PARALLEL` e coletar estatísticas `DBMS_STATS`.",
+            "## 1. A Consulta SQL Alvo Completa (`04_select_odi_fato.sql`)",
+            "",
+            "A consulta abaixo realiza:",
+            f"1. **Deduplicação na Stage (`STG_DEDUP`)** via `ROW_NUMBER() OVER (PARTITION BY ...)` (`RN_DEDUP = 1`) para blindar o `MERGE`/`INSERT` contra o erro `ORA-30926: unable to get a stable set of rows in the source tables`.",
+            "2. **Resolução de Surrogate Keys (`SKs`)** via `LEFT JOIN` nas versões vigentes das dimensões (`DTC_EXPIRACAO IS NULL`) usando simetria exata `UPPER(TRIM(...))`.",
+            "3. **Tratamento de Órfãos (`NVL(..., -1)`)** para qualquer dimensão não localizada ou não aplicável, garantindo perda **zero** de registros na Fato.",
+            "",
+            "```sql",
+            "SELECT",
+            ",\n".join(select_sql_parts),
+            "FROM (",
+            "    SELECT",
+            "        STG.*,",
+            "        ROW_NUMBER() OVER (",
+            f"            PARTITION BY {part_by_expr}",
+            "            ORDER BY ROWID DESC",
+            "        ) AS RN_DEDUP",
+            f"    FROM {schema}.{stg_fato} STG",
+            f") S{joins_sql_txt}",
+            "WHERE S.RN_DEDUP = 1;",
+            "```",
+            "",
+            "---",
+            "",
+            "## 2. Comparativo das 3 Estratégias de Implementação no ODI 12c",
+            "",
+            "| Critério | Estratégia 1: View no Banco (`VW_ODI_FATO_*`) | Estratégia 2: Mapeamento 100% Visual no Canvas (Recomendada) | Estratégia 3: *Custom SQL Override* no ODI |",
+            "| :--- | :--- | :--- | :--- |",
+            "| **Como Funciona** | Cria-se uma View no Oracle com o SQL da Seção 1 e o ODI faz `1:1` da View para a Fato. | Usa `EXPRESSION` (`RN_DEDUP` com *Inline View*) + `FILTER` + componentes `LOOKUP` nativos no Canvas. | Cola-se o SQL da Seção 1 na propriedade *Custom SQL* do Datastore temporário no ODI. |",
+            "| **Rastreabilidade (Lineage)** | Média (lógica fica no banco Oracle). | **Alta (100% documentada visualmente no ODI Studio).** | Baixa (caixa-preta textual dentro do mapa). |",
+            "| **Manutenção** | Simples via DDL SQL. | Padrão oficial de fábrica PRODEB. | Exige cuidado ao alterar colunas da tabela. |",
+            "",
+            "---",
+            "",
+            f"## 3. Passo a Passo Completo — Construção no Canvas Lógico (`{mapa_fato}`)",
+            "",
+            "### 3.1 Desenho Arquitetural no Canvas Lógico",
+            "",
+            "```text",
+            f" [ {stg_fato} ]",
+            "        │",
+            "        ▼",
+            " [ EXPR_RN_DEDUP ]  (Calcula RN_DEDUP = ROW_NUMBER() OVER (...) | Marcar [x] Generate Inline View na aba Physical!)",
+            "        │",
+            "        ▼",
+            " [ FLT_RN_IGUAL_1 ] (Filtro: EXPR_RN_DEDUP.RN_DEDUP = 1)",
+            "        │",
+            f"{lkps_ascii_block}",
+            "                         │",
+            "                         ▼",
+            f"                 [ {fname} ] (Target: {target_canvas_note})",
+            "```",
+            "",
+            "### 3.2 Instruções Passo a Passo no ODI Studio",
+            "",
+            f"#### Passo 1: Criar o Mapeamento (`{mapa_fato}`)",
+            f"1. Em **Projetos** ➔ sua pasta ➔ **Mapeamentos**, clique com o botão direito e selecione **Novo Mapeamento**: `{mapa_fato}`.",
+            f"2. Arraste o datastore de origem **`{schema}.{stg_fato}`** para a esquerda do Canvas e a tabela fato alvo **`{schema}.{fname}`** para a direita.",
+            "",
+            "#### Passo 2: Deduplicar a Stage (`EXPR_RN_DEDUP` + `FLT_RN_IGUAL_1`)",
+            f"1. Arraste um componente **`EXPRESSION`** (`EXPR_RN_DEDUP`) logo após `{stg_fato}`.",
+            "2. Passe todas as colunas da Stage para frente e adicione um atributo extra chamado **`RN_DEDUP`** (`NUMERIC(10)`) com a expressão:",
+            "   ```sql",
+            f"   ROW_NUMBER() OVER (PARTITION BY {part_by_expr} ORDER BY ROWID DESC)",
+            "   ```",
+            "3. Arraste um componente **`FILTER`** (`FLT_RN_IGUAL_1`) após `EXPR_RN_DEDUP` com a condição:",
+            "   ```sql",
+            "   EXPR_RN_DEDUP.RN_DEDUP = 1",
+            "   ```",
+            "",
+            "#### Passo 3: Configurar os Lookups / Left Joins Dimensionais",
+            "Adicione um componente **`LOOKUP`** (ou **`JOIN`** configurado como *Left Outer Join*) para cada dimensão ligada à Fato:",
+            "",
+            lookups_passo3_txt,
+            "",
+            f"#### Passo 4: Mapeamento Completo de Todas as Colunas na Tabela Alvo (`{fname}`)",
+            f"Clique na tabela alvo **`{fname}`** e preencha o painel de propriedades de cada coluna exatamente como na tabela abaixo:",
+            "",
+            "| # | Coluna Destino (`" + fname + "`) | Expressão no ODI (Target / Mapping) | Tipo Oracle | Chave (`UK`) no MERGE |",
+            "| :---: | :--- | :--- | :--- | :---: |",
+            *tabela_cols_passo4,
+            "",
+            "---",
+            "",
+            "## 4. Configurações Físicas e Performance (Aba *Physical*)",
+            "",
+            "1. ** Dica de Ouro contra `ORA-30483: window functions are not allowed here`:**",
+            "   * O Oracle não permite funções analíticas (`ROW_NUMBER() OVER ...`) diretamente dentro de cláusulas `WHERE`. Para que o ODI gere uma subquery (`SELECT * FROM (SELECT ..., ROW_NUMBER() ...)`), clique na aba **Físico (`Physical`)** do mapeamento, selecione o nó **`EXPR_RN_DEDUP`** e, no painel de propriedades, marque a caixa **`[x] Generate Inline View`**.",
+            f"2. **Escolha do IKM no Alvo `{fname}`:**",
+            f"   * **Módulo de Conhecimento de Integração (IKM):** `{ikm_fato}`.",
+            "   * **`FLOW_CONTROL`:** `FALSE` (evita criação de tabela `E$_` desnecessária quando as FKs já estão protegidas por `NVL(..., -1)`).",
+            "   * **`COMMIT_INTERVAL`:** `100000`.",
+            "3. **Procedures de Manutenção de Índices Bitmap (`PRC_PRE_CARGA_FATO` e `PRC_POS_CARGA_FATO`):**",
+            f"   * Em cargas de grande volume, chame `BEGIN {schema}.PRC_PRE_CARGA_FATO('{fname}', '{'S' if estrategia.upper() == 'A' else 'N'}'); END;` antes do mapa e `BEGIN {schema}.PRC_POS_CARGA_FATO('{fname}'); END;` imediatamente após o mapa.",
+            "",
+            "---",
+            "",
+            "## 5. Checklist Rápido Pré-Execução",
+            "",
+            f"- [ ] Todas as dimensões referenciadas pela `{fname}` já foram carregadas na Fase 1 do pacote e possuem a linha default `DIMENSION_KEY = -1`.",
+            "- [ ] A propriedade **`[x] Generate Inline View`** está marcada no componente `EXPR_RN_DEDUP` na aba **Physical**.",
+            chk_sk_line,
+            "- [ ] Todas as chaves estrangeiras (`FKs`) possuem fallback `NVL(..., -1)` e todos os Lookups em dimensões SCD2 filtram `DTC_EXPIRACAO IS NULL`.",
             "",
         ]
-        arquivos[f"guia_estrategias_odi_fato_{ent_f_low}.md"] = "\n".join(guia_fato)
+        arquivos[guia_fato_arq] = "\n".join(guia_fato)
 
-    resumo_linhas.extend([
+    # Fechar a última linha da matriz do pacote com "Fim do Pacote (Sucesso)"
+    if matriz_pacote_rows:
+        matriz_pacote_rows[-1] = re.sub(
+            r"\| Passo \d+ \|",
+            "| **Fim do Pacote (Sucesso)** |",
+            matriz_pacote_rows[-1],
+        )
+
+    ascii_dims_txt = "\n".join(passos_pacote_ascii_dims) if passos_pacote_ascii_dims else "   │  (Sem dimensões SCD2 adicionais)                                       │"
+    ascii_fatos_txt = "\n".join(passos_pacote_ascii_fatos) if passos_pacote_ascii_fatos else "   │  (Sem tabelas Fato detectadas)                                         │"
+
+    resumo_linhas = [
+        f"# 📘 Relatório Consolidado de Estratégias e Orquestração no ODI 12c — Projeto `{projeto}`",
         "",
-        "## 2. Guias Modulares Gerados",
+        f"> **Schema Alvo:** `{schema}` | **Sigla Curta ODI (<= 30 chars):** `{sigla_odi}` | **Estratégia da Fato:** `Estratégia {estrategia.upper()}` | **Gerado em:** `{agora}`",
         "",
-    ])
-    for k in sorted(arquivos.keys()):
-        resumo_linhas.append(f"- [`{k}`]({k})")
+        "Este documento consolida a arquitetura de integração de dados no **Oracle Data Integrator (ODI 12c)** para o Data Warehouse do projeto **`" + projeto + "`**, conectando os scripts SQL gerados aos guias passo a passo de cada Dimensão e Tabela Fato.",
+        "",
+        "---",
+        "",
+        "## 1. Regra de Ouro de Nomenclatura Física no ODI 12c (Limite de 30 Caracteres — `ORA-00972`)",
+        "",
+        "Durante a execução dos *Knowledge Modules* (`LKM`, `IKM`), o ODI 12c cria tabelas temporárias de trabalho concatenando prefixos como `C$_0`, `I$_`, `E$_` e passos internos do *Dimension Pattern* (`TGT_INS_`, `TGT_CLS_`, `TGT_UPD_`, `SCD2_SRC_`) ao nome físico da tabela alvo. Em repositórios e instâncias com compatibilidade de **30 bytes**, qualquer identificador temporário que ultrapasse 30 caracteres provoca falha imediata com **`ORA-00972: identifier is too long`**.",
+        "",
+        "### 1.1 Tabela de Conformidade de Nomenclatura Física (`<= 27` Caracteres)",
+        "",
+        "| Camada | Nome do Objeto Físico | Tamanho Físico | Objeto Temporário Crítico no ODI (`I$_` / `TGT_INS_`) | Status (`<= 30`) |",
+        "| :--- | :--- | :---: | :--- | :---: |",
+        *linhas_conformidade_30,
+        "",
+        "---",
+        "",
+        "## 2. Padrão Oficial de Carga de Dimensões SCD Tipo 2 (`Dimension Pattern` / Mapa Único)",
+        "",
+        "Todas as dimensões de negócio deste projeto seguem o **Padrão Nativo de Dimensão (`Dimension Pattern` / `Asterisco`)** do ODI 12c:",
+        "1. **Um Único Mapa por Dimensão (`CARGA_DIM_*`):** Na aba *Lógico*, conecta-se `STG_* ──► EXPRESSION ──► DIM_*`.",
+        "2. **Uso Automático da Tabela `ODI_DIM_*`:** No objeto Dimensão (*Dimensões e Cubos ➔ Níveis*), a propriedade **Armazenamento de Dados de Teste** aponta para `ODI_DIM_*` (criada **100% NULLABLE e sem PK** em `03_create_odi_dim_tables.sql` para evitar `ORA-01400` na etapa `STG_DIM_*`).",
+        "3. **Setas Brancas Obrigatórias:** No componente `EXPRESSION`, os campos `DIMENSION_KEY`, `DTC_EFETIVACAO` e `DTC_EXPIRACAO` permanecem **sem mapeamento (seta branca)**, pois o próprio ODI os preenche nas etapas físicas `TGT_INS_` e `TGT_CLS_`.",
+        "",
+        "### 2.1 Guias Passo a Passo das Dimensões",
+        "",
+        "| Dimensão Alvo | Tabela Auxiliar (Stage de Teste) | Sequence | Mapa Único no ODI | Guia Passo a Passo Detalhado |",
+        "| :--- | :--- | :--- | :--- | :--- |",
+        *(linhas_tab_dims_resumo or ["| _Sem dimensões SCD2_ | - | - | - | - |"]),
+        "",
+        "---",
+        "",
+        "## 3. Estratégias para Carga das Tabelas Fato",
+        "",
+        "Cada tabela Fato possui seu guia individual contendo a **Consulta SQL Completa deduplicada (`RN_DEDUP = 1`)**, o comparativo das 3 abordagens no ODI 12c, a configuração exata de cada `LOOKUP` dimensional com simetria `UPPER(TRIM(...))` e a **tabela coluna por coluna** do mapeamento:",
+        "",
+        "| Tabela Fato Alvo | Mapa no ODI | Estratégia de Carga | Guia Passo a Passo Detalhado |",
+        "| :--- | :--- | :--- | :--- |",
+        *(linhas_tab_fatos_resumo or ["| _Sem tabelas Fato_ | - | - | - |"]),
+        "",
+        "---",
+        "",
+        f"## 4. Orquestração do Pacote (`PACK_CARGA_{sigla_odi}_DW`) e Cenário (`SCEN_`)",
+        "",
+        "### 4.1 Fluxo Visual Completo do Pacote no Diagrama do ODI",
+        "",
+        "```text",
+        f" ┌──────────────────────────────────────────────────────────────────────────────┐",
+        f" │ PACOTE: PACK_CARGA_{sigla_odi}_DW                                                   │",
+        f" └──────────────────────────────────────┬───────────────────────────────────────┘",
+        "                                        │",
+        "                                        ▼",
+        " ┌──────────────────────────────────────────────────────────────────────────────┐",
+        " │ FASE 1: CARGA DAS DIMENSÕES (PADRÃO NATIVO SCD TIPO 2 + LINHA DEFAULT -1)    │",
+        " │ ---------------------------------------------------------------------------- │",
+        f"{ascii_dims_txt}",
+        " └──────────────────────────────────────┬───────────────────────────────────────┘",
+        "                                        │ (ok)",
+        "                                        ▼",
+        " ┌──────────────────────────────────────────────────────────────────────────────┐",
+        " │ FASE 2: CARGA DAS TABELAS FATO (COM LOOKUP NAS DIMENSÕES VIGENTES)           │",
+        " │ ---------------------------------------------------------------------------- │",
+        f"{ascii_fatos_txt}",
+        " └──────────────────────────────────────────────────────────────────────────────┘",
+        "```",
+        "",
+        f"### 4.2 Matriz Completa de Objetos do Pacote (`PACK_CARGA_{sigla_odi}_DW`)",
+        "",
+        "| Ordem | Tipo de Passo no ODI | Nome do Objeto no ODI | Ação em Sucesso (`ok`) | Ação em Erro (`ko`) | Observação Técnica |",
+        "| :---: | :--- | :--- | :--- | :--- | :--- |",
+        *matriz_pacote_rows,
+    ]
 
     arquivos["RELATORIO_ESTRATEGIAS.md"] = "\n".join(resumo_linhas) + "\n"
     return arquivos

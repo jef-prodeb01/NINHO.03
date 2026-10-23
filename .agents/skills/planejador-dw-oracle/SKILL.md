@@ -145,7 +145,7 @@ Quando o Engenheiro de Dados quiser visualizar **de ponta a ponta** como o proje
    ```
    Gera `entrega/planejador_dw/SIMULACAO_BLUEPRINT_DW.md` (em [`entrega/planejador_dw/`](../../../entrega/planejador_dw/)) contendo:
    - **Seção 1:** Gate de Aprovação (`- [ ] SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL`);
-   - **Seção 2:** Parâmetros Globais editáveis (`PROJETO_SIGLA`, `SCHEMA_DW_ALVO`, `SCHEMA_STG_ALVO`, `ESTRATEGIA_CARGA_FATO`, `TABLESPACE_DADOS`, `TABLESPACE_INDICES`);
+   - **Seção 2:** Parâmetros Globais editáveis (`PROJETO_SIGLA`, `SIGLA_CURTA_ODI`, `SCHEMA_DW`, `SCHEMA_STG`, `ESTRATEGIA_CARGA`, `REUSAR_DIM_TEMPO`, `TABLESPACE_DADOS`, `TABLESPACE_INDICES`);
    - **Seção 3:** Arquitetura Visual da Esteira Completa (Mermaid);
    - **Seção 4:** Matriz Editável de Tabelas e Colunas (`[x]`/`[ ]` para incluir/excluir colunas, renomear colunas destino, trocar tipos Oracle, alterar `SCD1`/`SCD2` e editar descrições `COMMENT ON`);
    - **Seção 5:** **Simulação Dry-Run de Dados (Amostra Visual de 3 Linhas)** mostrando exatamente como cada tabela ficará populada (incluindo o registro sentinela `-1`);

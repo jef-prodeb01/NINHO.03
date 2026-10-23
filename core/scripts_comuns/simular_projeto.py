@@ -38,23 +38,28 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from melhorar_dw_existente import (
+    _fato_possui_sk_propria,
     _obter_nk_dim,
     _obter_sk_dim,
+    abreviar_identificador_odi,
     classificar_tabela_dw,
     construir_dicionario_html,
     construir_guia_bi_rapido,
     construir_guias_odi_modulares,
     construir_patches_ajustes_nao_destrutivos,
     construir_script_comentarios,
+    construir_script_controle_carga_eta,
     construir_script_linha_default,
     construir_scripts_indices,
     construir_scripts_odi,
     construir_testes_integridade,
+    derivar_sigla_curta_odi,
     extrair_schema_e_projeto,
     gerar_comentario_coluna,
     gerar_comentario_tabela,
     identificar_fks_fato,
     parse_ddl_text,
+    validar_tamanho_identificador_odi,
 )
 from modular_semantica import (
     _nome_entidade_curto,
@@ -314,7 +319,7 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
         raw_name = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL)_", "", t_nome)
 
         if papel == "DIM":
-            dim_name = f"DIM_{raw_name}"
+            dim_name = abreviar_identificador_odi("DIM", raw_name, max_len=22)
             sk_name = "DIMENSION_KEY"
             cols_novas = [
                 {
@@ -355,7 +360,7 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
                 "indices": [],
             })
         else:
-            fato_name = f"FATO_{raw_name}"
+            fato_name = abreviar_identificador_odi("FATO", raw_name, max_len=26)
             resultado_dw.append({
                 "arquivo": t.get("arquivo", "simulacao.sql"),
                 "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
@@ -388,6 +393,8 @@ def gerar_blueprint_simulacao_dw(
     dims_map = {t["nome_tabela"].upper(): t for t in dims}
     nomes_dims = set(dims_map.keys())
     total_cols = sum(len(t["colunas"]) for t in tabelas)
+    sigla_odi = derivar_sigla_curta_odi(projeto)
+    reusar_tempo_default = "SIM" if schema.upper() in ("PRODBA_OLAP", "UNEB_OLAP") else "NAO"
 
     linhas = [
         f"# 🧪 Simulação Ponta a Ponta & Blueprint Editável — Planejador DW (`{projeto}`)",
@@ -417,9 +424,11 @@ def gerar_blueprint_simulacao_dw(
         "| Parâmetro | Valor Configurado | Descrição Técnica |",
         "| :--- | :--- | :--- |",
         f"| `PROJETO_SIGLA` | `{projeto}` | Sigla corporativa do projeto/assunto |",
+        f"| `SIGLA_CURTA_ODI` | `{sigla_odi}` | Sigla curta (2-4 chars) para manter objetos ODI 12c `<= 30` bytes (evita `ORA-00972`) |",
         f"| `SCHEMA_DW` | `{schema}` | Schema Oracle onde residirão `DIM_*` e `FATO_*` |",
         f"| `SCHEMA_STG` | `STG_{projeto}` | Schema Oracle de Staging (`STG_*` e `ODI_DIM_*`) |",
         f"| `ESTRATEGIA_CARGA` | `{estrategia}` | `A` = Truncate & Load + Bitmap Index; `B` = MERGE Incremental + B-Tree |",
+        f"| `REUSAR_DIM_TEMPO` | `{reusar_tempo_default}` | `SIM` = Reutiliza `DIM_TEMPO` corporativa já existente no schema; `NAO` = Gera DDL de `DIM_TEMPO` |",
         f"| `TABLESPACE_DADOS` | `TS_DW_{projeto}_DAT` | Tablespace padrão de armazenamento de tabelas |",
         f"| `TABLESPACE_INDICES` | `TS_DW_{projeto}_IDX` | Tablespace dedicada para índices de performance |",
         "",
@@ -1089,6 +1098,7 @@ def _gerar_scripts_ddl_completos_dw(
     ts_dat: str,
     ts_idx: str,
     entregaveis: set[str],
+    reusar_dim_tempo: bool = False,
 ) -> list[Path]:
     """Gera os scripts DDL estruturais (`01_tablespaces` a `05_sequences`) em `saida/planejador_dw/`."""
     dims = [t for t in tabelas if classificar_tabela_dw(t) == "DIM"]
@@ -1099,37 +1109,36 @@ def _gerar_scripts_ddl_completos_dw(
     if "01_tablespaces" in entregaveis:
         p = SAIDA_DW_DIR / "01_controle_carga" / "01_create_tablespaces.sql"
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            f"-- =============================================================================\n"
-            f"-- NINHO — 01_create_tablespaces.sql (PROJETO: {projeto})\n"
-            f"-- =============================================================================\n"
-            f"CREATE TABLESPACE {ts_dat} DATAFILE '{ts_dat.lower()}01.dbf' SIZE 500M AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;\n"
-            f"CREATE TABLESPACE {ts_idx} DATAFILE '{ts_idx.lower()}01.dbf' SIZE 250M AUTOEXTEND ON NEXT 50M MAXSIZE UNLIMITED;\n",
-            encoding="utf-8",
-        )
+        if ts_dat.strip().upper() == ts_idx.strip().upper():
+            sql_ts = (
+                f"-- =============================================================================\n"
+                f"-- NINHO — 01_create_tablespaces.sql (PROJETO: {projeto})\n"
+                f"-- NOTA DBA: DADOS e ÍNDICES compartilham a mesma Tablespace ({ts_dat}).\n"
+                f"-- Emitido comando único para evitar ORA-01543 (tablespace already exists).\n"
+                f"-- =============================================================================\n"
+                f"CREATE TABLESPACE {ts_dat} DATAFILE '{ts_dat.lower()}01.dbf' SIZE 500M AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;\n"
+            )
+        else:
+            sql_ts = (
+                f"-- =============================================================================\n"
+                f"-- NINHO — 01_create_tablespaces.sql (PROJETO: {projeto})\n"
+                f"-- =============================================================================\n"
+                f"CREATE TABLESPACE {ts_dat} DATAFILE '{ts_dat.lower()}01.dbf' SIZE 500M AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED;\n"
+                f"CREATE TABLESPACE {ts_idx} DATAFILE '{ts_idx.lower()}01.dbf' SIZE 250M AUTOEXTEND ON NEXT 50M MAXSIZE UNLIMITED;\n"
+            )
+        p.write_text(sql_ts, encoding="utf-8")
         gerados.append(p)
 
         p_ctrl = SAIDA_DW_DIR / "01_controle_carga" / "01_tb_controle_carga.sql"
         p_ctrl.write_text(
-            f"-- =============================================================================\n"
-            f"-- NINHO — 01_tb_controle_carga.sql (PROJETO: {projeto} | SCHEMA: {schema_dw})\n"
-            f"-- =============================================================================\n"
-            f"CREATE TABLE {schema_dw}.TB_CONTROLE_CARGA (\n"
-            f"    COD_CARGA         NUMBER(10)          GENERATED BY DEFAULT AS IDENTITY NOT NULL,\n"
-            f"    SGL_PROJETO       VARCHAR2(50 CHAR)   DEFAULT '{projeto}' NOT NULL,\n"
-            f"    NOM_OBJETO_ALVO   VARCHAR2(128 CHAR)  NOT NULL,\n"
-            f"    TIP_CAMADA        VARCHAR2(20 CHAR)   NOT NULL,\n"
-            f"    DTC_INICIO_CARGA  TIMESTAMP           DEFAULT SYSTIMESTAMP NOT NULL,\n"
-            f"    DTC_FIM_CARGA     TIMESTAMP           NULL,\n"
-            f"    QTD_LIDOS         NUMBER(15)          DEFAULT 0,\n"
-            f"    QTD_INSERIDOS     NUMBER(15)          DEFAULT 0,\n"
-            f"    QTD_ATUALIZADOS   NUMBER(15)          DEFAULT 0,\n"
-            f"    QTD_REJEITADOS    NUMBER(15)          DEFAULT 0,\n"
-            f"    IND_STATUS        VARCHAR2(20 CHAR)   DEFAULT 'EM_ANDAMENTO' NOT NULL,\n"
-            f"    DES_MENSAGEM_ERRO VARCHAR2(4000 CHAR) NULL,\n"
-            f"    CONSTRAINT PK_TB_CONTROLE_CARGA PRIMARY KEY (COD_CARGA) USING INDEX TABLESPACE {ts_idx}\n"
-            f") TABLESPACE {ts_dat};\n\n"
-            f"COMMENT ON TABLE {schema_dw}.TB_CONTROLE_CARGA IS 'Tabela corporativa de auditoria e telemetria de execução de cargas ETL (STG/DIM/FATO).';\n",
+            construir_script_controle_carga_eta(
+                dims=dims,
+                fatos=fatos,
+                schema=schema_dw,
+                projeto=projeto,
+                ts_dat=ts_dat,
+                ts_idx=ts_idx,
+            ),
             encoding="utf-8",
         )
         gerados.append(p_ctrl)
@@ -1144,6 +1153,7 @@ def _gerar_scripts_ddl_completos_dw(
             "-- =============================================================================",
             "",
         ]
+        tabelas_stg_comm = []
         for t in tabelas:
             stg_name = re.sub(r"^(DIM|FATO|FAT)_", "STG_", t["nome_tabela"])
             cols_stg = [
@@ -1158,8 +1168,22 @@ def _gerar_scripts_ddl_completos_dw(
             for idx, c in enumerate(cols_stg):
                 virg = "," if idx < len(cols_stg) - 1 else ""
                 linhas_stg.append(f"    {c['nome_dw']} {c['tipo_oracle']}{virg}")
-            linhas_stg.append(f") TABLESPACE {ts_dat};")
+            linhas_stg.append(f") TABLESPACE {ts_dat} NOLOGGING;")
             linhas_stg.append("")
+            tabelas_stg_comm.append((
+                {
+                    "nome_tabela": stg_name,
+                    "tabela_origem": t.get("tabela_origem", t["nome_tabela"]),
+                    "comentario_tabela": f"Tabela de Stage (área transitória NOLOGGING) para carga de {t['nome_tabela']}.",
+                    "colunas": cols_stg,
+                },
+                "STG",
+            ))
+        if tabelas_stg_comm:
+            sql_comm_stg, _, _ = construir_script_comentarios(
+                tabelas_stg_comm, schema_stg, "TABELAS DE STAGE (STG_*)"
+            )
+            linhas_stg.append(sql_comm_stg)
         p.write_text("\n".join(linhas_stg), encoding="utf-8")
         gerados.append(p)
 
@@ -1185,26 +1209,37 @@ def _gerar_scripts_ddl_completos_dw(
             linhas_dim.append(f") TABLESPACE {ts_dat};")
             linhas_dim.append("")
         if not any(d["nome_tabela"].upper() in ("DIM_TEMPO", "DIM_CALENDARIO", "DIM_DATA") for d in dims):
-            linhas_dim.extend([
-                f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO",
-                f"CREATE TABLE {schema_dw}.DIM_TEMPO (",
-                f"    SK_TEMPO          NUMBER(8)          NOT NULL,",
-                f"    DTC_DATA          DATE               NOT NULL,",
-                f"    NUM_ANO           NUMBER(4)          NOT NULL,",
-                f"    NUM_SEMESTRE      NUMBER(1)          NOT NULL,",
-                f"    NUM_TRIMESTRE     NUMBER(1)          NOT NULL,",
-                f"    NUM_MES           NUMBER(2)          NOT NULL,",
-                f"    NOM_MES           VARCHAR2(20 CHAR)  NOT NULL,",
-                f"    SGL_MES            VARCHAR2(3 CHAR)   NOT NULL,",
-                f"    NUM_DIA           NUMBER(2)          NOT NULL,",
-                f"    NOM_DIA_SEMANA    VARCHAR2(20 CHAR)  NOT NULL,",
-                f"    IND_FIM_SEMANA    CHAR(1)            DEFAULT 'N' NOT NULL,",
-                f"    IND_FERIADO       CHAR(1)            DEFAULT 'N' NOT NULL,",
-                f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (SK_TEMPO) USING INDEX TABLESPACE {ts_idx}",
-                f") TABLESPACE {ts_dat};",
-                f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal (SK no formato YYYYMMDD ou -1).';",
-                "",
-            ])
+            if reusar_dim_tempo:
+                linhas_dim.extend([
+                    f"-- =============================================================================",
+                    f"-- REUSO CORPORATIVO DE DIM_TEMPO (REUSAR_DIM_TEMPO = SIM)",
+                    f"-- A dimensão conformada {schema_dw}.DIM_TEMPO (DIMENSION_KEY / SK_TEMPO) já existe",
+                    f"-- no schema corporativo {schema_dw} e é compartilhada por todos os projetos.",
+                    f"-- O DDL de CREATE TABLE DIM_TEMPO foi omitido intencionalmente para evitar ORA-00955.",
+                    f"-- =============================================================================",
+                    "",
+                ])
+            else:
+                linhas_dim.extend([
+                    f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO",
+                    f"CREATE TABLE {schema_dw}.DIM_TEMPO (",
+                    f"    SK_TEMPO          NUMBER(8)          NOT NULL,",
+                    f"    DTC_DATA          DATE               NOT NULL,",
+                    f"    NUM_ANO           NUMBER(4)          NOT NULL,",
+                    f"    NUM_SEMESTRE      NUMBER(1)          NOT NULL,",
+                    f"    NUM_TRIMESTRE     NUMBER(1)          NOT NULL,",
+                    f"    NUM_MES           NUMBER(2)          NOT NULL,",
+                    f"    NOM_MES           VARCHAR2(20 CHAR)  NOT NULL,",
+                    f"    SGL_MES            VARCHAR2(3 CHAR)   NOT NULL,",
+                    f"    NUM_DIA           NUMBER(2)          NOT NULL,",
+                    f"    NOM_DIA_SEMANA    VARCHAR2(20 CHAR)  NOT NULL,",
+                    f"    IND_FIM_SEMANA    CHAR(1)            DEFAULT 'N' NOT NULL,",
+                    f"    IND_FERIADO       CHAR(1)            DEFAULT 'N' NOT NULL,",
+                    f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (SK_TEMPO) USING INDEX TABLESPACE {ts_idx}",
+                    f") TABLESPACE {ts_dat};",
+                    f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal (SK no formato YYYYMMDD ou -1).';",
+                    "",
+                ])
         sql_comm_dim, _, _ = construir_script_comentarios([(d, "DIM") for d in dims], schema_dw, "DIMENSÕES (DIM_*)")
         linhas_dim.append(sql_comm_dim)
         p.write_text("\n".join(linhas_dim), encoding="utf-8")
@@ -1239,13 +1274,14 @@ def _gerar_scripts_ddl_completos_dw(
         gerados.append(p)
 
     # 05_sequences (salvo em 03_dimensoes/05_create_sequences.sql para manter estrutura canônica)
-    if "05_sequences" in entregaveis and dims:
+    if "05_sequences" in entregaveis and (dims or fatos):
         p = SAIDA_DW_DIR / "03_dimensoes" / "05_create_sequences.sql"
         p.parent.mkdir(parents=True, exist_ok=True)
+        nomes_dims_set = {d["nome_tabela"].upper() for d in dims}
         linhas_seq = [
             "-- =============================================================================",
             f"-- NINHO — 05_create_sequences.sql (SCHEMA: {schema_dw})",
-            "-- Regra Corporativa: CACHE 1000 NOORDER para performance de carga SCD2",
+            "-- Regra Corporativa: CACHE 1000 NOORDER NOCYCLE para performance de carga SCD2/Fato",
             "-- =============================================================================",
             "",
         ]
@@ -1255,6 +1291,14 @@ def _gerar_scripts_ddl_completos_dw(
             linhas_seq.append(
                 f"CREATE SEQUENCE {schema_dw}.{seq_name} START WITH 1 INCREMENT BY 1 CACHE 1000 NOORDER NOCYCLE;"
             )
+        for f in fatos:
+            tem_sk_f, _ = _fato_possui_sk_propria(f, nomes_dims_set)
+            if tem_sk_f:
+                fname = f["nome_tabela"]
+                seq_name = f"SEQ_{fname}"[:30]
+                linhas_seq.append(
+                    f"CREATE SEQUENCE {schema_dw}.{seq_name} START WITH 1 INCREMENT BY 1 CACHE 1000 NOORDER NOCYCLE;"
+                )
         p.write_text("\n".join(linhas_seq) + "\n", encoding="utf-8")
         gerados.append(p)
 
@@ -1291,13 +1335,14 @@ def executar_simulacao_aprovada_dw(tabelas_base: list[dict], forcar: bool = Fals
         estrategia = "A"
     ts_dat = params.get("TABLESPACE_DADOS", f"TS_DW_{projeto}_DAT").upper()
     ts_idx = params.get("TABLESPACE_INDICES", f"TS_DW_{projeto}_IDX").upper()
+    reusar_dim_tempo = params.get("REUSAR_DIM_TEMPO", "NAO").upper().startswith(("S", "Y", "1", "T"))
 
     dims = [t for t in tabelas if classificar_tabela_dw(t) == "DIM"]
     fatos = [t for t in tabelas if classificar_tabela_dw(t) == "FATO"]
     stgs = [t for t in tabelas if classificar_tabela_dw(t) == "STG"]
 
     gerados = _gerar_scripts_ddl_completos_dw(
-        tabelas, schema_dw, schema_stg, projeto, ts_dat, ts_idx, entregaveis
+        tabelas, schema_dw, schema_stg, projeto, ts_dat, ts_idx, entregaveis, reusar_dim_tempo=reusar_dim_tempo
     )
 
     sql_odi_tbl, sql_odi_dim, sql_odi_fato = construir_scripts_odi(

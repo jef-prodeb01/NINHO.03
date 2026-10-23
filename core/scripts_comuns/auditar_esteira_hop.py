@@ -366,12 +366,42 @@ def audit_hop_directory(target_path: Path) -> Tuple[Dict[str, Any], List[Finding
                     tx_name = tx.findtext("name", "")
                     stats["transforms"][tx_type] = stats["transforms"].get(tx_type, 0) + 1
 
-                    # Coletar tabelas alvo
+                    # Coletar tabelas alvo e auditar sincronia com DDL de Staging (HOP-H9)
                     if tx_type in ("TableOutput", "InsertUpdate"):
-                        tbl = tx.findtext("table", "") or tx.findtext("lookup/table", "")
-                        sch = tx.findtext("schema", "") or tx.findtext("lookup/schema", "")
+                        tbl = (tx.findtext("table", "") or tx.findtext("lookup/table", "")).strip()
+                        sch = (tx.findtext("schema", "") or tx.findtext("lookup/schema", "")).strip()
                         if tbl:
                             stats["target_tables"].add(f"{sch}.{tbl}" if sch else tbl)
+                            # HOP-H9: Verificar se tabela STG_* existe no 02_create_stg_tables.sql do projeto
+                            if tbl.upper().startswith("STG_"):
+                                candidatos_stg_sql = [
+                                    proj_root / "02_create_stg_tables.sql",
+                                    proj_root.parent / "02_staging" / "02_create_stg_tables.sql",
+                                    base_dir.parent / "02_staging" / "02_create_stg_tables.sql",
+                                    proj_root.parent / "saida" / "planejador_dw" / "02_staging" / "02_create_stg_tables.sql",
+                                    base_dir / "saida" / "planejador_dw" / "02_staging" / "02_create_stg_tables.sql",
+                                ]
+                                for cand_sql in candidatos_stg_sql:
+                                    if cand_sql.exists():
+                                        try:
+                                            txt_stg = cand_sql.read_text(encoding="utf-8", errors="ignore").upper()
+                                            tabelas_ddl_stg = set(
+                                                re.findall(r"CREATE\s+TABLE\s+(?:[A-Z0-9_]+\.)?(STG_[A-Z0-9_]+)", txt_stg)
+                                            )
+                                            if tabelas_ddl_stg and tbl.upper() not in tabelas_ddl_stg:
+                                                findings.append(
+                                                    Finding(
+                                                        "HOP-H9",
+                                                        "CRITICO",
+                                                        rel_str,
+                                                        f"Dessincronia de Tabela Staging: '{tbl}' no Hop vs DDL ({ ', '.join(sorted(tabelas_ddl_stg)) })",
+                                                        f"O transform '{tx_name}' tenta gravar em `{tbl}`, mas o DDL `{cand_sql.name}` declara `{', '.join(sorted(tabelas_ddl_stg))}` (causa `ORA-00942: table or view does not exist`).",
+                                                        f"Alinhar a tag `<table>` em `{f.name}` para `{sorted(tabelas_ddl_stg)[0]}`.",
+                                                    )
+                                                )
+                                        except Exception:
+                                            pass
+                                        break
 
                     # HOP-H6: PipelineExecutor / WorkflowExecutor com inherit_all_vars=N
                     if tx_type in ("PipelineExecutor", "WorkflowExecutor"):
@@ -553,7 +583,7 @@ def format_markdown_report(target_path: Path, stats: Dict[str, Any], findings: L
     medio = sum(1 for f in findings_sorted if f.severity == "MEDIO")
     baixo = sum(1 for f in findings_sorted if f.severity == "BAIXO")
 
-    lines.append("## 🚨 2. Diagnóstico de Heurísticas (`HOP-H1` a `HOP-H8`)")
+    lines.append("## 🚨 2. Diagnóstico de Heurísticas (`HOP-H1` a `HOP-H9`)")
     lines.append("")
     lines.append(
         f"**Total de Apontamentos:** `{len(findings_sorted)}` "

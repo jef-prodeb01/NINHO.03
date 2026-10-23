@@ -696,8 +696,29 @@ def validar_saida_gerada(base_dir: Path) -> dict:
 
             # Proibição de BITMAP INDEX em Dimensões, verificação de DIMENSION_KEY, DIM_TEMPO e antipadrões SCD2
             if "03_dimensoes" in f_sql.parts or f_sql.name.upper().startswith("DIM_"):
-                if re.search(r"CREATE\s+TABLE\s+.*?\bDIM_TEMPO\b", txt, re.IGNORECASE):
+                if re.search(r"CREATE\s+TABLE\s+.*?\bDIM_TEMPO\b", txt, re.IGNORECASE) or "REUSO CORPORATIVO DE DIM_TEMPO" in txt.upper():
                     tem_dim_tempo_ddl = True
+                # Validação P1/P7: ODI_DIM_* deve ser 100% NULLABLE em DIMENSION_KEY, DTC_EFETIVACAO e DTC_EXPIRACAO (evita ORA-01400 no STG_DIM)
+                if "odi_dim" in f_sql.name.lower():
+                    if re.search(r"\b(DIMENSION_KEY|DTC_EFETIVACAO|DTC_EXPIRACAO)\b[^\n,;]*\bNOT\s+NULL\b", txt, re.IGNORECASE):
+                        print_err(
+                            f"[{f_sql.name}] PROIBIDO declarar 'NOT NULL' em DIMENSION_KEY/DTC_EFETIVACAO/DTC_EXPIRACAO nas tabelas ODI_DIM_*! "
+                            f"Causa ORA-01400 na etapa STG_DIM do Dimension Pattern no ODI 12c."
+                        )
+                        results["erros"] += 1
+                # Validação P2/P7: Limite de 30 caracteres do ODI 12c (DIM_* <= 22 chars, ODI_DIM_* <= 26 chars)
+                for m_tab in re.finditer(r"CREATE\s+TABLE\s+(?:[A-Z0-9_]+\.)?([A-Z0-9_]+)", txt, re.IGNORECASE):
+                    t_created = m_tab.group(1).upper()
+                    if t_created.startswith("DIM_") and len(t_created) > 22:
+                        print_warn(
+                            f"[{f_sql.name}] Identificador '{t_created}' ({len(t_created)} chars) excede o limite recomendado de 22 chars para DIM_* no ODI 12c (risco de ORA-00972 em TGT_INS_{t_created})."
+                        )
+                        results["avisos"] += 1
+                    elif t_created.startswith("ODI_DIM_") and len(t_created) > 26:
+                        print_warn(
+                            f"[{f_sql.name}] Identificador '{t_created}' ({len(t_created)} chars) excede o limite recomendado de 26 chars para ODI_DIM_* no ODI 12c (risco de ORA-00972 em C$_0)."
+                        )
+                        results["avisos"] += 1
                 if re.search(r"CREATE\s+BITMAP\s+INDEX", txt, re.IGNORECASE):
                     print_err(
                         f"[{f_sql.name}] PROIBIDO criar BITMAP INDEX em tabelas de Dimensao (risco de deadlock ORA-00060)!"
@@ -855,6 +876,74 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     print_ok("Consultas de carga de Fato no ODI ('04_select_odi_fato.sql') presentes em '04_fatos/'.")
                     results["sucessos"] += 1
 
+        # Validação P5/P7: Sincronia de nomes de tabelas STG_* entre 02_create_stg_tables.sql e pipelines .hpl
+        arq_stg_ddl = saida_dw / "02_staging" / "02_create_stg_tables.sql"
+        pasta_hop = saida_dw / "06_etl_hop"
+        if arq_stg_ddl.exists() and pasta_hop.exists():
+            txt_stg_ddl = arq_stg_ddl.read_text(encoding="utf-8", errors="ignore").upper()
+            stgs_declaradas = set(re.findall(r"CREATE\s+TABLE\s+(?:[A-Z0-9_]+\.)?(STG_[A-Z0-9_]+)", txt_stg_ddl))
+            if stgs_declaradas:
+                for arq_hpl in pasta_hop.rglob("*.hpl"):
+                    txt_hpl = arq_hpl.read_text(encoding="utf-8", errors="ignore")
+                    for m_tbl in re.finditer(r"<table>\s*(STG_[A-Z0-9_]+)\s*</table>", txt_hpl, re.IGNORECASE):
+                        tbl_hpl = m_tbl.group(1).upper()
+                        if tbl_hpl not in stgs_declaradas:
+                            print_err(
+                                f"[{arq_hpl.name}] Dessincronia de Tabela Staging (HOP-H9): pipeline aponta para '{tbl_hpl}', "
+                                f"mas 02_create_stg_tables.sql declara {sorted(stgs_declaradas)} (causa ORA-00942)."
+                            )
+                            results["erros"] += 1
+
+        # Validação Q1: Cruzamento CREATE TABLE x CREATE INDEX (prevenção de ORA-00904: invalid identifier)
+        cols_por_tabela_dw: dict[str, set[str]] = {}
+        fontes_ddl_check = list(sqls_dw)
+        pasta_ddl_ent = base_dir / "entrega" / "planejador_dw" / "ddl"
+        if pasta_ddl_ent.exists():
+            fontes_ddl_check.extend(pasta_ddl_ent.rglob("*.sql"))
+        for arq_chk in fontes_ddl_check:
+            txt_chk = arq_chk.read_text(encoding="utf-8", errors="ignore")
+            for m_ct in re.finditer(
+                r"CREATE\s+TABLE\s+(?:[A-Z0-9_\"\$]+\.)?\"?([A-Z0-9_]+)\"?\s*\((.*?)\)\s*(?:TABLESPACE|ORGANIZATION|PARTITION|;)",
+                txt_chk,
+                re.IGNORECASE | re.DOTALL,
+            ):
+                t_nm = m_ct.group(1).upper()
+                corpo_ct = m_ct.group(2)
+                c_set = cols_por_tabela_dw.setdefault(t_nm, set())
+                for ln_c in corpo_ct.splitlines():
+                    ln_clean = re.sub(r"--.*$", "", ln_c).strip().rstrip(",")
+                    if not ln_clean:
+                        continue
+                    if re.match(r"^(CONSTRAINT|PRIMARY\s+KEY|FOREIGN\s+KEY|UNIQUE|CHECK)\b", ln_clean, re.IGNORECASE):
+                        continue
+                    m_col = re.match(r"^\"?([A-Z0-9_]+)\"?\s+[A-Z0-9_]+", ln_clean, re.IGNORECASE)
+                    if m_col:
+                        c_set.add(m_col.group(1).upper())
+
+        erros_idx_col = 0
+        for arq_sql_idx in sqls_dw:
+            txt_idx = arq_sql_idx.read_text(encoding="utf-8", errors="ignore")
+            for m_ix in re.finditer(
+                r"CREATE\s+(?:BITMAP\s+|UNIQUE\s+)?INDEX\s+(?:[A-Z0-9_\"\$]+\.)?\"?([A-Z0-9_]+)\"?\s+ON\s+(?:[A-Z0-9_\"\$]+\.)?\"?([A-Z0-9_]+)\"?\s*\(([^)]+)\)",
+                txt_idx,
+                re.IGNORECASE,
+            ):
+                idx_nm = m_ix.group(1).upper()
+                tab_nm = m_ix.group(2).upper()
+                cols_raw = m_ix.group(3)
+                if tab_nm in cols_por_tabela_dw and cols_por_tabela_dw[tab_nm]:
+                    for col_expr in cols_raw.split(","):
+                        col_tok = re.sub(r"\b(ASC|DESC)\b", "", col_expr, flags=re.IGNORECASE).replace('"', "").strip().upper()
+                        if re.match(r"^[A-Z0-9_]+$", col_tok) and col_tok not in cols_por_tabela_dw[tab_nm]:
+                            print_err(
+                                f"[{arq_sql_idx.name}] Indice '{idx_nm}' referencia coluna inexistente '{col_tok}' na tabela '{tab_nm}' (risco fatal de ORA-00904)!"
+                            )
+                            results["erros"] += 1
+                            erros_idx_col += 1
+        if cols_por_tabela_dw and erros_idx_col == 0:
+            print_ok("Cruzamento Tabela x Indice validado (0 colunas fantasmas em CREATE INDEX / livre de ORA-00904).")
+            results["sucessos"] += 1
+
         pasta_rel = saida_dw / "09_relatorio_estrategias"
         if pasta_rel.exists():
             guias_dim = list(pasta_rel.glob("guia_estrategias_odi_dim_*.md"))
@@ -923,6 +1012,19 @@ def validar_saida_gerada(base_dir: Path) -> dict:
     sqls_sem = [
         f for f in saida_sem.rglob("*.sql") if f.name != "01_create_meta_tables.sql"
     ] if saida_sem.exists() else []
+    ent_sem_ddl = base_dir / "entrega" / "camada_semantica" / "ddl"
+    bp_sem_arq = base_dir / "entrega" / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md"
+    tem_insumo_sem_ativo = (
+        (ent_sem_ddl.exists() and any(ent_sem_ddl.rglob("*.sql")))
+        or (bp_sem_arq.exists() and "[X] SIMULAÇÃO 100% FECHADA" in bp_sem_arq.read_text(encoding="utf-8", errors="ignore").upper())
+    )
+    if not sqls_sem and tem_insumo_sem_ativo:
+        print_err(
+            "Camada Semantica incompleta em 'saida/camada_semantica/': ha DDLs/Blueprint aprovada em 'entrega/camada_semantica/', "
+            "mas apenas '01_create_meta_tables.sql' existe (pastas 'vw_analiticas/' e '01_meta_*.sql' vazias)! "
+            "Execute 'python ninho.py /iniciar-semantica'."
+        )
+        results["erros"] += 1
     if sqls_sem:
         print_ok(f"Auditando {len(sqls_sem)} script(s) SQL de projeto gerados em 'saida/camada_semantica/'...")
         for f_sql in sqls_sem:

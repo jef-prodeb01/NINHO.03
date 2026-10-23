@@ -1,6 +1,8 @@
 # NINHO — Plataforma Integrada de Engenharia, Modelagem & Governança de Dados
 
 > *"Onde os dados brutos são acolhidos, cuidados e preparados para ganhar asas."*
+>
+> 🏷️ **Versão Atual:** **`v0.9.0`** *(Pré-Lançamento — 23/10/2026)* — 📖 [**Ver Histórico Completo de Versões, Novidades e Correções (`PATCH_NOTES.md`)**](PATCH_NOTES.md)
 
 Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que automatiza o ciclo completo de dados: desde o planejamento dimensional de Data Warehouses no Oracle, passando pela geração de camadas semânticas ativas e governança em nuvem, até a entrega de diretrizes prontas para Power BI.
 
@@ -50,6 +52,7 @@ Não perca tempo procurando arquivos. Localize seu desafio abaixo e acesse diret
 NINHO /
 │
 ├── AGENTS.md                            # 🤖 Orquestrador Principal (Regras & Gates)
+├── PATCH_NOTES.md                       # 📋 Histórico amigável de versões, novidades e correções
 ├── ninho.py                             # 🚀 Dispatcher CLI Unificado + Instalador de Comandos (/instalar-comandos)
 ├── ninho.bat                            # ⚡ Atalho de execução rápida no Windows (.\ninho <comando>)
 ├── 🤖 .agents/skills/                   # 🧩 SKILLS MODULARES ESPECIALIZADAS + ATALHOS DE COMANDO (/comando)
@@ -71,7 +74,7 @@ NINHO /
 │   ├── scripts_comuns/                  # 🛠️ 14 Utilitários Python determinísticos
 │   │   ├── ajuda_ninho.py               # 🧭 Central UX (/help, /comecar, /onde-estou, /demo)
 │   │   ├── validar_entrega.py           # 🔍 Validador pré-voo e pós-geração (all/saida)
-│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (11 baterias)
+│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (13 baterias)
 │   │   ├── inspecionar_ddl_origem.py    # 🔎 Extrator de DDLs e Radar Consultivo de KPIs
 │   │   ├── simular_projeto.py           # 🧪 Simulador e Blueprints Editáveis (DW/Semântica)
 │   │   ├── melhorar_dw_existente.py     # ⚡ Motor Fast-Track e Micro-Processos DW & ODI
@@ -215,6 +218,5 @@ graph TD
 | 🧠 **Micro-Processos Semântica** | **`/gerar-catalogo-meta`** / **`/gerar-rls`** | Gera apenas o DDL + `MERGE INTO` das 8 tabelas `META_*` (`--modo catalogo-meta`) ou apenas a segurança VPD/RLS (`--modo rls`). |
 | 🧠 **Semântica & Cloud** | **`/concluir-dw`** / **`/iniciar-semantica`** | Transfere os DDLs/amostras do DW (`transicionar_dw_para_semantica.py`) e gera a Camada Semântica completa em `saida/camada_semantica/`. |
 | 🧠 **Semântica & Cloud** | **`/gerar-governanca`** | Gera os scripts das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e artefatos para AWS Glue & SageMaker Catalog em `saida/governanca_dados/`. |
-| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 11 testes End-to-End da plataforma (`testar_ninho.py`). |
+| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 13 testes End-to-End da plataforma (`testar_ninho.py`). |
 | ✅ **Qualidade, Testes & Entrega** | **`/diagnosticar-erro-carga`** / **`/empacotar-projeto`** | Analisa erros de execução (`ORA-xxxxx`, logs ODI/Hop) ou exporta a entrega final em `.zip` para `pacotes_exportados/` (`gerenciar_projeto.py`). |
-

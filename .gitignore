@@ -7,7 +7,10 @@ credenciais.md
 # Pasta de rascunhos, referências e ideias de outros projetos
 ideias/
 
-# Arquivos CSV de insumos brutos na raiz
+# Arquivos CSV de insumos brutos na raiz e arquivos temporários/marcadores
 META_ORIENTACAO_IA*.csv
 /*.csv
-NINHO\documentacao\REVISAO_TECNICA_NINHO.md
+*.bak*
+*.tmp
+.carga_inicial_concluida
+documentacao/REVISAO_TECNICA_NINHO.md

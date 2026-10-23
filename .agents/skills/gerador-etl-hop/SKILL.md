@@ -77,9 +77,10 @@ Sempre execute `python core/scripts_comuns/auditar_esteira_hop.py <pasta>` para 
 | **`HOP-H6`** | 🟡 Médio | `PipelineExecutor` / `WorkflowExecutor` com `<inherit_all_vars>N</inherit_all_vars>` | Definir `<inherit_all_vars>Y</inherit_all_vars>` para propagar `${V_SEQ}` e variáveis de sessão |
 | **`HOP-H7`** | 🟡 Médio | `TableOutput` sem `use_batch=Y` / `specify_fields=Y` ou `InsertUpdate` com identificadores entre aspas duplas (`"SCHEMA"."TABELA"`) | Habilitar `use_batch=Y`, `specify_fields=Y` e remover aspas duplas de schema/tabela |
 | **`HOP-H8`** | 🟡 Médio | `metadata/schema-definition/*.json` com campos corrompidos (`decimalSymbol="binary-string"`) | Validar JSON e alinhar propriedades do Schema Definition |
+| **`HOP-H9`** | 🔴 Crítico | Dessincronia entre a tag `<table>STG_*</table>` do pipeline `.hpl` e o `CREATE TABLE STG_*` em `02_create_stg_tables.sql` (causa `ORA-00942`) | Alinhar o nome físico da tabela Staging entre o `.hpl` e o DDL |
 
 ---
 
-## 📂 3. Destino Canônico de Saída e Templates
+## 📂 3. Destino Canônico de Saída, Pacote Autocontido e Templates
 
-Quando acionada para geração, salve os artefatos em `saida/planejador_dw/06_pipelines_hop/` utilizando como base estrutural [template_pipeline.hpl](./templates/template_pipeline.hpl).
+Quando acionada para geração, salve os artefatos em `saida/planejador_dw/06_pipelines_hop/` (ou `06_etl_hop/<PROJETO>/` para pacote autocontido de deploy no servidor Hop contendo `project-config.json`, `config_env.json`, `metadata/rdbms/ORACLE_STG.json`, `wf_*.hwf`, `ppl_*.hpl` e `scripts/*.py`) utilizando como base estrutural [template_pipeline.hpl](./templates/template_pipeline.hpl).

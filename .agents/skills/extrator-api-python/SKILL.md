@@ -54,4 +54,17 @@ Quando os arquivos brutos vindos de FTP possuem problemas severos de codificaç�
 
 ## 📂 2. Template Base
 
+### 1.3 Requisitos para Extrator Python v2.1 com Janela Móvel e Auto-Controle de Carga Inicial (Padrão `COPSD` / `GLPI`)
+Quando o extrator Python alimenta a camada Staging para fatos mensais/periódicas com reprocessamento retroativo:
+1. **3 Modos de Operação (`MODO_CARGA`: `AUTO`, `INICIAL`, `DIARIO`):**
+   - `INICIAL`: extrai a série histórica desde `DATA_INICIO_HISTORICO` e cria o marcador de estado `.carga_inicial_concluida` ao concluir com sucesso.
+   - `DIARIO`: extrai os últimos `MESES_RETROATIVOS + 1` meses fechados mais o mês vigente (`M-3 .. M_vigente`) para capturar reclassificações tardias.
+   - `AUTO` (padrão): verifica a existência de `.carga_inicial_concluida`; se ausente, roda `INICIAL`, caso contrário roda `DIARIO`.
+2. **Decodificador Nativo de Senha do Apache Hop (`Encrypted <hex>`):**
+   - Incluir função `decrypt_hop_password(val)` compatível com o algoritmo XOR/BigInteger do Hop (`SEED = 0x0933910847463829827159347601486730416058`) para aceitar variáveis `Encrypted 2be98...` diretamente do `config_env.json`.
+3. **Filtro Determinístico por Lista de Entidades Alvo e Escrita Atômica UTF-8-SIG (`;`):**
+   - Filtrar registros pela lista de unidades/grupos alvo normalizada (`unicodedata.normalize('NFKD')`) e gravar CSV com separador `;`, encoding `utf-8-sig` via arquivo temporário `.tmp` + `os.replace()`.
+
+## 📂 2. Template Base
+
 Consulte o modelo de referência em [template_extrator_api.py](./templates/template_extrator_api.py).

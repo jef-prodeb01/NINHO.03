@@ -963,6 +963,205 @@ def teste_12_regressao_m1_m7_praes_csv_ddl_guia_bi() -> str:
     return "Melhorias M1 a M7 (DDL em CSV, MVW_*, Role-Playing DIM_TEMPO, Guia BI 9 seções + .xlsx, Modo Isolado) aprovadas."
 
 
+def teste_13_regressao_p1_a_p7() -> str:
+    """Valida as melhorias P1 a P7 extraídas do projeto real GESTAO_SUSTENTACAO (COPSD)."""
+    _limpar_artefatos_workspace()
+
+    from inspecionar_ddl_origem import parse_ddl_text
+    from melhorar_dw_existente import (
+        construir_guias_odi_modulares,
+        construir_scripts_odi,
+        derivar_sigla_curta_odi,
+        validar_tamanho_identificador_odi,
+    )
+
+    # P1: Sigla curta automática e validador de limite de 30 chars do ODI 12c
+    assert derivar_sigla_curta_odi("GESTAO_SUSTENTACAO") == "GS", "Sigla curta de GESTAO_SUSTENTACAO deveria ser GS"
+    ok_longo, tam_longo, lim_longo = validar_tamanho_identificador_odi("DIM_GESTAO_SUSTENTACAO_PROFISSIONAL", "DIM")
+    assert not ok_longo and tam_longo > lim_longo, "Deveria alertar nome de dimensão > 22 chars para o ODI 12c"
+    ok_curto, *_ = validar_tamanho_identificador_odi("DIM_GS_PROFISSIONAL", "DIM")
+    assert ok_curto, "DIM_GS_PROFISSIONAL (19 chars) deveria ser aprovado no limite do ODI 12c"
+
+    # P2 + P3 + P6: ODI_DIM_* 100% NULLABLE, Dimension Pattern (Asterisco) e UPPER(TRIM()) simétrico em NKs textuais
+    ddl_gs = """
+    CREATE TABLE PRODBA_OLAP.STG_GS_RESUMO_MENSAL (
+        COD_PROJETO VARCHAR2(100) NOT NULL,
+        ID_REDMINE_PROF NUMBER(10) NOT NULL,
+        VAL_HORAS NUMBER(10,2)
+    );
+    CREATE TABLE PRODBA_OLAP.DIM_GS_PROJETO (
+        SK_PROJETO NUMBER(10) NOT NULL,
+        COD_PROJETO VARCHAR2(100) NOT NULL,
+        NOM_PROJETO VARCHAR2(200) NOT NULL,
+        SIN_ATIVO CHAR(1) NOT NULL,
+        DTC_EFETIVACAO DATE NOT NULL,
+        DTC_EXPIRACAO DATE,
+        DES_ATUALIZAR CHAR(1),
+        CONSTRAINT PK_DIM_GS_PROJETO PRIMARY KEY (SK_PROJETO)
+    );
+    CREATE TABLE PRODBA_OLAP.DIM_GS_PROFISSIONAL (
+        SK_PROFISSIONAL NUMBER(10) NOT NULL,
+        ID_REDMINE_PROF NUMBER(10) NOT NULL,
+        NOM_PROFISSIONAL VARCHAR2(150) NOT NULL,
+        SIN_ATIVO CHAR(1) NOT NULL,
+        DTC_EFETIVACAO DATE NOT NULL,
+        DTC_EXPIRACAO DATE,
+        DES_ATUALIZAR CHAR(1),
+        CONSTRAINT PK_DIM_GS_PROF PRIMARY KEY (SK_PROFISSIONAL)
+    );
+    CREATE TABLE PRODBA_OLAP.FATO_GS_RESUMO_MENSAL (
+        SK_RESUMO NUMBER(12) NOT NULL,
+        SK_PROJETO NUMBER(10) NOT NULL,
+        SK_PROFISSIONAL NUMBER(10) NOT NULL,
+        VAL_HORAS NUMBER(10,2)
+    );
+    """
+    tabs_gs = parse_ddl_text(ddl_gs, "gs.sql")
+    dims_gs = [t for t in tabs_gs if t["nome_tabela"].startswith("DIM_")]
+    fatos_gs = [t for t in tabs_gs if t["nome_tabela"].startswith("FATO_")]
+    stgs_gs = [t for t in tabs_gs if t["nome_tabela"].startswith("STG_")]
+
+    sql_odi_ddl, sql_odi_dims, sql_odi_fato = construir_scripts_odi(
+        dims_gs, fatos_gs, stgs_gs, schema="PRODBA_OLAP", projeto="GESTAO_SUSTENTACAO", estrategia="A"
+    )
+    assert "NOT NULL" not in sql_odi_ddl.split("CREATE INDEX")[0], (
+        f"ODI_DIM_* não deve conter constraints NOT NULL (evita ORA-01400 no STG_DIM):\n{sql_odi_ddl}"
+    )
+    assert "UPPER(TRIM(S.COD_PROJETO))" in sql_odi_dims, "NK textual COD_PROJETO deve usar UPPER(TRIM(...)) em 03_selects_odi_dimensoes.sql"
+    assert "ON UPPER(TRIM(S.COD_PROJETO)) = UPPER(TRIM(D1.COD_PROJETO))" in sql_odi_fato, (
+        "JOIN de Fato para NK textual deve usar UPPER(TRIM()) simétrico em ambos os lados"
+    )
+    assert "ON S.ID_REDMINE_PROF = D2.ID_REDMINE_PROF" in sql_odi_fato, (
+        "JOIN de Fato para NK numérica deve preservar igualdade direta sem UPPER(TRIM())"
+    )
+
+    guias_odi = construir_guias_odi_modulares(
+        dims_gs, fatos_gs, schema="PRODBA_OLAP", projeto="GESTAO_SUSTENTACAO", estrategia="A"
+    )
+    guia_prj = guias_odi.get("guia_estrategias_odi_dim_gs_projeto.md", "")
+    assert (
+        "Dimension Pattern" in guia_prj
+        and "CARGA_DIM_GS_PROJETO" in guia_prj
+        and "*(Seta branca)*" in guia_prj
+        and "3.3 Aba `Níveis` ➔ Grade Inferior `Atributos de Nível`" in guia_prj
+        and "4.2 Tabela Completa de Atributos dentro do `EXPRESSION` (Coluna por Coluna)" in guia_prj
+    ), "Guia de dimensão ODI deveria conter tabelas coluna por coluna de Atributos de Nível e EXPRESSION com Setas Brancas"
+
+    guia_fato = guias_odi.get("guia_estrategias_odi_fato_gs_resumo_mensal.md", "")
+    assert (
+        "RN_DEDUP" in guia_fato
+        and "Generate Inline View" in guia_fato
+        and "3.1 Desenho Arquitetural no Canvas Lógico" in guia_fato
+        and "Passo 3: Configurar os Lookups / Left Joins Dimensionais" in guia_fato
+        and "Passo 4: Mapeamento Completo de Todas as Colunas na Tabela Alvo" in guia_fato
+    ), "Guia de fato ODI deveria conter consulta RN_DEDUP, Generate Inline View, Lookups e tabela coluna por coluna"
+
+    rel_estrat = guias_odi.get("RELATORIO_ESTRATEGIAS.md", "")
+    assert (
+        "1.1 Tabela de Conformidade de Nomenclatura Física" in rel_estrat
+        and "4.1 Fluxo Visual Completo do Pacote no Diagrama do ODI" in rel_estrat
+        and "4.2 Matriz Completa de Objetos do Pacote" in rel_estrat
+    ), "RELATORIO_ESTRATEGIAS.md deveria conter auditoria <=30 chars, diagrama ASCII do pacote e matriz ok/ko"
+
+    from melhorar_dw_existente import construir_guia_bi_rapido
+    guia_bi_gs = construir_guia_bi_rapido(dims_gs, fatos_gs, schema="PRODBA_OLAP", projeto="GESTAO_SUSTENTACAO")
+    assert (
+        "SCD2 Safe" in guia_bi_gs
+        and "SUMMARIZE(" in guia_bi_gs
+        and "6.1 Mapa de Navegação Superior" in guia_bi_gs
+        and "COUNT(DISTINCT CASE WHEN" in guia_bi_gs
+        and "Check 7 (Reconciliação SQL 100%)" in guia_bi_gs
+    ), "Guia do Analista de BI deveria conter medidas SCD2 Safe (SUMMARIZE pela NK), wireframe 4 páginas e SQL de reconciliação com JOIN"
+
+    # P4: REUSAR_DIM_TEMPO = SIM na Simulação Editável
+    pasta_ddl = BASE_DIR / "entrega" / "planejador_dw" / "ddl"
+    pasta_ddl.mkdir(parents=True, exist_ok=True)
+    (pasta_ddl / "01_origem_gs.sql").write_text(
+        "CREATE TABLE TB_PROJETO_GS (COD_PROJETO VARCHAR2(80) PRIMARY KEY, NOM_PROJETO VARCHAR2(200));\n"
+        "CREATE TABLE TB_CHAMADO_GS (ID_CHAMADO NUMBER(10) PRIMARY KEY, COD_PROJETO VARCHAR2(80), DT_ABERTURA DATE, VAL_HORAS NUMBER(10,2));",
+        encoding="utf-8",
+    )
+    rc_sim, out_sim, err_sim = _executar_cli(["core/scripts_comuns/simular_projeto.py", "--modulo", "dw", "--acao", "simular"])
+    assert rc_sim == 0, f"Falha ao simular DW em P4: {err_sim}\n{out_sim}"
+    arq_bp = BASE_DIR / "entrega" / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md"
+    txt_bp = arq_bp.read_text(encoding="utf-8")
+    assert "REUSAR_DIM_TEMPO" in txt_bp and "SIGLA_CURTA_ODI" in txt_bp, "Parâmetros REUSAR_DIM_TEMPO e SIGLA_CURTA_ODI ausentes na Blueprint DW"
+
+    txt_bp_editado = (
+        txt_bp.replace("| `REUSAR_DIM_TEMPO` | `NAO` |", "| `REUSAR_DIM_TEMPO` | `SIM` |")
+        .replace("- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**", "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**")
+    )
+    arq_bp.write_text(txt_bp_editado, encoding="utf-8")
+    rc_exec, out_exec, err_exec = _executar_cli(["core/scripts_comuns/simular_projeto.py", "--modulo", "dw", "--acao", "executar"])
+    assert rc_exec == 0, f"Falha ao executar simulação DW com REUSAR_DIM_TEMPO=SIM: {err_exec}\n{out_exec}"
+
+    arq_03_dim = BASE_DIR / "saida" / "planejador_dw" / "03_dimensoes" / "03_create_dim_tables.sql"
+    txt_03_dim = arq_03_dim.read_text(encoding="utf-8")
+    assert "REUSO CORPORATIVO DE DIM_TEMPO" in txt_03_dim and "CREATE TABLE" in txt_03_dim, (
+        "Comentário de REUSO CORPORATIVO DE DIM_TEMPO ausente em 03_create_dim_tables.sql"
+    )
+    assert "CREATE TABLE PRODBA_OLAP.DIM_TEMPO" not in txt_03_dim, (
+        "Não deveria gerar CREATE TABLE DIM_TEMPO quando REUSAR_DIM_TEMPO = SIM"
+    )
+
+    # Q2, Q4, Q5, Q6: Verificar tablespace deduplicado, ETA_ETAPAS_CARGA completo, STG NOLOGGING+COMMENT e índices COMPRESS 1 + NOPARALLEL
+    arq_01_ctrl = BASE_DIR / "saida" / "planejador_dw" / "01_controle_carga" / "01_tb_controle_carga.sql"
+    txt_01_ctrl = arq_01_ctrl.read_text(encoding="utf-8")
+    assert (
+        "ETA_ETAPAS_CARGA" in txt_01_ctrl
+        and "ORA-00955" in txt_01_ctrl
+        and "MERGE INTO" in txt_01_ctrl
+        and "COMMENT ON COLUMN" in txt_01_ctrl
+    ), "Q4: 01_tb_controle_carga.sql deve conter ETA_ETAPAS_CARGA idempotente + 5 COMMENT ON COLUMN + MERGE INTO das etapas"
+
+    arq_02_stg = BASE_DIR / "saida" / "planejador_dw" / "02_staging" / "02_create_stg_tables.sql"
+    txt_02_stg = arq_02_stg.read_text(encoding="utf-8")
+    assert "NOLOGGING;" in txt_02_stg and "COMMENT ON TABLE" in txt_02_stg and "COMMENT ON COLUMN" in txt_02_stg, (
+        "Q5: 02_create_stg_tables.sql deve conter NOLOGGING e COMMENT ON TABLE/COLUMN para todas as STG_*"
+    )
+
+    arq_06_idx_dim = BASE_DIR / "saida" / "planejador_dw" / "03_dimensoes" / "06_create_indexes_dim.sql"
+    arq_06_idx_fato = BASE_DIR / "saida" / "planejador_dw" / "04_fatos" / "06_create_indexes_fato.sql"
+    txt_06_idx_dim = arq_06_idx_dim.read_text(encoding="utf-8")
+    txt_06_idx_fato = arq_06_idx_fato.read_text(encoding="utf-8")
+    assert "COMPRESS 1" in txt_06_idx_dim and "NOPARALLEL LOGGING;" in txt_06_idx_dim and "NOPARALLEL LOGGING;" in txt_06_idx_fato, (
+        "Q6: 06_create_indexes_dim/fato.sql devem conter COMPRESS 1 ... PARALLEL 4 NOLOGGING + ALTER INDEX ... NOPARALLEL LOGGING"
+    )
+
+    # Q7: Abreviação inteligente <= 22 chars para DIM_* e <= 26 chars para FATO_*
+    from melhorar_dw_existente import abreviar_identificador_odi
+    dim_abrev = abreviar_identificador_odi("DIM", "GS_CAPACIDADE_PROFISSIONAL", max_len=22)
+    assert len(dim_abrev) <= 22 and dim_abrev.startswith("DIM_"), f"Q7: {dim_abrev} excedeu 22 chars ({len(dim_abrev)})"
+
+    # P5: Regra HOP-H9 (cruzamento TableOutput <table>STG_*</table> vs 02_create_stg_tables.sql)
+    pasta_hop_tst = BASE_DIR / "saida" / "planejador_dw" / "06_etl_hop"
+    pasta_hop_tst.mkdir(parents=True, exist_ok=True)
+    pasta_stg_tst = BASE_DIR / "saida" / "planejador_dw" / "02_staging"
+    pasta_stg_tst.mkdir(parents=True, exist_ok=True)
+    (pasta_stg_tst / "02_create_stg_tables.sql").write_text(
+        "CREATE TABLE PRODBA_OLAP.STG_GS_CAPACIDADE_PROF (ID_REDMINE_PROF NUMBER(10));",
+        encoding="utf-8",
+    )
+    hpl_divergente = (
+        "<pipeline><info><name>ppl_teste</name></info>"
+        "<transform><name>Out_STG</name><type>TableOutput</type>"
+        "<table>STG_CAPACIDADE_PROF</table><use_batch>Y</use_batch><commit>1000</commit></transform>"
+        "</pipeline>"
+    )
+    arq_hpl_div = pasta_hop_tst / "ppl_divergente.hpl"
+    arq_hpl_div.write_text(hpl_divergente, encoding="utf-8")
+    rel_hop_div = pasta_hop_tst / "rel_hop_h9.md"
+    rc_h9, out_h9, err_h9 = _executar_cli(
+        ["core/scripts_comuns/auditar_esteira_hop.py", str(pasta_hop_tst), "--saida", str(rel_hop_div)]
+    )
+    assert rc_h9 == 0 and rel_hop_div.exists(), f"auditar_esteira_hop.py falhou em HOP-H9: {err_h9}\n{out_h9}"
+    txt_rel_h9 = rel_hop_div.read_text(encoding="utf-8")
+    assert "HOP-H9" in txt_rel_h9, f"Auditor Hop deveria detectar HOP-H9 para STG_CAPACIDADE_PROF vs STG_GS_CAPACIDADE_PROF:\n{txt_rel_h9}"
+
+    _limpar_artefatos_workspace()
+    return "Melhorias P1..P7 e Q1..Q8 (Sigla ODI <=30 chars, ODI_DIM NULLABLE, Dimension Pattern, ETA_ETAPAS_CARGA, STG NOLOGGING, COMPRESS 1 + NOPARALLEL e ORA-00904 Index Guard) aprovadas."
+
+
 def executar_suite_completa(manter_arquivos: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
@@ -981,6 +1180,7 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T10: Regressão de Confiabilidade (Erros E1 a E4 Resolvidos)", teste_10_regressao_e1_e4_robustez),
         ("T11: Regressão de Blindagem Arquitetural (Erros E5 a E12 Resolvidos)", teste_11_regressao_e5_e12_blindagem),
         ("T12: Regressão M1..M7 (DDL em CSV, MVW_*, Role-Playing DIM_TEMPO, Guia BI + .xlsx)", teste_12_regressao_m1_m7_praes_csv_ddl_guia_bi),
+        ("T13: Regressão P1..P7 (Sigla ODI, ODI_DIM NULLABLE, Dimension Pattern, HOP-H9, UPPER/TRIM)", teste_13_regressao_p1_a_p7),
     ]
 
     passou = 0
