@@ -1,11 +1,11 @@
 ---
 name: auditar-hop
-description: Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1 a HOP-H8.
+description: Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1..H8, hop-lint oficial e THREAT_MODEL.md (HOP-SEC-01/02).
 ---
 
 # /auditar-hop
 
-Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1 a HOP-H8.
+Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1..H8, hop-lint oficial e THREAT_MODEL.md (HOP-SEC-01/02).
 
 ## Execução Determinística
 

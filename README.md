@@ -2,7 +2,7 @@
 
 > *"Onde os dados brutos são acolhidos, cuidados e preparados para ganhar asas."*
 >
-> 🏷️ **Versão Atual:** **`v0.9.0`** *(Pré-Lançamento — 23/10/2026)* — 📖 [**Ver Histórico Completo de Versões, Novidades e Correções (`PATCH_NOTES.md`)**](PATCH_NOTES.md)
+> 🏷️ **Versão Atual:** **`v0.9.5`** *(Pré-Lançamento — 26/10/2026)* — 📖 [**Ver Histórico Completo de Versões, Novidades e Correções (`PATCH_NOTES.md`)**](PATCH_NOTES.md)
 
 Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que automatiza o ciclo completo de dados: desde o planejamento dimensional de Data Warehouses no Oracle, passando pela geração de camadas semânticas ativas e governança em nuvem, até a entrega de diretrizes prontas para Power BI.
 
@@ -27,7 +27,14 @@ Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que aut
 
 > ⚡ **Precisa de comandos de terminal, SQL ou DAX prontos para copiar?** Consulte o [**Guia Central de Comandos Rápidos & Cheat Sheet (`GUIA_COMANDOS_RAPIDOS.md`)**](documentacao/guias/GUIA_COMANDOS_RAPIDOS.md) com sumário interativo ancorado.
 
-> 🛡️ **Público-Alvo Exclusivo:** O **NINHO** é uma plataforma corporativa 100% focada em **Engenheiros de Dados**. O Analista de BI **não possui acesso ao NINHO** e **não executa módulos**. Em vez disso, ao concluir o planejamento do DW, a plataforma gera automaticamente o artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`** e o dataset sintético **`mock_dados_bi.csv`** (em `saida/planejador_dw/08_datasets_bi/`), que o Engenheiro exporta e entrega à equipe de BI.
+> 🛡️ **Público-Alvo Exclusivo:** O **NINHO** é uma plataforma corporativa 100% focada em **Engenheiros de Dados**. O Analista de BI **não possui acesso ao NINHO** e **não executa módulos**. Em vez disso, ao concluir o planejamento do DW, a plataforma gera automaticamente o artefato **`GUIA_ANALISTA_BI_<PROJETO>.md`**, o Mockup Visual Full HD (**`mockup_painel_bi.svg` / `preview_painel_bi.html`**), a planilha **`Indicadores_PowerBI_<PROJETO>.xlsx`** e o dataset sintético **`mock_dados_bi.csv`** (em `saida/planejador_dw/08_datasets_bi/`), que o Engenheiro entrega à equipe de BI.
+>
+> 📄 **Geração Sob Demanda de Formatos Alternativos (`.docx`, `.pdf`) e Apresentação Executiva (`.pptx`):**
+> Por padrão, nas execuções normais do projeto (`/executar-simulacao`, `/melhorar-dw-existente`, `/gerar-guia-bi`, `/gerar-guia-odi`), os guias técnicos são gerados **apenas em Markdown (`.md`)** para manter o repositório enxuto. Caso você precise exportar os guias em outros formatos ou gerar a apresentação de slides, solicite explicitamente via comando ou marque na Blueprint:
+> - **`/exportar-docx`**: Exporta os guias (`GUIA_ANALISTA_BI_<PROJETO>.docx` e `RELATORIO_ESTRATEGIAS.docx`) em Microsoft Word corporativo.
+> - **`/exportar-pdf`**: Exporta os guias (`GUIA_ANALISTA_BI_<PROJETO>.pdf` e `RELATORIO_ESTRATEGIAS.pdf`) em PDF 1.4 oficial pronto para SEI/Ofícios.
+> - **`/gerar-apresentacao`**: Gera a Apresentação Executiva em PowerPoint nativo (`apresentacao_executiva_<PROJETO>.pptx`) e Deck HTML 16:9 (`apresentacao_slides.html`).
+> - *(Nota: No modo **`/demo`**, todos os formatos acima são gerados automaticamente de uma só vez como vitrine completa do que a ferramenta é capaz).*
 
 Não perca tempo procurando arquivos. Localize seu desafio abaixo e acesse diretamente os manuais, formulários, scripts e pastas correspondentes:
 
@@ -211,12 +218,15 @@ graph TD
 | 🧪 **Simulador & Blueprint Editável** | **`/executar-simulacao`** | Lê todas as suas edições nas Blueprints aprovadas (`[x]`) e gera os arquivos reais em `saida/planejador_dw/` e `saida/camada_semantica/` (`simular_projeto.py --acao executar`). |
 | ⚡ **Micro-Processos DW & ODI** | **`/gerar-comentarios`** / **`/gerar-dicionario`** | Gera apenas `COMMENT ON TABLE / COLUMN` (`--modo comentarios`) ou apenas o `dicionario_dados.html` (`--modo dicionario`). |
 | ⚡ **Micro-Processos DW & ODI** | **`/gerar-indices`** / **`/gerar-linha-default`** / **`/gerar-constraints`** | Gera apenas índices + `PRC_POS_CARGA_FATO` (`--modo indices`), apenas `MERGE` da linha `-1` (`--modo linha-default`) ou apenas constraints `NOVALIDATE` (`--modo constraints`). |
-| ⚡ **Micro-Processos DW & ODI** | **`/gerar-testes-dw`** / **`/gerar-guia-bi`** / **`/gerar-mock-bi`** | Gera apenas os 6 testes SQL pós-carga (`--modo testes`), apenas o `GUIA_ANALISTA_BI_<PROJETO>.md` (`--modo guia-bi`) ou CSV sintético com linha `-1` (`gerar_mock_dados.py`). |
-| ⚡ **Micro-Processos DW & ODI** | **`/gerar-selects-odi`** / **`/gerar-guia-odi`** | Gera apenas as queries SQL do ODI (`03_selects_odi_dimensoes.sql` + `04_select_odi_fato.sql`) ou apenas o Guia do Canvas ODI 12c (`--modo selects-odi` / `--modo guia-odi`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-testes-dw`** / **`/gerar-guia-bi`** / **`/gerar-mockup-bi`** / **`/gerar-mock-bi`** | Gera apenas os 6 testes SQL pós-carga (`--modo testes`), o `GUIA_ANALISTA_BI_<PROJETO>.md` + Mockup SVG/HTML + `.xlsx` (`--modo guia-bi`), o Mockup Visual Full HD (`--modo mockup-bi`) ou CSV sintético com linha `-1` (`gerar_mock_dados.py`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/validar-medidas-bi`** *(ou `/provar-medidas-bi`)* | Executa a **Prova Real Pós-Carga** das medidas DAX do Guia de BI contra amostras de `DIM_*` e `FATO_*` (CSV/SQL/XLSX/ODS), corrige medidas parcialmente corretas (`MED-01..06`) e popula o Mockup Visual com os números reais. |
+| 📄 **Exportação Sob Demanda** | **`/exportar-docx`** / **`/exportar-pdf`** / **`/gerar-apresentacao`** | **(Somente quando solicitado)** Exporta os guias para Word (`.docx`), PDF 1.4 oficial (`.pdf`) ou gera a Apresentação Executiva (`.pptx` + `apresentacao_slides.html`). |
+| ⚡ **Micro-Processos DW & ODI** | **`/gerar-selects-odi`** / **`/gerar-guia-odi`** | Gera apenas as queries SQL do ODI (`03_selects_odi_dimensoes.sql` + `04_select_odi_fato.sql`) ou apenas o Guia do Canvas ODI 12c em `.md` + `mapa_canvas_odi.svg` (`--modo selects-odi` / `--modo guia-odi`). |
+| 🐝 **Engenharia Apache Hop 2.x** | **`/gerar-pacote-hop`** / **`/migrar-kettle-hop`** | Gera um pacote Apache Hop 2.x completo (`wf_*.hwf`, `ppl_*.hpl`, `OraBulkLoader`, `hop-lint.yml`, `hop-pwd.json`, SVG) ou migra legados Pentaho Kettle (`.ktr`/`.kjb`) para Hop 2.x. |
 | ⚡ **Fast-Track DW Completo** | **`/melhorar-dw-existente`** | Executa o Raio-X não-destrutivo e gera o pacote completo de melhorias sem mexer no ETL (`melhorar_dw_existente.py --modo tudo`). |
 | 🧠 **Micro-Processos Semântica** | **`/gerar-views-semantica`** / **`/gerar-views-dim`** / **`/gerar-views-evento`** / **`/gerar-views-kpi`** | Gera todas as views analíticas ou individualmente a Camada 1 (`VW_DIM_*_ATUAL`), Camada 2 (`VW_EVENTO_*`) ou Camada 3 (`VW_KPI_*`) (`modular_semantica.py`). |
 | 🧠 **Micro-Processos Semântica** | **`/gerar-catalogo-meta`** / **`/gerar-rls`** | Gera apenas o DDL + `MERGE INTO` das 8 tabelas `META_*` (`--modo catalogo-meta`) ou apenas a segurança VPD/RLS (`--modo rls`). |
 | 🧠 **Semântica & Cloud** | **`/concluir-dw`** / **`/iniciar-semantica`** | Transfere os DDLs/amostras do DW (`transicionar_dw_para_semantica.py`) e gera a Camada Semântica completa em `saida/camada_semantica/`. |
 | 🧠 **Semântica & Cloud** | **`/gerar-governanca`** | Gera os scripts das 5 coleções MongoDB padrão PRODEB, matriz LGPD/LAI e artefatos para AWS Glue & SageMaker Catalog em `saida/governanca_dados/`. |
-| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 13 testes End-to-End da plataforma (`testar_ninho.py`). |
+| ✅ **Qualidade, Testes & Entrega** | **`/validar-entrega`** / **`/testar-ninho`** | Audita a entrega atual (`validar_entrega.py`) ou roda a suíte automatizada de 16 testes End-to-End da plataforma (`testar_ninho.py`). |
 | ✅ **Qualidade, Testes & Entrega** | **`/diagnosticar-erro-carga`** / **`/empacotar-projeto`** | Analisa erros de execução (`ORA-xxxxx`, logs ODI/Hop) ou exporta a entrega final em `.zip` para `pacotes_exportados/` (`gerenciar_projeto.py`). |

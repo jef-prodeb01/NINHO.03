@@ -1,11 +1,11 @@
 ---
 name: gerar-guia-bi
-description: Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx, Sync Slicers, Mockup e SQL de conferência).
+description: Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx/.ods, Sync Slicers, Mockup SVG/HTML/PNG 2x, Apresentação .pptx e Word .docx).
 ---
 
 # /gerar-guia-bi
 
-Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx, Sync Slicers, Mockup e SQL de conferência).
+Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx/.ods, Sync Slicers, Mockup SVG/HTML/PNG 2x, Apresentação .pptx e Word .docx).
 
 ## Execução Determinística
 

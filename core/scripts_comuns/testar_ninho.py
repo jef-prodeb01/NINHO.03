@@ -1162,6 +1162,563 @@ def teste_13_regressao_p1_a_p7() -> str:
     return "Melhorias P1..P7 e Q1..Q8 (Sigla ODI <=30 chars, ODI_DIM NULLABLE, Dimension Pattern, ETA_ETAPAS_CARGA, STG NOLOGGING, COMPRESS 1 + NOPARALLEL e ORA-00904 Index Guard) aprovadas."
 
 
+def teste_14_suite_visual_craft_e_panic_hunt() -> str:
+    """Valida os pilares visuais/OOXML/PDF/PII (Mockup BI SVG/HTML/PNG 2x, Star Schema & ODI Canvas SVG,
+    Planilha .xlsx 3 abas com Dropdowns e Conditional Formatting + .ods, Deck .pptx + Slides HTML 16:9 +
+    Word .docx + PDF 1.4 oficial, leitores nativos .pdf/.docx/.odt, Scanner PII/LGPD de conteúdo
+    e bateria panic_hunt contra entradas corrompidas/truncadas)."""
+    import zlib
+    from gerador_artefatos_visuais import (
+        escanear_pii_em_texto_ou_linhas,
+        extrair_texto_pdf_nativo,
+        ler_documento_docx,
+        ler_documento_odt,
+        ler_planilha_ods,
+        mascarar_pii_texto,
+    )
+
+    _limpar_artefatos_workspace()
+
+    # 1. Preparar DDL em entrega/planejador_dw/ddl/ + planilha .ods de indicadores em entrega/planejador_dw/regras_negocio/
+    pasta_ddl = BASE_DIR / "entrega" / "planejador_dw" / "ddl"
+    pasta_ddl.mkdir(parents=True, exist_ok=True)
+    (pasta_ddl / "dw_craft_test.sql").write_text(
+        """
+        CREATE TABLE DW_CRAFT.DIM_TEMPO (
+            SK_TEMPO NUMBER(10) PRIMARY KEY,
+            COD_ANO_MES NUMBER(6),
+            NUM_ANO NUMBER(4),
+            DES_MES_ANO VARCHAR2(20)
+        );
+        CREATE TABLE DW_CRAFT.DIM_UNIDADE_ENSINO (
+            SK_UNIDADE NUMBER(10) PRIMARY KEY,
+            ID_UNIDADE VARCHAR2(30) NOT NULL,
+            NOM_UNIDADE VARCHAR2(150),
+            DTC_INICIO DATE,
+            DTC_FIM DATE,
+            FLG_ATUAL NUMBER(1)
+        );
+        CREATE TABLE DW_CRAFT.FAT_MATRICULA_ACADEMICA (
+            SK_TEMPO NUMBER(10) NOT NULL,
+            SK_UNIDADE NUMBER(10) NOT NULL,
+            QTD_ALUNOS_MATRICULADOS NUMBER(10),
+            VAL_BOLSA_CONCEDIDA NUMBER(18,2),
+            PER_FREQUENCIA_MEDIA NUMBER(5,2)
+        );
+        """,
+        encoding="utf-8",
+    )
+
+    # Criar um arquivo .ods real (ZIP contendo content.xml OpenDocument) com indicadores de negócio
+    pasta_rn = BASE_DIR / "entrega" / "planejador_dw" / "regras_negocio"
+    pasta_rn.mkdir(parents=True, exist_ok=True)
+    arq_ods = pasta_rn / "indicadores_teste.ods"
+    content_xml_ods = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body>
+    <office:spreadsheet>
+      <table:table table:name="Indicadores">
+        <table:table-row>
+          <table:table-cell><text:p>Indicador</text:p></table:table-cell>
+          <table:table-cell><text:p>Regra de Cálculo</text:p></table:table-cell>
+          <table:table-cell><text:p>Meta</text:p></table:table-cell>
+        </table:table-row>
+        <table:table-row>
+          <table:table-cell><text:p>Taxa de Retenção Acadêmica</text:p></table:table-cell>
+          <table:table-cell><text:p>Alunos Ativos / Total Matriculados</text:p></table:table-cell>
+          <table:table-cell><text:p>&gt;= 92%</text:p></table:table-cell>
+        </table:table-row>
+      </table:table>
+    </office:spreadsheet>
+  </office:body>
+</office:document-content>"""
+    with zipfile.ZipFile(arq_ods, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("content.xml", content_xml_ods.encode("utf-8"))
+
+    rows_ods = ler_planilha_ods(str(arq_ods))
+    assert len(rows_ods) == 2 and rows_ods[1][0] == "Taxa de Retenção Acadêmica", "ler_planilha_ods falhou ao ler .ods válido"
+
+    # Criar também um documento .odt real com tabela de indicador extra para testar leitura nativa de .odt
+    arq_odt = pasta_rn / "manual_indicadores_extra.odt"
+    content_xml_odt = """<?xml version="1.0" encoding="UTF-8"?>
+<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"
+  xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"
+  xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">
+  <office:body>
+    <office:text>
+      <text:p>Manual de Indicadores Estrategicos</text:p>
+      <table:table table:name="TabInd">
+        <table:table-row>
+          <table:table-cell><text:p>Indicador</text:p></table:table-cell>
+          <table:table-cell><text:p>Formula</text:p></table:table-cell>
+          <table:table-cell><text:p>Meta</text:p></table:table-cell>
+        </table:table-row>
+        <table:table-row>
+          <table:table-cell><text:p>Indice de Aprovacao Semestral</text:p></table:table-cell>
+          <table:table-cell><text:p>Aprovados / Matriculados</text:p></table:table-cell>
+          <table:table-cell><text:p>&gt;= 88%</text:p></table:table-cell>
+        </table:table-row>
+      </table:table>
+    </office:text>
+  </office:body>
+</office:document-content>"""
+    with zipfile.ZipFile(arq_odt, "w", zipfile.ZIP_DEFLATED) as zf_odt:
+        zf_odt.writestr("content.xml", content_xml_odt.encode("utf-8"))
+
+    doc_odt = ler_documento_odt(str(arq_odt))
+    assert "Manual de Indicadores" in doc_odt["texto"] and len(doc_odt["tabelas"]) == 1, "ler_documento_odt falhou em .odt válido"
+
+    # 2. Executar melhorar_dw_existente.py --modo tudo e --modo guia-odi (Padrão: sem .pptx/.docx/.pdf não solicitados)
+    rc, out, err = _executar_cli(["core/scripts_comuns/melhorar_dw_existente.py", "--modo", "tudo", "--projeto", "CRAFT"])
+    assert rc == 0, f"melhorar_dw_existente.py falhou em T14: {err}\n{out}"
+
+    rc_odi, out_odi, err_odi = _executar_cli(["core/scripts_comuns/melhorar_dw_existente.py", "--modo", "guia-odi", "--projeto", "CRAFT"])
+    assert rc_odi == 0, f"melhorar_dw_existente.py --modo guia-odi falhou em T14: {err_odi}\n{out_odi}"
+
+    saida_dw = BASE_DIR / "saida" / "planejador_dw"
+    p_mock = saida_dw / "08_datasets_bi" / "mockup_painel_bi.svg"
+    p_mock_dev = saida_dw / "08_datasets_bi" / "mockup_painel_bi_devmode.svg"
+    p_prev_html = saida_dw / "08_datasets_bi" / "preview_painel_bi.html"
+    p_xlsx = saida_dw / "08_datasets_bi" / "Indicadores_PowerBI_CRAFT.xlsx"
+    p_pptx = saida_dw / "08_datasets_bi" / "apresentacao_executiva_craft.pptx"
+    p_slides = saida_dw / "08_datasets_bi" / "apresentacao_slides.html"
+    p_docx_bi = saida_dw / "08_datasets_bi" / "GUIA_ANALISTA_BI_CRAFT.docx"
+    p_pdf_bi = saida_dw / "08_datasets_bi" / "GUIA_ANALISTA_BI_CRAFT.pdf"
+    p_star_svg = saida_dw / "11_dicionario_dados" / "diagrama_star_schema.svg"
+    p_odi_svg = saida_dw / "09_relatorio_estrategias" / "mapa_canvas_odi.svg"
+    p_docx_odi = saida_dw / "09_relatorio_estrategias" / "RELATORIO_ESTRATEGIAS.docx"
+    p_pdf_odi = saida_dw / "09_relatorio_estrategias" / "RELATORIO_ESTRATEGIAS.pdf"
+
+    # Por padrão, os artefatos base (MD, SVG, HTML preview e XLSX) existem, mas PPTX/DOCX/PDF NÃO devem ser gerados sem solicitação
+    for arq_padrao in (p_mock, p_mock_dev, p_prev_html, p_xlsx, p_star_svg, p_odi_svg):
+        assert arq_padrao.exists() and arq_padrao.stat().st_size > 200, f"Artefato visual base ausente: {arq_padrao}"
+    for arq_sob_demanda in (p_pptx, p_slides, p_docx_bi, p_pdf_bi, p_docx_odi, p_pdf_odi):
+        assert not arq_sob_demanda.exists(), f"Artefato sob demanda gerado sem ser solicitado: {arq_sob_demanda}"
+
+    # 2.1. Agora solicita explicitamente Apresentação Executiva, Word (.docx) e PDF (.pdf)
+    for modo_extra in ("apresentacao", "exportar-docx", "exportar-pdf"):
+        rc_ex, out_ex, err_ex = _executar_cli(
+            ["core/scripts_comuns/melhorar_dw_existente.py", "--modo", modo_extra, "--projeto", "CRAFT"]
+        )
+        assert rc_ex == 0, f"melhorar_dw_existente.py --modo {modo_extra} falhou em T14: {err_ex}\n{out_ex}"
+
+    for arq_esp in (
+        p_mock, p_mock_dev, p_prev_html, p_xlsx, p_pptx, p_slides,
+        p_docx_bi, p_pdf_bi, p_star_svg, p_odi_svg, p_docx_odi, p_pdf_odi
+    ):
+        assert arq_esp.exists() and arq_esp.stat().st_size > 200, f"Artefato visual/OOXML/PDF ausente ou vazio: {arq_esp}"
+
+    # Verificar conteúdo do Mockup SVG + Dev Mode Redlines ①..⑦ + Indicadores vindos do .ods e do .odt
+    svg_dev_txt = p_mock_dev.read_text(encoding="utf-8")
+    assert "<svg" in svg_dev_txt and "DEV MODE" in svg_dev_txt and "①" in svg_dev_txt, "mockup_painel_bi_devmode.svg sem callouts Dev Mode"
+    guia_bi_md = (saida_dw / "08_datasets_bi" / "GUIA_ANALISTA_BI_CRAFT.md").read_text(encoding="utf-8")
+    assert "Taxa de Retenção Acadêmica" in guia_bi_md, "Indicador da planilha .ods não foi incorporado ao Guia do Analista de BI"
+    assert "Indice de Aprovacao Semestral" in guia_bi_md, "Indicador do documento .odt não foi incorporado ao Guia do Analista de BI"
+
+    # Verificar integridade ZIP/OOXML do .xlsx (3 abas + DataValidations + ConditionalFormatting), .pptx e .docx
+    with zipfile.ZipFile(p_xlsx, "r") as z_xlsx:
+        nomes_z = z_xlsx.namelist()
+        assert "xl/workbook.xml" in nomes_z and "xl/worksheets/sheet3.xml" in nomes_z, "Planilha .xlsx sem as 3 abas esperadas"
+        wb_xml = z_xlsx.read("xl/workbook.xml").decode("utf-8")
+        assert "Catalogo_Indicadores" in wb_xml and "Metas_e_Thresholds" in wb_xml, "Abas de indicadores/metas ausentes no .xlsx"
+        sh1_xml = z_xlsx.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        sh2_xml = z_xlsx.read("xl/worksheets/sheet2.xml").decode("utf-8")
+        styles_xml = z_xlsx.read("xl/styles.xml").decode("utf-8")
+        assert "<dataValidations" in sh1_xml and "<conditionalFormatting" in sh1_xml, "sheet1.xml sem Dropdowns ou Formatação Condicional"
+        assert "<dataValidations" in sh2_xml and "<conditionalFormatting" in sh2_xml, "sheet2.xml sem Dropdowns ou Formatação Condicional"
+        assert "<dxfs" in styles_xml, "styles.xml sem bloco <dxfs> para formatação condicional"
+
+    with zipfile.ZipFile(p_pptx, "r") as z_pptx:
+        assert "ppt/presentation.xml" in z_pptx.namelist() and "ppt/slides/slide1.xml" in z_pptx.namelist(), ".pptx inválido"
+
+    with zipfile.ZipFile(p_docx_bi, "r") as z_docx:
+        assert "word/document.xml" in z_docx.namelist(), ".docx inválido"
+
+    # Testar round-trip de leitura nativa de .docx e .pdf gerados
+    doc_lido = ler_documento_docx(str(p_docx_bi))
+    assert len(doc_lido["paragrafos"]) > 5 and len(doc_lido["tabelas"]) >= 1, "ler_documento_docx não extraiu parágrafos/tabelas do .docx gerado"
+
+    assert p_pdf_bi.read_bytes().startswith(b"%PDF-1.4"), "GUIA_ANALISTA_BI_CRAFT.pdf não possui cabeçalho %PDF-1.4"
+    txt_pdf_bi = extrair_texto_pdf_nativo(str(p_pdf_bi))
+    assert "CRAFT" in txt_pdf_bi, "extrair_texto_pdf_nativo não conseguiu ler o PDF gerado por exportar_markdown_para_pdf"
+
+    # 3. Testar Scanner de PII/LGPD em valores de células/textos (CPF, E-mail, Telefone) e mascaramento
+    linhas_amostra_pii = [
+        ["ID_SOLICITACAO", "TXT_OBSERVACAO_LIVRE", "DES_HISTORICO"],
+        ["101", "Solicitante CPF 123.456.789-00 enviou comprovante pelo email joao.silva@ba.gov.br", "Contato (71) 98888-7777"],
+    ]
+    achados_pii = escanear_pii_em_texto_ou_linhas(linhas_amostra_pii, nome_contexto="amostra_teste.csv")
+    tipos_pii = {a["tipo_pii"] for a in achados_pii}
+    assert "CPF" in tipos_pii and "EMAIL" in tipos_pii and "TELEFONE_BR" in tipos_pii, f"Scanner PII não detectou todos os padrões: {tipos_pii}"
+    txt_masc = mascarar_pii_texto("CPF 123.456.789-00 e email joao@ba.gov.br")
+    assert "123.456.789-00" not in txt_masc and "***.456.789-**" in txt_masc, f"Falha no mascaramento de PII: {txt_masc}"
+
+    # 4. Testar extrator nativo de PDF (com stream FlateDecode comprimido) e Bateria Panic Hunt
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+        stream_conteudo = b"BT /F1 12 Tf 72 720 Td (CREATE TABLE DW_PDF.DIM_CURSO (SK_CURSO NUMBER PRIMARY KEY);) Tj ET"
+        stream_comp = zlib.compress(stream_conteudo)
+        pdf_bytes = (
+            b"%PDF-1.4\n1 0 obj << /Type /Page >> endobj\n"
+            b"2 0 obj << /Length " + str(len(stream_comp)).encode("ascii") + b" /Filter /FlateDecode >>\nstream\n"
+            + stream_comp
+            + b"\nendstream\nendobj\n%%EOF"
+        )
+        arq_pdf_ok = tmp / "especificacao_dw.pdf"
+        arq_pdf_ok.write_bytes(pdf_bytes)
+        txt_pdf = extrair_texto_pdf_nativo(str(arq_pdf_ok))
+        assert "CREATE TABLE DW_PDF.DIM_CURSO" in txt_pdf, f"Falha na extração de PDF: {txt_pdf}"
+
+        # Bateria Panic Hunt (arquivos truncados, corrompidos ou binários hostis não podem causar crash não tratado)
+        arq_ods_corrompido = tmp / "corrompido.ods"
+        arq_ods_corrompido.write_bytes(b"PK\x03\x04LIXO_TRUNCADO_SEM_CENTRAL_DIR")
+        assert ler_planilha_ods(str(arq_ods_corrompido)) == [], "ler_planilha_ods deveria retornar lista vazia para .ods corrompido"
+
+        arq_docx_corrompido = tmp / "corrompido.docx"
+        arq_docx_corrompido.write_bytes(b"PK\x03\x04DOCX_TRUNCADO_HOSTIL")
+        assert ler_documento_docx(str(arq_docx_corrompido))["texto"] == "", "ler_documento_docx falhou em .docx corrompido"
+
+        arq_odt_corrompido = tmp / "corrompido.odt"
+        arq_odt_corrompido.write_bytes(b"PK\x03\x04ODT_TRUNCADO_HOSTIL")
+        assert ler_documento_odt(str(arq_odt_corrompido))["texto"] == "", "ler_documento_odt falhou em .odt corrompido"
+
+        arq_pdf_corrompido = tmp / "corrompido.pdf"
+        arq_pdf_corrompido.write_bytes(b"%PDF-1.7\nstream\n\xff\xfe\xfdLIXO_ZLIB_INVALIDO\nendstream")
+        res_pdf_ruim = extrair_texto_pdf_nativo(str(arq_pdf_corrompido))
+        assert isinstance(res_pdf_ruim, str), "extrair_texto_pdf_nativo falhou em arquivo PDF corrompido"
+
+        arq_sql_hostil = tmp / "hostil.sql"
+        arq_sql_hostil.write_bytes(b"\x80\x81\xffCREATE TABLE T_TRUNCADA (ID NUMBER, /* comentario sem fim ((((")
+        rc_h, _out_h, _err_h = _executar_cli(["core/scripts_comuns/inspecionar_ddl_origem.py", "--caminho", str(arq_sql_hostil)])
+        assert rc_h in (0, 1), "inspecionar_ddl_origem.py sofreu crash inesperado com SQL truncado/hostil"
+
+    _limpar_artefatos_workspace()
+    return (
+        "Mockup BI (SVG + Dev Mode Redlines ①..⑦ + HTML/PNG 2x), Diagramas Star Schema/ODI SVG, "
+        "Planilha .xlsx (Dropdowns + CondFormatting), .pptx + .docx + .pdf 1.4, Leitores .pdf/.ods/.docx/.odt, "
+        "Scanner PII/LGPD em linhas e Panic Hunt aprovados."
+    )
+
+
+def teste_15_apache_hop_5_mecanismos() -> str:
+    """Valida as 5 implementações extraídas do Apache Hop 2.x (hop-main):
+    1. Desenhador Visual SVG de Pipelines (.hpl) e Workflows (.hwf) + Auto-Documentação (PipelineSvgPainter/DocBuilder)
+    2. Catálogo Oficial hop-lint (TRANS-002, WORKFLOW-002, NAMING-004, SQL-002, STRUCT-003, DOC-001, META-001) + hop-lint.yml
+    3. Migrador Automático Pentaho Kettle (.ktr/.kjb/shared.xml) -> Apache Hop 2.x (.hpl/.hwf + metadata/rdbms/*.json)
+    4. Blindagem THREAT_MODEL.md (HopTwoWayPasswordEncoder encrypt/decrypt, HOP-SEC-01, HOP-SEC-02 e hop-pwd.json)
+    5. Template de Alta Volumetria OraBulkLoader (SQL*Loader) + Gerador Completo de Pacote Hop (/gerar-pacote-hop)
+    """
+    from auditar_esteira_hop import (
+        audit_hop_directory,
+        gerar_hop_lint_yml,
+        gerar_hop_pwd_resolver_json,
+        gerar_pacote_hop_completo,
+        hop_decrypt_password,
+        hop_encrypt_password,
+        migrar_kettle_para_hop,
+    )
+    from gerador_artefatos_visuais import (
+        gerar_documentacao_esteira_hop,
+        gerar_svg_canvas_hop,
+    )
+
+    _limpar_artefatos_workspace()
+
+    # Feature 4A: Criptografia reversível HopTwoWayPasswordEncoder (seed 0933910847463829827159347601486730416058)
+    enc = hop_encrypt_password("SenhaSuperSecreta123")
+    assert enc.startswith("Encrypted "), f"hop_encrypt_password não gerou prefixo Encrypted: {enc}"
+    dec = hop_decrypt_password(enc)
+    assert dec == "SenhaSuperSecreta123", f"Round-trip HopTwoWayPasswordEncoder falhou: {dec}"
+    assert hop_decrypt_password("Encrypted 2be98afc86aa7f2e4cb799d64cc9ba1dd") == "String", (
+        "Falha ao decodificar vetor oficial 'String' do HopTwoWayPasswordEncoderTest.java"
+    )
+    assert hop_decrypt_password("Encrypted 2be98afc86aa7c3d6f84dfb2689caf68a") == "1234567890", (
+        "Falha ao decodificar vetor oficial '1234567890' do HopTwoWayPasswordEncoderTest.java"
+    )
+
+    with tempfile.TemporaryDirectory() as tmp_str:
+        tmp = Path(tmp_str)
+
+        # Feature 2 + 4B: Testar detecção hop-lint (TRANS-002, NAMING-004, SQL-002, STRUCT-003, DOC-001, META-001) + THREAT_MODEL (HOP-SEC-01/02)
+        pasta_hop_lint = tmp / "hop_lint_test"
+        (pasta_hop_lint / "metadata" / "RDBMS_ERRADO").mkdir(parents=True, exist_ok=True)
+        (pasta_hop_lint / "metadata" / "RDBMS_ERRADO" / "conn.json").write_text(
+            '{"name": "CONN_ORA", "password": "Encrypted 2be98afc86aa7f2e4cb79ce10bec3fd89"}',
+            encoding="utf-8",
+        )
+        (pasta_hop_lint / "ppl_vulneravel.hpl").write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<pipeline>
+  <info><name>ppl_vulneravel</name><description/></info>
+  <order>
+    <hop><from>Set variables</from><to>Table input</to><enabled>N</enabled></hop>
+  </order>
+  <transform>
+    <name>Set variables</name>
+    <type>SetVariable</type>
+    <fields><field><field_name>col_insegura</field_name><variable_name>FILTRO_EXTERNO</variable_name></field></fields>
+    <GUI><xloc>100</xloc><yloc>100</yloc></GUI>
+  </transform>
+  <transform>
+    <name>Table input</name>
+    <type>TableInput</type>
+    <sql>SELECT * FROM ORIGEM.TB_DADOS WHERE ${FILTRO_EXTERNO}</sql>
+    <variables_active>Y</variables_active>
+    <GUI><xloc>300</xloc><yloc>100</yloc></GUI>
+  </transform>
+  <transform>
+    <name>Transform_Orfao</name>
+    <type>Dummy</type>
+    <GUI><xloc>500</xloc><yloc>100</yloc></GUI>
+  </transform>
+</pipeline>""",
+            encoding="utf-8",
+        )
+        _stats_lint, findings_lint = audit_hop_directory(pasta_hop_lint)
+        codigos_achados = {f.rule_id for f in findings_lint}
+        for regra_esp in ("HOP-SEC-01", "HOP-SEC-02", "META-001", "DOC-001", "STRUCT-003", "TRANS-002", "NAMING-004", "SQL-002"):
+            assert regra_esp in codigos_achados, f"Regra {regra_esp} não disparou na auditoria Hop: {codigos_achados}"
+
+        arq_yml = gerar_hop_lint_yml(pasta_hop_lint)
+        assert arq_yml.exists() and "TRANS-002" in arq_yml.read_text(encoding="utf-8"), "hop-lint.yml não foi gerado corretamente"
+        arq_pwd = gerar_hop_pwd_resolver_json(pasta_hop_lint)
+        assert arq_pwd.exists() and "HopPasswordVariableResolver" in arq_pwd.read_text(encoding="utf-8"), "hop-pwd.json não foi gerado"
+
+        # Feature 3: Testar Migrador Pentaho Kettle (.ktr + .kjb) -> Apache Hop 2.x (.hpl + .hwf + metadata/rdbms/*.json + SVG)
+        pasta_kettle = tmp / "kettle_legado"
+        pasta_kettle.mkdir(parents=True, exist_ok=True)
+        (pasta_kettle / "carga_clientes.ktr").write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<transformation>
+  <info><name>carga_clientes</name><description>Transformacao Kettle</description></info>
+  <connection>
+    <name>ORA_LEGADO</name>
+    <server>10.0.0.15</server>
+    <type>ORACLE</type>
+    <port>1521</port>
+    <database>ORCL</database>
+    <username>USR_ETL</username>
+    <password>Encrypted 2be98afc86aa7f2e4cb79ce10bec3fd89</password>
+  </connection>
+  <order><hop><from>Ler CSV</from><to>Gravar STG</to><enabled>Y</enabled></hop></order>
+  <step>
+    <name>Ler CSV</name>
+    <type>TextFileInput</type>
+    <GUI><xloc>120</xloc><yloc>140</yloc></GUI>
+  </step>
+  <step>
+    <name>Gravar STG</name>
+    <type>TableOutput</type>
+    <connection>ORA_LEGADO</connection>
+    <table>STG_CLIENTE</table>
+    <GUI><xloc>360</xloc><yloc>140</yloc></GUI>
+  </step>
+</transformation>""",
+            encoding="utf-8",
+        )
+        (pasta_kettle / "job_principal.kjb").write_text(
+            """<?xml version="1.0" encoding="UTF-8"?>
+<job>
+  <name>job_principal</name>
+  <entries>
+    <entry><name>Start</name><type>SPECIAL</type><xloc>100</xloc><yloc>120</yloc></entry>
+    <entry><name>Executar KTR</name><type>TRANS</type><filename>${Internal.Entry.Current.Directory}/carga_clientes.ktr</filename><xloc>320</xloc><yloc>120</yloc></entry>
+  </entries>
+  <hops><hop><from>Start</from><to>Executar KTR</to><enabled>Y</enabled><evaluation>Y</evaluation></hop></hops>
+</job>""",
+            encoding="utf-8",
+        )
+        pasta_hop_migrado = tmp / "hop_migrado"
+        rel_mig = migrar_kettle_para_hop(pasta_kettle, pasta_hop_migrado)
+        assert len(rel_mig["hpl_migrados"]) == 1 and len(rel_mig["hwf_migrados"]) == 1, f"Falha na migração Kettle: {rel_mig}"
+        assert len(rel_mig["conexoes_rdbms"]) == 1, "Conexão <connection> do Kettle não foi extraída para metadata/rdbms/*.json"
+        hpl_mig_txt = Path(rel_mig["hpl_migrados"][0]).read_text(encoding="utf-8")
+        hwf_mig_txt = Path(rel_mig["hwf_migrados"][0]).read_text(encoding="utf-8")
+        conn_json_txt = Path(rel_mig["conexoes_rdbms"][0]).read_text(encoding="utf-8")
+        assert "<pipeline>" in hpl_mig_txt and "<transform>" in hpl_mig_txt and "TextFileInput2" in hpl_mig_txt, ".ktr não converteu tags/tipos para .hpl"
+        assert "<workflow>" in hwf_mig_txt and "<actions>" in hwf_mig_txt and ".hpl" in hwf_mig_txt and "Internal.Entry.Current.Folder" in hwf_mig_txt, ".kjb não converteu para .hwf"
+        assert "#{hop-pwd:" in conn_json_txt and "Encrypted " not in conn_json_txt, "Conexão migrada deveria usar #{hop-pwd:...} sem senha Encrypted"
+
+        # Feature 1 + Feature 5: Gerador de Pacote Hop 2.x com OraBulkLoader + Desenhador Visual SVG + Auto-Doc
+        pasta_pacote = tmp / "pacote_hop_orabulk"
+        arqs_pkg = gerar_pacote_hop_completo(
+            pasta_destino=pasta_pacote,
+            projeto="TESTE_HOP",
+            schema_stg="STG_TESTE",
+            tabelas=["STG_ATENDIMENTO"],
+            usar_orabulkloader=True,
+        )
+        assert "svg_esteira_hop" in arqs_pkg and Path(arqs_pkg["svg_esteira_hop"]).exists(), "diagrama_esteira_hop.svg não foi gerado"
+        assert "doc_esteira_hop" in arqs_pkg and Path(arqs_pkg["doc_esteira_hop"]).exists(), "DOCUMENTACAO_HOP.md não foi gerado"
+        ppl_bulk_path = pasta_pacote / "ppl_stg_atendimento.hpl"
+        assert ppl_bulk_path.exists() and "<type>OraBulkLoader</type>" in ppl_bulk_path.read_text(encoding="utf-8"), (
+            "Pipeline com OraBulkLoader não foi gerado"
+        )
+        svg_hop_txt = gerar_svg_canvas_hop(str(ppl_bulk_path))
+        assert "<svg" in svg_hop_txt and "OraBulkLoader" in svg_hop_txt, "gerar_svg_canvas_hop não renderizou o pipeline"
+        doc_hop_res = gerar_documentacao_esteira_hop(str(pasta_pacote))
+        assert Path(doc_hop_res["doc_esteira_hop"]).exists(), "gerar_documentacao_esteira_hop falhou"
+
+        # Garantir que o pacote gerado pelo NINHO passa com 0 ERROS CRITICOS no próprio auditor Hop!
+        _stats_pkg, findings_pkg = audit_hop_directory(pasta_pacote)
+        erros_pkg = [f for f in findings_pkg if f.severity in ("CRITICO", "ERRO")]
+        assert len(erros_pkg) == 0, f"Pacote Hop gerado apresentou erros críticos na auditoria: {[f.rule_id for f in erros_pkg]}"
+
+    _limpar_artefatos_workspace()
+    return (
+        "5 Mecanismos Apache Hop 2.x (SVG Canvas Painter + DocBuilder, Catálogo hop-lint + hop-lint.yml, "
+        "Migrador Kettle .ktr/.kjb -> .hpl/.hwf, THREAT_MODEL.md HopTwoWayPasswordEncoder + HOP-SEC-01/02 "
+        "e Pacote OraBulkLoader) aprovados."
+    )
+
+
+def teste_16_prova_real_amostra_dim_fato_e_mockup_dax() -> str:
+    """
+    T16: Valida o motor de Prova Real Pós-Carga (DIM_* + FATO_* em CSV/SQL) sobre as medidas DAX
+    do Guia do Analista de BI, detecção/correção de medidas parcialmente corretas (MED-01..06)
+    e renderização do Mockup Visual populado pelos dados reais da amostra.
+    """
+    _limpar_artefatos_workspace()
+
+    pasta_ddl = BASE_DIR / "entrega" / "planejador_dw" / "ddl"
+    pasta_amostras = BASE_DIR / "entrega" / "planejador_dw" / "amostras"
+    pasta_ddl.mkdir(parents=True, exist_ok=True)
+    pasta_amostras.mkdir(parents=True, exist_ok=True)
+
+    ddl_bolsa = """
+    CREATE TABLE PRODBA_OLAP.DIM_UNIDADE (
+        SK_UNIDADE NUMBER(10) PRIMARY KEY,
+        COD_UNIDADE VARCHAR2(30),
+        NOM_UNIDADE VARCHAR2(150),
+        FLG_ATUAL CHAR(1)
+    );
+    CREATE TABLE PRODBA_OLAP.DIM_MODALIDADE (
+        SK_MODALIDADE NUMBER(10) PRIMARY KEY,
+        COD_MODALIDADE VARCHAR2(30),
+        DES_MODALIDADE VARCHAR2(120),
+        FLG_ATUAL CHAR(1)
+    );
+    CREATE TABLE PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (
+        SK_PAGAMENTO NUMBER(12) PRIMARY KEY,
+        SK_UNIDADE NUMBER(10),
+        SK_MODALIDADE NUMBER(10),
+        VAL_PAGO NUMBER(15,2),
+        QTD_BOLSAS NUMBER(10),
+        PER_FREQUENCIA NUMBER(5,2),
+        CONSTRAINT FK_FAT_UNID FOREIGN KEY (SK_UNIDADE) REFERENCES PRODBA_OLAP.DIM_UNIDADE (SK_UNIDADE),
+        CONSTRAINT FK_FAT_MOD FOREIGN KEY (SK_MODALIDADE) REFERENCES PRODBA_OLAP.DIM_MODALIDADE (SK_MODALIDADE)
+    );
+    """
+    (pasta_ddl / "01_dw_bolsa.sql").write_text(ddl_bolsa, encoding="utf-8")
+
+    # Fase 1: Gerar Guia do Analista de BI ANTES de fornecer amostras -> Deve gerar VERSÃO PRÉVIA (Pré-Carga) com apenas 1 arquivo e fichas detalhadas
+    rc_prev, out_prev, err_prev = _executar_cli(["ninho.py", "gerar-guia-bi"])
+    assert rc_prev == 0, f"Falha ao executar gerar-guia-bi (Fase Pré-Carga): {err_prev}\n{out_prev}"
+
+    pasta_bi = BASE_DIR / "saida" / "planejador_dw" / "08_datasets_bi"
+    guias_md_prev = list(pasta_bi.glob("GUIA_ANALISTA_BI_*.md"))
+    assert len(guias_md_prev) == 1, f"Deveria existir exatamente 1 GUIA_ANALISTA_BI_*.md, encontrados: {[g.name for g in guias_md_prev]}"
+    txt_guia_prev = guias_md_prev[0].read_text(encoding="utf-8")
+    assert (
+        "VERSÃO PRÉVIA — PRÉ-CARGA" in txt_guia_prev
+        and "O que calcula (Definição Funcional)" in txt_guia_prev
+        and "Por que esta medida existe (Objetivo de Negócio no Painel)" in txt_guia_prev
+        and "Por que a fórmula DAX foi construída assim (Racional Técnico Detalhado)" in txt_guia_prev
+    ), "Guia na Fase 1 deveria estar rotulado como VERSÃO PRÉVIA — PRÉ-CARGA e conter ficha técnica detalhada em cada medida"
+
+    # Fase 2: Fornecer amostras reais pós-carga e validar -> Deve promover o mesmo Guia único para VERSÃO OFICIAL (Homologada Pós-Carga)
+    # Amostra CSV de DIM_UNIDADE com linha sentinela (-1) e histórico SCD Tipo 2 (UNEB-01 com SK 10 e SK 11)
+    csv_unid = (
+        "SK_UNIDADE;COD_UNIDADE;NOM_UNIDADE;FLG_ATUAL\n"
+        "-1;NI;Não Informado;S\n"
+        "10;UNEB-01;Campus I Salvador (Histórico);N\n"
+        "11;UNEB-01;Campus I Salvador;S\n"
+        "20;UNEB-02;Campus II Alagoinhas;S\n"
+    )
+    (pasta_amostras / "DIM_UNIDADE.csv").write_text(csv_unid, encoding="utf-8")
+
+    csv_mod = (
+        "SK_MODALIDADE;COD_MODALIDADE;DES_MODALIDADE;FLG_ATUAL\n"
+        "-1;NI;Não Informado;S\n"
+        "1;MON;Monitoria Acadêmica;S\n"
+        "2;IC;Iniciação Científica;S\n"
+    )
+    (pasta_amostras / "DIM_MODALIDADE.csv").write_text(csv_mod, encoding="utf-8")
+
+    # Amostra SQL INSERT de FATO_PAGAMENTO_BOLSA contendo:
+    # - 2 linhas para UNEB-01 em versões diferentes de SK (10 e 11) -> 1 única NK ('UNEB-01')
+    # - 1 linha para UNEB-02 (SK 20) -> 1 NK ('UNEB-02')
+    # - 1 linha sentinela SK = -1
+    # - 1 linha com FK órfã SK = 999 (não existe em DIM_UNIDADE -> dispara MED-01 se faltar NOT(ISBLANK(RELATED())))
+    # Soma total de VAL_PAGO = 3000 + 4500 + 2500 + 1500 + 1000 = 12500.00
+    sql_inserts_fato = """
+    INSERT INTO PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (SK_PAGAMENTO, SK_UNIDADE, SK_MODALIDADE, VAL_PAGO, QTD_BOLSAS, PER_FREQUENCIA) VALUES (1, 10, 1, 3000.00, 3, 95.0);
+    INSERT INTO PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (SK_PAGAMENTO, SK_UNIDADE, SK_MODALIDADE, VAL_PAGO, QTD_BOLSAS, PER_FREQUENCIA) VALUES (2, 11, 1, 4500.00, 5, 98.0);
+    INSERT INTO PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (SK_PAGAMENTO, SK_UNIDADE, SK_MODALIDADE, VAL_PAGO, QTD_BOLSAS, PER_FREQUENCIA) VALUES (3, 20, 2, 2500.00, 2, 92.0);
+    INSERT INTO PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (SK_PAGAMENTO, SK_UNIDADE, SK_MODALIDADE, VAL_PAGO, QTD_BOLSAS, PER_FREQUENCIA) VALUES (4, -1, 2, 1500.00, 1, 85.0);
+    INSERT INTO PRODBA_OLAP.FATO_PAGAMENTO_BOLSA (SK_PAGAMENTO, SK_UNIDADE, SK_MODALIDADE, VAL_PAGO, QTD_BOLSAS, PER_FREQUENCIA) VALUES (5, 999, 1, 1000.00, 1, 90.0);
+    """
+    (pasta_amostras / "amostra_fato_pos_carga.sql").write_text(sql_inserts_fato, encoding="utf-8")
+
+    # Medida customizada propositalmente "parcialmente correta" para provar a detecção e auto-correção (MED-01, MED-02, MED-04, MED-05)
+    dax_parcial = """
+    // Medida sem proteção contra Blank Row de FK órfã (MED-01)
+    Qtd Unidades Sem Filtro Blank = COUNTROWS(SUMMARIZE(FILTER('FATO_PAGAMENTO_BOLSA', 'FATO_PAGAMENTO_BOLSA'[SK_UNIDADE] <> -1), 'DIM_UNIDADE'[COD_UNIDADE]))
+
+    // Medida contando SK histórica em vez de NK em dimensão com SCD2 (MED-02)
+    Qtd Unidades Contando SK = CALCULATE(DISTINCTCOUNT('FATO_PAGAMENTO_BOLSA'[SK_UNIDADE]), 'FATO_PAGAMENTO_BOLSA'[SK_UNIDADE] <> -1)
+
+    // Medida rotulada como % mas dividindo Valor por Quantidade (MED-04)
+    % Relacao Pago vs Bolsas Legado = DIVIDE([Total Pago], [Total Bolsas], 0)
+
+    // Soma indevida de percentual (MED-05)
+    Soma Indevida Frequencia = SUM('FATO_PAGAMENTO_BOLSA'[PER_FREQUENCIA])
+    """
+    (pasta_amostras / "medidas_teste_parcial.dax").write_text(dax_parcial, encoding="utf-8")
+
+    rc, out, err = _executar_cli(["ninho.py", "validar-medidas-bi"])
+    assert rc == 0, f"Falha ao executar validar-medidas-bi: {err}\n{out}"
+
+    pasta_bi = BASE_DIR / "saida" / "planejador_dw" / "08_datasets_bi"
+    arq_rel = pasta_bi / "RELATORIO_PROVA_REAL_MEDIDAS.md"
+    arq_svg = pasta_bi / "mockup_painel_bi.svg"
+    arq_html = pasta_bi / "preview_painel_bi.html"
+
+    guias_md_ofic = list(pasta_bi.glob("GUIA_ANALISTA_BI_*.md"))
+    assert len(guias_md_ofic) == 1, f"Deveria existir exatamente 1 GUIA_ANALISTA_BI_*.md após validação, encontrados: {[g.name for g in guias_md_ofic]}"
+    txt_guia_ofic = guias_md_ofic[0].read_text(encoding="utf-8")
+    assert (
+        "VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA" in txt_guia_ofic
+        and "10. 🧪 Prova Real Pós-Carga" in txt_guia_ofic
+    ), "Guia na Fase 2 deveria ter sido promovido para VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA com a Seção 10 de conciliação"
+
+    assert arq_rel.exists(), "RELATORIO_PROVA_REAL_MEDIDAS.md não foi gerado"
+    txt_rel = arq_rel.read_text(encoding="utf-8")
+    assert (
+        "MED-01" in txt_rel
+        and "MED-02" in txt_rel
+        and "MED-04" in txt_rel
+        and "MED-05" in txt_rel
+        and "R$ 12.500,00" in txt_rel
+        and "Catálogo de Medidas DAX Revisadas" in txt_rel
+    ), f"RELATORIO_PROVA_REAL_MEDIDAS.md não detectou todas as medidas parcialmente corretas ou a soma real:\n{txt_rel[:1200]}"
+
+    txt_svg = arq_svg.read_text(encoding="utf-8")
+    assert "Prova Real (5 linhas na Fato)" in txt_svg and "R$ 12.500,00" in txt_svg, (
+        "mockup_painel_bi.svg não foi populado com os valores reais da amostra pós-carga"
+    )
+
+    txt_html = arq_html.read_text(encoding="utf-8")
+    assert "Prova Real Pós-Carga (DIM + FATO) e Conciliação de Medidas DAX" in txt_html and "R$ 12.500,00" in txt_html, (
+        "preview_painel_bi.html não incluiu a tabela interativa de Prova Real Pós-Carga"
+    )
+
+    _limpar_artefatos_workspace()
+    return "Prova Real Pós-Carga (SQLite in-memory DIM+FATO), detecção/correção MED-01..05 e Mockup SVG/HTML populado aprovados."
+
+
 def executar_suite_completa(manter_arquivos: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
@@ -1181,6 +1738,9 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T11: Regressão de Blindagem Arquitetural (Erros E5 a E12 Resolvidos)", teste_11_regressao_e5_e12_blindagem),
         ("T12: Regressão M1..M7 (DDL em CSV, MVW_*, Role-Playing DIM_TEMPO, Guia BI + .xlsx)", teste_12_regressao_m1_m7_praes_csv_ddl_guia_bi),
         ("T13: Regressão P1..P7 (Sigla ODI, ODI_DIM NULLABLE, Dimension Pattern, HOP-H9, UPPER/TRIM)", teste_13_regressao_p1_a_p7),
+        ("T14: Suíte Visual & OOXML (*Craft) + Leitura .ods/.pdf + Panic Hunt", teste_14_suite_visual_craft_e_panic_hunt),
+        ("T15: Suíte Apache Hop 2.x (SVG Painter, hop-lint, Migrador Kettle, THREAT_MODEL & OraBulkLoader)", teste_15_apache_hop_5_mecanismos),
+        ("T16: Prova Real Pós-Carga (DIM+FATO) + Auditor DAX (MED-01..06) + Mockup Populado", teste_16_prova_real_amostra_dim_fato_e_mockup_dax),
     ]
 
     passou = 0

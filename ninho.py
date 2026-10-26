@@ -80,7 +80,12 @@ DESCRICOES_SKILLS_SLASH: Dict[str, str] = {
     "simular-projeto": "Gera simultaneamente as Blueprints editáveis de simulação do Planejador DW e da Camada Semântica.",
     "executar-simulacao": "Lê as edições feitas nas Blueprints aprovadas e executa a geração física dos scripts em saida/planejador_dw/ e saida/camada_semantica/.",
     "melhorar-dw-existente": "Executa o Raio-X não-destrutivo de um DW já construído e gera patches de comentários, dicionário HTML, índices, linha -1 e constraints.",
-    "gerar-guia-bi": "Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx, Sync Slicers, Mockup e SQL de conferência).",
+    "gerar-guia-bi": "Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx/.ods, Sync Slicers, Mockup SVG/HTML/PNG 2x, Apresentação .pptx e Word .docx).",
+    "gerar-mockup-bi": "Gera o Mockup Visual Full HD do Painel Power BI (mockup_painel_bi.svg, mockup_painel_bi_devmode.svg com Redlines DAX ①..⑦ e preview_painel_bi.html com exportação PNG 2x).",
+    "validar-medidas-bi": "Executa a Prova Real Pós-Carga das medidas DAX do Guia do Analista de BI contra amostras de DIM_* e FATO_*, corrige medidas parcialmente corretas e popula o Mockup Visual com os valores reais.",
+    "gerar-apresentacao": "Gera a Apresentação Executiva do projeto em PowerPoint nativo (.pptx) e Deck HTML 16:9 (apresentacao_slides.html).",
+    "exportar-docx": "Exporta os Guias do Analista de BI e de Estratégias ODI 12c em documentos Microsoft Word corporativos (.docx).",
+    "exportar-pdf": "Exporta os Guias do Analista de BI e de Estratégias ODI 12c em documentos PDF 1.4 oficiais (.pdf) prontos para SEI/Ofícios.",
     "gerar-comentarios": "Gera apenas scripts não-destrutivos de COMMENT ON TABLE/COLUMN + Dicionário de Dados HTML interativo.",
     "gerar-dicionario": "Gera exclusivamente o Dicionário de Dados HTML interativo (11_dicionario_dados/dicionario_dados.html).",
     "gerar-indices": "Gera apenas índices de tuning (Bitmap/B-Tree) + procedures PRC_PRE_CARGA_FATO e PRC_POS_CARGA_FATO.",
@@ -98,7 +103,9 @@ DESCRICOES_SKILLS_SLASH: Dict[str, str] = {
     "inspecionar-fontes": "Inspeciona DDLs SQL/CSV depositados em entrega/planejador_dw/ddl/, extrai metadados e gera sugestões analíticas.",
     "inspecionar-pbix": "Descompacta e audita arquivos .pbix do Power BI, extraindo filtros AST/DAX e executando as heurísticas PBIX-H1 a PBIX-H5.",
     "auditar-mapa-odi": "Executa o auditor de tuning e qualidade dimensional (heurísticas H1 a H9) em XMLs ou pastas do ODI 12c.",
-    "auditar-hop": "Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1 a HOP-H8.",
+    "auditar-hop": "Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1..H8, hop-lint oficial e THREAT_MODEL.md (HOP-SEC-01/02).",
+    "migrar-kettle-hop": "Migra projetos legados do Pentaho Kettle (.ktr, .kjb, shared.xml) para Apache Hop 2.x (.hpl, .hwf, metadata/rdbms/*.json e diagrama SVG).",
+    "gerar-pacote-hop": "Gera um pacote completo Apache Hop 2.x (wf_*.hwf, ppl_*.hpl com TableOutput ou OraBulkLoader, hop-lint.yml, hop-pwd.json, diagrama_esteira_hop.svg e DOCUMENTACAO_HOP.md).",
     "inspecionar-governanca": "Executa a auditoria do Gate 0.5 sobre planilhas .xlsx e amostras .csv de governança de dados.",
     "validar-entrega": "Executa a bateria de auditoria pré-voo dos insumos e validação pós-geração da pasta saida/.",
     "testar-ninho": "Executa a suíte automatizada de testes End-to-End (E2E) em todos os motores do NINHO e limpa o workspace ao final.",
@@ -213,7 +220,37 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
     "gerar-guia-bi": (
         "melhorar_dw_existente.py",
         ["--modo", "guia-bi"],
-        "Gera Guia do Analista de BI",
+        "Gera Guia do Analista de BI (.md) + Mockup SVG/HTML/PNG 2x + Planilha .xlsx",
+    ),
+    "gerar-mockup-bi": (
+        "melhorar_dw_existente.py",
+        ["--modo", "mockup-bi"],
+        "Gera Mockup Visual Full HD do Painel BI (SVG + Dev Mode Redlines ①..⑦ + HTML/PNG 2x)",
+    ),
+    "validar-medidas-bi": (
+        "melhorar_dw_existente.py",
+        ["--modo", "validar-medidas-bi"],
+        "Prova Real Pós-Carga das medidas DAX em amostras DIM/FATO + Mockup populado",
+    ),
+    "provar-medidas-bi": (
+        "melhorar_dw_existente.py",
+        ["--modo", "validar-medidas-bi"],
+        "Alias para 'validar-medidas-bi'",
+    ),
+    "gerar-apresentacao": (
+        "melhorar_dw_existente.py",
+        ["--modo", "apresentacao"],
+        "Gera Apresentação Executiva (.pptx + apresentacao_slides.html 16:9)",
+    ),
+    "exportar-docx": (
+        "melhorar_dw_existente.py",
+        ["--modo", "exportar-docx"],
+        "Exporta Guias em formato Microsoft Word corporativo (.docx)",
+    ),
+    "exportar-pdf": (
+        "melhorar_dw_existente.py",
+        ["--modo", "exportar-pdf"],
+        "Exporta Guias e Relatórios em formato PDF 1.4 corporativo (.pdf) pronto para SEI/Ofícios",
     ),
     "gerar-selects-odi": (
         "melhorar_dw_existente.py",
@@ -299,7 +336,17 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
     "auditar-hop": (
         "auditar_esteira_hop.py",
         [],
-        "Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) com HOP-H1..H8",
+        "Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) com HOP-H1..H8, hop-lint e THREAT_MODEL.md",
+    ),
+    "migrar-kettle-hop": (
+        "auditar_esteira_hop.py",
+        ["--migrar-kettle", "saida/planejador_dw/06_pipelines_hop"],
+        "Migra projetos Pentaho Kettle (.ktr/.kjb/shared.xml) para Apache Hop 2.x (.hpl/.hwf + metadata + SVG)",
+    ),
+    "gerar-pacote-hop": (
+        "auditar_esteira_hop.py",
+        ["--gerar-pacote-hop"],
+        "Gera pacote completo Apache Hop 2.x (wf_*.hwf, ppl_*.hpl, hop-lint.yml, hop-pwd.json, SVG e DOC)",
     ),
     "inspecionar-governanca": (
         "inspecionar_insumos_governanca.py",

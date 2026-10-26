@@ -1,21 +1,22 @@
 # 📰 Histórico de Versões e Novidades (Patch Notes) — Plataforma NINHO
 
-> **Versão Atual:** `v0.9.0` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `23/10/2026` | **Status da Suíte de Testes:** `✅ 13/13 Aprovados (E2E)`
+> **Versão Atual:** `v0.9.5` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `26/10/2026` | **Status da Suíte de Testes:** `✅ 16/16 Aprovados (E2E)`
 
 Bem-vindo à página oficial de **Patch Notes** do **NINHO**!
-Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.9.0`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
+Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.9.5`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
 
 > 🎯 **Quando chegaremos na Versão `1.0.0`?**
 > Os módulos de **Planejamento de Data Warehouse (Oracle + ODI 12c + Hop + BI)** e **Camada Semântica (`VW_*` + `META_*`)** já foram colocados à prova e aprimorados com projetos reais de ponta a ponta. A versão **`v1.0.0`** será oficializada quando o **Módulo de Governança de Dados (MongoDB PRODEB + AWS SageMaker Catalog)** passar pelo teste prático completo e for formalmente aprovado.
 
 ---
 
-## 🗺️ Resumo Rápido das Versões (`v0.1.0` $\rightarrow$ `v0.9.0`)
+## 🗺️ Resumo Rápido das Versões (`v0.1.0` $\rightarrow$ `v0.9.5`)
 
 | Versão | Data | Destaque Principal (Em uma frase) |
 | :---: | :---: | :--- |
 | 🎯 **`v1.0.0`** *(Planejada)* | *Em breve* | **Marco Oficial 1.0:** Homologação prática e aprovação final do Módulo de Governança de Dados (MongoDB + AWS SageMaker Catalog) em projeto real. |
-| **[`v0.9.0`](#-versão-090--23102026-versão-atual)** | `23/10/2026` | **Padrão Ouro de Produção (ODI 12c, DBA Oracle & BI):** Guias do ODI no padrão *Dimension Pattern* passo a passo, Guia do Analista de BI completo (com medidas SCD2 e wireframe de 4 páginas), controle `ETA_ETAPAS_CARGA` e trava contra erros de nomes longos e índices no Oracle. |
+| **[`v0.9.5`](#-versão-095--26102026-versão-atual)** | `26/10/2026` | **Suíte Visual, Documentos Office/PDF Nativos, Scanner PII (`*Craft`) & 5 Motores Apache Hop (`hop-main`):** Mockup BI (`SVG` + *Dev Mode Redlines* + `PNG 2x`), diagramas Star Schema/ODI/Hop Canvas, gerador de `.xlsx`/`.pptx`/`.docx`/`.pdf` oficial, leitura de `.ods`/`.pdf`/`.docx`/`.odt`, scanner LGPD em linhas, catálogo `hop-lint`, migrador Kettle (`.ktr`/`.kjb` $\rightarrow$ `.hpl`/`.hwf`), auditoria `THREAT_MODEL.md` (`HopTwoWayPasswordEncoder`) e template `OraBulkLoader`. |
+| **[`v0.9.0`](#-versão-090--23102026)** | `23/10/2026` | **Padrão Ouro de Produção (ODI 12c, DBA Oracle & BI):** Guias do ODI no padrão *Dimension Pattern* passo a passo, Guia do Analista de BI completo (com medidas SCD2 e wireframe de 4 páginas), controle `ETA_ETAPAS_CARGA` e trava contra erros de nomes longos e índices no Oracle. |
 | **[`v0.8.0`](#-versão-080--22102026)** | `22/10/2026` | **Integrações Reais de Campo:** Leitura de DDLs exportados em `.csv` (DBeaver/SQL Developer), suporte a Materialized Views (`MVW_*`), múltiplas datas na mesma Fato (*Role-Playing*) e leitura de planilhas `.xlsx` de indicadores para o Power BI. |
 | **[`v0.7.0`](#-versão-070--21102026)** | `21/10/2026` | **Atalhos de Chat (`/comando`) e Blindagem Geral:** Criado o executável único `ninho.py` (`.\ninho`), instalador de comandos `/instalar-comandos` na IDE e correção de 12 bugs silenciosos de parser SQL e HTML. |
 | **[`v0.6.0`](#-versão-060--19102026)** | `19/10/2026` | **Experiência Guiada e Playground (`/demo`):** Assistente de boas-vindas (`/comecar`), bússola de progresso (`/onde-estou`), auto-organizador de pastas (`/doctor`) e suíte automatizada de testes (`/testar-ninho`). |
@@ -26,7 +27,55 @@ Esta página foi escrita para ser **simples, direta e amigável para pessoas ler
 
 ---
 
-## 🚀 Versão `0.9.0` — `23/10/2026` *(Versão Atual)*
+## 🎨 Versão `0.9.5` — `26/10/2026` *(Versão Atual)*
+
+### 🎯 Em poucas palavras
+Esta versão intermediária (`0.9.5` — logo antes do marco `1.0.0`) incorpora ao NINHO uma **suíte visual, de documentos Office/PDF e auditoria LGPD 100% nativa** (inspirada nas ferramentas de código aberto *FigCraft*, *GridCraft*, *DeckCraft*, *WordCraft*, *PdfCraft* e *PhotoCraft*, sem depender de nenhuma biblioteca externa). Agora, além dos scripts e guias técnicos, o NINHO desenha sozinho a **imagem/mockup do painel Power BI sugerido** (com modo de especificação técnica *Dev Mode* e botão para baixar em `PNG` de alta resolução), gera diagramas vetoriais do **Star Schema** e do **Canvas ODI 12c**, produz apresentações executivas **`.pptx`**, documentos Word **`.docx`**, relatórios **`.pdf`** oficiais prontos para SEI/Ofício e planilhas Excel **`.xlsx`** com listas suspensas e formatação condicional, lê arquivos **`.ods`**, **`.pdf`**, **`.docx`** e **`.odt`**, e escaneia dados pessoais escondidos dentro das linhas de amostra.
+
+### ✨ O que há de novo
+* **Gerador de Imagem/Mockup Visual do Painel BI (`/gerar-mockup-bi`):**
+  * Gera automaticamente em `saida/planejador_dw/08_datasets_bi/` o protótipo visual Full HD (`1440×960`) do dashboard sugerido para o projeto:
+    * `mockup_painel_bi.svg`: Visão executiva com cabeçalho institucional, barra de filtros (*Slicers*) sincronizados a partir das `DIM_*` reais, 4 cartões de KPI (com variação e *sparklines*), gráficos analíticos e matriz detalhada.
+    * `mockup_painel_bi_devmode.svg`: Visão **Dev Mode (*Redlines & Callouts `①..⑦`*)** com cotas em pixels, espaçamentos de grid e anotações de medidas DAX para orientar o desenvolvedor de Power BI.
+    * `preview_painel_bi.html`: Visualizador interativo com alternância entre **Visão Executiva / Dev Mode**, **Tema Claro / Escuro** e botão **"📸 Baixar Imagem PNG (Alta Resolução 2880×1920)"**.
+* **Diagramas Vetoriais em SVG do Star Schema e do Canvas ODI 12c:**
+  * `11_dicionario_dados/diagrama_star_schema.svg`: Diagrama entidade-relacionamento em estrela com a Fato no centro e as Dimensões ao redor exibindo PKs, FKs, cardinalidade `1 : N` e colunas SCD2.
+  * `09_relatorio_estrategias/mapa_canvas_odi.svg`: Desenho vetorial do pacote `PACK_CARGA_<SIGLA>_DW` e do fluxo no Canvas do ODI 12c (`STG -> EXPR_RN_DEDUP -> FLT_RN_IGUAL_1 -> Lookups -> FATO`).
+* **Planilha `Indicadores_PowerBI_<PROJETO>.xlsx` com Listas Suspensas (Dropdowns) e Formatação Condicional:**
+  * Cria automaticamente a planilha Excel nativa com 3 abas (`Catalogo_Indicadores`, `Metas_e_Thresholds` e `Guia_Preenchimento`), cabeçalho congelado, auto-filtro e larguras automáticas.
+  * **Novo (extraído do `gridcraft/xlsx`):** Inclui **listas suspensas nativas do Excel (`<dataValidation type="list">`)** nas colunas de *Origem*, *Formato*, *Visual Recomendado*, *Polaridade* e *Periodicidade* (impedindo erros de digitação do cliente), além de **formatação condicional (`<conditionalFormatting>` + `<dxfs>`)** que destaca em vermelho claro qualquer célula obrigatória deixada em branco.
+* **Gerador Nativo de `.pdf` Oficial (`/exportar-pdf`), Apresentação `.pptx` (`/gerar-apresentacao`) e Word `.docx` (`/exportar-docx`):**
+  * **Novo (extraído do `pdfcraft/create`):** Exporta os relatórios técnicos e de devolução diretamente em **`.pdf` multi-página (`%PDF-1.4`)** com cabeçalho institucional marinho, fontes vetoriais padrão e paginação no rodapé (`GUIA_ANALISTA_BI_<PROJETO>.pdf`, `RELATORIO_ESTRATEGIAS.pdf` e `RELATORIO_DEVOLUCAO_GOVERNANCA.pdf`) — pronto para anexar em processos SEI ou ofícios sem precisar abrir o Word.
+  * Gera também o deck executivo `apresentacao_executiva_<PROJETO>.pptx` + `apresentacao_slides.html` (`16:9` interativo) e os documentos Word `.docx`.
+* **Leitura Universal de Documentos do Cliente (`.ods`, `.pdf`, `.docx` e `.odt`):**
+  * **Novo (extraído do `wordcraft/formats`):** Caso o cliente envie especificações de indicadores, dicionários ou DDLs dentro de arquivos **Word (`.docx`)**, **LibreOffice Writer (`.odt`)**, **LibreOffice Calc (`.ods`)** ou **`.pdf`**, o NINHO extrai parágrafos e tabelas automaticamente nos módulos de DW e Governança.
+* **Scanner LGPD de Dados Pessoais Escondidos nas Linhas da Amostra (`pdfcraft/redact`):**
+  * **Novo:** No Gate 0.5 da Governança (`/inspecionar-governanca`), além de auditar o nome das colunas, o inspetor agora varre o **conteúdo real das células e textos** em busca de **CPF, CNPJ, E-mail, Telefone/Celular BR e Cartão de Crédito (validação de Luhn)** escondidos dentro de colunas aparentemente inocentes (como `TXT_OBSERVACAO` ou `DES_HISTORICO`). Quando encontra, bloqueia a carga e exibe no relatório de devolução a evidência já **mascarada** (`***.456.789-**`, `jo***@ba.gov.br`).
+* **5 Mecanismos Nativos do Apache Hop (`hop-main`) Integrados ao NINHO:**
+  * **1. Desenhador Visual de Pipelines (`.hpl`) e Workflows (`.hwf`) em SVG + Auto-Documentação (`PipelineSvgPainter` / `DocBuilder`):** Lê as coordenadas `<gui><xloc>/<yloc>` e `<notepads>` dos XMLs do Apache Hop e desenha `diagrama_esteira_hop.svg` (com cores semânticas para hops de sucesso, erro `<transform_error_handling>`, incondicionais e desabilitados, além de badges para etapas órfãs) e `DOCUMENTACAO_HOP.md` com Sumário (TOC), parâmetros e inventário técnico.
+  * **2. Catálogo Oficial `hop-lint` (`hop-lint-core.yml`) + Gerador `hop-lint.yml`:** Expande o `/auditar-hop` com as regras oficiais do linter do Hop (`TRANS-002` transform órfão, `WORKFLOW-002` action órfã, `NAMING-004` nome genérico padrão da GUI, `SQL-002` `SELECT *` irrestrito em `TableInput`, `STRUCT-003` hop desabilitado, `DOC-001` ausência de `<description>`/`<notepad>` e `META-001` subpasta `metadata/` fora de `kebab-case`) e gera `hop-lint.yml` na raiz do projeto.
+  * **3. Migrador Automático de Pentaho Kettle Legado (`.ktr` / `.kjb` / `shared.xml`) para Apache Hop 2.x (`/migrar-kettle-hop`):** Baseado no motor `KettleConst.java` do Apache Hop, converte recursivamente transformações `.ktr` em `.hpl` e jobs `.kjb` em `.hwf`, renomeia plugins legados (`TextFileInput` $\rightarrow$ `TextFileInput2`, `TRANS` $\rightarrow$ `PIPELINE`, `JOB` $\rightarrow$ `WORKFLOW`, `ModifiedJavaScriptValue` $\rightarrow$ `ScriptValueMod`), atualiza variáveis internas (`Internal.Transformation.*` $\rightarrow$ `Internal.Pipeline.*`) e extrai conexões `<connection>` embutidas para `metadata/rdbms/<CONEXAO>.json` usando `#{hop-pwd:...}`.
+  * **4. Blindagem de Segurança do `THREAT_MODEL.md` (`HopTwoWayPasswordEncoder` + `HOP-SEC-01/02`):** Implementa em Python puro o codificador/decodificador oficial `HopTwoWayPasswordEncoder` (semente hexadecimal `0933910847463829827159347601486730416058`) para detectar ofuscações reversíveis `Encrypted 2be98afc...` (`HOP-SEC-01`) e injeção de variáveis `${VAR}` em consultas SQL (`HOP-SEC-02`), gerando automaticamente `metadata/variable-resolver/hop-pwd.json`.
+  * **5. Template de Alta Volumetria `OraBulkLoader` (`SQL*Loader DIRECT=TRUE`) & Gerador de Pacote Hop (`/gerar-pacote-hop`):** Novo comando `/gerar-pacote-hop` (com suporte a `--orabulkloader`) e template `template_pipeline_orabulkloader.hpl` para cargas de milhões de linhas em tabelas `STG_* NOLOGGING` via `SQL*Loader` (`DIRECT=TRUE`, `LOAD_METHOD=AUTO_CONCURRENT`).
+* **Motor de Prova Real Pós-Carga (`DIM_*` + `FATO_*`), Auditoria de Medidas DAX (`MED-01..06`), Ciclo de Vida do Guia do Analista e 3 Layouts de Mockup (`/validar-medidas-bi`):**
+  * Permite fornecer os DDLs e uma amostra real de dados pós-carga das tabelas `DIM_*` e `FATO_*` (em `.csv`/`.tsv`, `.sql` com `INSERT INTO`, `.xlsx`, `.ods` ou `.dax` na pasta `entrega/planejador_dw/amostras/`) para testar na prática o que foi construído.
+  * **Ciclo de Vida do Guia do Analista em 2 Estágios (Arquivo Único `GUIA_ANALISTA_BI_<PROJETO>.md`):**
+    * **Estágio 1 — Versão Prévia (`Pré-Carga`):** Gerada inicialmente a partir do DDL antes da carga com o título `Guia do Analista de BI (VERSÃO PRÉVIA — PRÉ-CARGA)` e banner orientando a validação pós-carga.
+    * **Estágio 2 — Versão Oficial (`Homologada Pós-Carga`):** Ao rodar `/validar-medidas-bi` com a amostra real, o mesmo arquivo é promovido automaticamente para `Guia Oficial do Analista de BI (VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA)`, substituindo medidas parcialmente corretas pelo DAX corrigido, injetando os valores reais da amostra nas fichas técnicas e adicionando a **Seção 10 (`Prova Real Pós-Carga e Conciliação de Medidas DAX`)**.
+  * **Ficha Técnica Individual Detalhada para 100% das Medidas DAX:** Cada medida do guia possui sua própria ficha técnica explicando *O que calcula (Definição Funcional)*, *Por que esta medida existe (Objetivo de Negócio no Painel)*, *Por que a fórmula DAX foi construída assim (Racional Técnico Detalhado)*, *Onde utilizar & Formatação* e bloco DAX individual.
+  * **3 Layouts Interativos no Mockup HTML (`preview_painel_bi.html`):** Permite alternar em 1 clique entre **Layout 1: Executivo Governamental (Top Navigation)**, **Layout 2: Analítico Menu Lateral Escuro (Sidebar Dark)** e **Layout 3: Sala de Situação & Auditoria Pós-Carga (Conciliação)**.
+  * Sobe o Star Schema em memória (`sqlite3`), executa e concilia todas as medidas DAX contra consultas SQL reais sobre a amostra e aplica **6 heurísticas (`MED-01` a `MED-06`)** que detectam e auto-corrigem medidas "parcialmente corretas":
+    * `MED-01`: `SUMMARIZE` SCD2 Safe sem proteção `NOT(ISBLANK(RELATED('DIM'[NK])))` (que infla +1 quando há FK órfã ou NK nula na amostra);
+    * `MED-02`: `DISTINCTCOUNT` contando `SK` histórica na Fato em vez da Chave Natural (`NK`) em dimensões SCD Tipo 2;
+    * `MED-03`: `% Atingimento de Meta` dividindo grandezas incompatíveis;
+    * `MED-04`: Medida rotulada como `% Relacao ...` dividindo Valor Monetário (`VAL_*`) por Quantidade (`QTD_*`), reclassificada automaticamente para `Valor Medio ... por ...`;
+    * `MED-05`: `SUM()` indevido sobre coluna de percentual/taxa (`PER_*` / `PRC_*`), corrigido para `AVERAGE()`;
+    * `MED-06`: Conciliação de medidas filtradas de negócio (`CALCULATE` com predicados de dimensão/fato).
+  * Gera `saida/planejador_dw/08_datasets_bi/RELATORIO_PROVA_REAL_MEDIDAS.md` e popula o Mockup Visual (`mockup_painel_bi.svg`, `mockup_painel_bi_devmode.svg` e `preview_painel_bi.html`) com os números reais calculados na amostra pós-carga.
+
+---
+
+## 🚀 Versão `0.9.0` — `23/10/2026`
 
 ### 🎯 Em poucas palavras
 Esta atualização nasceu da comparação prática com projetos reais entregues de ponta a ponta (como o *Gestão à Vista de Sustentação*). Reformulamos completamente os dois documentos mais importantes para quem constrói e consome o DW — o **Guia Passo a Passo de Construção no ODI 12c** e o **Guia do Analista de BI** — além de blindar os scripts SQL contra os erros mais comuns que acontecem ao rodar no banco Oracle da PRODEB.

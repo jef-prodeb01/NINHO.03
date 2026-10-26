@@ -34,6 +34,29 @@ try:
 except ImportError:
     HAS_OPENPYXL = False
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+try:
+    from gerador_artefatos_visuais import (
+        exportar_markdown_para_docx,
+        exportar_markdown_para_pdf,
+        extrair_texto_pdf_nativo,
+        ler_planilha_ods,
+        ler_documento_docx,
+        ler_documento_odt,
+        escanear_pii_em_texto_ou_linhas,
+    )
+except Exception:
+    exportar_markdown_para_docx = None
+    exportar_markdown_para_pdf = None
+    extrair_texto_pdf_nativo = None
+    ler_planilha_ods = None
+    ler_documento_docx = None
+    ler_documento_odt = None
+    escanear_pii_em_texto_ou_linhas = None
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -523,6 +546,16 @@ def inspecionar_csv(caminho_csv: Path) -> dict:
             f"[Amostra CSV] Coluna(s) com 100% dos registros vazios na amostra ({len(colunas_100_vazias)}): {', '.join(colunas_100_vazias[:10])}."
         )
 
+    # 3. Scanner de PII Escondido no Conteúdo das Linhas (Redact / LGPD Scanner)
+    if escanear_pii_em_texto_ou_linhas is not None:
+        achados_pii = escanear_pii_em_texto_ou_linhas(leitor, nome_contexto=caminho_csv.name)
+        for ach in achados_pii:
+            resultado["alertas_lgpd"].append(
+                f"[Scanner Conteúdo CSV | Linha {ach['linha']} | Coluna '{ach['coluna']}'] "
+                f"Detectado {ach['tipo_pii']} (`{ach['valor_mascarado']}`) — Classificação recomendada: "
+                f"{ach['classificacao_sugerida']} ({ach['base_legal_sugerida']})."
+            )
+
     resultado["resumo"] = {
         "delimitador": delimitador,
         "total_colunas_cabecalho": len(cabecalho),
@@ -531,6 +564,141 @@ def inspecionar_csv(caminho_csv: Path) -> dict:
         "total_registros_amostra": total_linhas_dados,
         "colunas_100_porcento_vazias": colunas_100_vazias,
     }
+    return resultado
+
+
+def inspecionar_ods(caminho_ods: Path) -> dict:
+    """Inspeciona planilhas LibreOffice Calc (.ods) aplicando as regras do Gate 0.5 PRODEB."""
+    resultado = {
+        "arquivo": caminho_ods.name,
+        "caminho": str(caminho_ods),
+        "tipo_arquivo": "ODS",
+        "bloqueios_devolucao": [],
+        "alertas_lgpd": [],
+        "metadados_insumos": {},
+        "de_para_campos": [],
+        "resumo": {},
+    }
+    if ler_planilha_ods is None:
+        resultado["bloqueios_devolucao"].append("Leitor nativo .ods indisponível.")
+        return resultado
+    try:
+        rows = ler_planilha_ods(str(caminho_ods))
+    except Exception as exc:
+        resultado["bloqueios_devolucao"].append(f"Planilha ODS corrompido ou ilegível: {exc}")
+        return resultado
+
+    if not rows:
+        resultado["bloqueios_devolucao"].append("Arquivo .ods corrompido, vazio ou sem abas legíveis.")
+        return resultado
+
+    for r_idx, row in enumerate(rows[1:], start=2):
+        if not row or all(not str(c or "").strip() for c in row):
+            continue
+        campo = str(row[0] if len(row) > 0 else "").strip()
+        desc = str(row[1] if len(row) > 1 else "").strip()
+        tipo = str(row[2] if len(row) > 2 else "").strip()
+        if not campo or campo.lower() in ("campo", "coluna", "atributo", "nome_campo"):
+            continue
+        inv_d, mot_d = eh_valor_vazio_ou_evasivo(desc)
+        if inv_d:
+            resultado["bloqueios_devolucao"].append(
+                f"[Planilha ODS | Linha {r_idx}] Campo '{campo}' com Descrição {mot_d}."
+            )
+        campo_mongo, tipo_bson = inferir_prefixo_e_nome_mongo(campo, desc, tipo)
+        _, _, diag_lgpd = detectar_risco_lgpd(campo, desc)
+        resultado["de_para_campos"].append(
+            {
+                "linha": r_idx,
+                "campo_origem": campo,
+                "tipo_origem": tipo,
+                "campo_mongo": campo_mongo,
+                "tipo_bson": tipo_bson,
+                "diagnostico_ia_lgpd": diag_lgpd,
+            }
+        )
+
+    if escanear_pii_em_texto_ou_linhas is not None:
+        for ach in escanear_pii_em_texto_ou_linhas(rows, nome_contexto=caminho_ods.name):
+            resultado["alertas_lgpd"].append(
+                f"[Scanner Conteúdo ODS | Linha {ach['linha']} | Coluna '{ach['coluna']}'] "
+                f"Detectado {ach['tipo_pii']} (`{ach['valor_mascarado']}`) — {ach['classificacao_sugerida']}."
+            )
+    return resultado
+
+
+def inspecionar_pdf(caminho_pdf: Path) -> dict:
+    """Inspeciona documentos/ofícios PDF de governança de forma resiliente (`panic_hunt`)."""
+    resultado = {
+        "arquivo": caminho_pdf.name,
+        "caminho": str(caminho_pdf),
+        "tipo_arquivo": "PDF",
+        "bloqueios_devolucao": [],
+        "alertas_lgpd": [],
+        "metadados_insumos": {},
+        "de_para_campos": [],
+        "resumo": {},
+    }
+    if extrair_texto_pdf_nativo is None:
+        return resultado
+    try:
+        dados_raw = caminho_pdf.read_bytes()
+        if not dados_raw.startswith(b"%PDF"):
+            resultado["bloqueios_devolucao"].append("Documento PDF inválido ou truncado (Cabeçalho %PDF ausente).")
+            return resultado
+        texto = (extrair_texto_pdf_nativo(str(caminho_pdf)) or "").strip()
+    except Exception as exc:
+        resultado["bloqueios_devolucao"].append(f"Documento PDF corrompido ou ilegível: {exc}")
+        return resultado
+
+    resultado["resumo"] = {"caracteres_extraidos": len(texto)}
+    if not texto:
+        resultado["bloqueios_devolucao"].append(
+            "Documento PDF sem camada de texto extraível (imagem digitalizada sem OCR ou stream vazio)."
+        )
+    elif escanear_pii_em_texto_ou_linhas is not None:
+        for ach in escanear_pii_em_texto_ou_linhas(texto, nome_contexto=caminho_pdf.name):
+            resultado["alertas_lgpd"].append(
+                f"[Scanner Conteúdo PDF | Linha {ach['linha']}] Detectado {ach['tipo_pii']} (`{ach['valor_mascarado']}`) — {ach['classificacao_sugerida']}."
+            )
+    return resultado
+
+
+def inspecionar_doc_texto(caminho_doc: Path) -> dict:
+    """Inspeciona documentos Word (.docx) e LibreOffice Writer (.odt) na governança."""
+    suf = caminho_doc.suffix.lower()
+    fmt = "DOCX" if suf == ".docx" else "ODT"
+    resultado = {
+        "arquivo": caminho_doc.name,
+        "caminho": str(caminho_doc),
+        "tipo_arquivo": fmt,
+        "bloqueios_devolucao": [],
+        "alertas_lgpd": [],
+        "metadados_insumos": {},
+        "de_para_campos": [],
+        "resumo": {},
+    }
+    leitor_fn = ler_documento_docx if suf == ".docx" else ler_documento_odt
+    if leitor_fn is None:
+        return resultado
+    try:
+        info = leitor_fn(str(caminho_doc))
+    except Exception as exc:
+        resultado["bloqueios_devolucao"].append(f"Documento {fmt} corrompido ou ilegível: {exc}")
+        return resultado
+
+    texto = (info.get("texto") or "").strip()
+    tabelas = info.get("tabelas") or []
+    resultado["resumo"] = {"caracteres_extraidos": len(texto), "tabelas": len(tabelas)}
+    if not texto and not tabelas:
+        resultado["bloqueios_devolucao"].append(f"Documento {fmt} vazio ou sem conteúdo legível.")
+        return resultado
+
+    if escanear_pii_em_texto_ou_linhas is not None:
+        for ach in escanear_pii_em_texto_ou_linhas(texto, nome_contexto=caminho_doc.name):
+            resultado["alertas_lgpd"].append(
+                f"[Scanner Conteúdo {fmt} | Linha {ach['linha']}] Detectado {ach['tipo_pii']} (`{ach['valor_mascarado']}`) — {ach['classificacao_sugerida']}."
+            )
     return resultado
 
 
@@ -622,21 +790,28 @@ def main():
     if alvo.is_file():
         arquivos = [alvo]
     else:
-        for ext in ("*.xlsx", "*.csv"):
+        for ext in ("*.xlsx", "*.ods", "*.csv", "*.pdf", "*.docx", "*.odt"):
             arquivos.extend(sorted(alvo.rglob(ext)))
         arquivos = [f for f in arquivos if not f.name.startswith("~$") and f.name.lower() != "readme.md"]
 
     if not arquivos:
-        print(f"ℹ️ Nenhum arquivo .xlsx ou .csv encontrado em: {alvo}")
-        print("   Deposite a planilha padrão PRODEB (.xlsx) e/ou amostras (.csv) em 'entrega/governanca_dados/'.")
+        print(f"ℹ️ Nenhum arquivo .xlsx, .ods, .csv, .pdf, .docx ou .odt encontrado em: {alvo}")
+        print("   Deposite a planilha padrão PRODEB (.xlsx/.ods) e/ou amostras (.csv) em 'entrega/governanca_dados/'.")
         sys.exit(0)
 
     resultados = []
     for arq in arquivos:
-        if arq.suffix.lower() == ".xlsx":
+        suf = arq.suffix.lower()
+        if suf == ".xlsx":
             resultados.append(inspecionar_xlsx(arq))
-        elif arq.suffix.lower() == ".csv":
+        elif suf == ".ods":
+            resultados.append(inspecionar_ods(arq))
+        elif suf == ".csv":
             resultados.append(inspecionar_csv(arq))
+        elif suf == ".pdf":
+            resultados.append(inspecionar_pdf(arq))
+        elif suf in (".docx", ".odt"):
+            resultados.append(inspecionar_doc_texto(arq))
 
     relatorio_md = gerar_markdown_relatorio(resultados)
     print(relatorio_md)
@@ -646,6 +821,28 @@ def main():
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(relatorio_md, encoding="utf-8")
         print(f"\n💾 Relatório salvo em: {out_path}")
+        if exportar_markdown_para_docx is not None:
+            try:
+                docx_path = out_path.with_suffix(".docx")
+                exportar_markdown_para_docx(
+                    str(out_path),
+                    str(docx_path),
+                    titulo="Relatório de Auditoria de Governança & Devolução ao Cliente (Gate 0.5)",
+                )
+                print(f"📄 Relatório Word (.docx) salvo em: {docx_path}")
+            except Exception:
+                pass
+        if exportar_markdown_para_pdf is not None:
+            try:
+                pdf_path = out_path.with_suffix(".pdf")
+                exportar_markdown_para_pdf(
+                    str(out_path),
+                    str(pdf_path),
+                    titulo="Relatorio de Auditoria de Governanca & Devolucao ao Cliente (Gate 0.5)",
+                )
+                print(f"📑 Relatório PDF Oficial (.pdf) salvo em: {pdf_path}")
+            except Exception:
+                pass
 
     total_bloqueios = sum(len(r["bloqueios_devolucao"]) for r in resultados)
     sys.exit(1 if total_bloqueios > 0 else 0)

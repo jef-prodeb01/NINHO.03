@@ -78,9 +78,23 @@ Sempre execute `python core/scripts_comuns/auditar_esteira_hop.py <pasta>` para 
 | **`HOP-H7`** | 🟡 Médio | `TableOutput` sem `use_batch=Y` / `specify_fields=Y` ou `InsertUpdate` com identificadores entre aspas duplas (`"SCHEMA"."TABELA"`) | Habilitar `use_batch=Y`, `specify_fields=Y` e remover aspas duplas de schema/tabela |
 | **`HOP-H8`** | 🟡 Médio | `metadata/schema-definition/*.json` com campos corrompidos (`decimalSymbol="binary-string"`) | Validar JSON e alinhar propriedades do Schema Definition |
 | **`HOP-H9`** | 🔴 Crítico | Dessincronia entre a tag `<table>STG_*</table>` do pipeline `.hpl` e o `CREATE TABLE STG_*` em `02_create_stg_tables.sql` (causa `ORA-00942`) | Alinhar o nome físico da tabela Staging entre o `.hpl` e o DDL |
+| **`HOP-SEC-01`** | 🟠 Alto | Ofuscação reversível `Encrypted 2be98afc...` (`HopTwoWayPasswordEncoder` com semente estática pública) hardcoded em XML ou `metadata/rdbms/*.json` (`DB-001` / `SEC-002` / `THREAT_MODEL.md`) | Substituir por Variable Resolver `#{hop-pwd:ENV_PASS_*}` configurado em `metadata/variable-resolver/hop-pwd.json` |
+| **`HOP-SEC-02`** | 🟠 Alto | Risco de SQL Injection por interpolação direta `${VAR}` com `<replace_variables>Y</replace_variables>` ou `SetVariable` (`THREAT_MODEL.md` §4.5) | Usar parâmetros posicionais `?` e stream de parâmetros no `TableInput` / `ExecSQL` |
+| **`TRANS-002` / `WORKFLOW-002`** | 🟠 Alto | Transform ou Action órfão desconectado de qualquer `<hop>` ativo no canvas (`hop-lint-core.yml`) | Conectar ao fluxo principal ou remover o componente órfão |
+| **`NAMING-004` / `DOC-001`** | 🔵 Baixo | Nome genérico padrão do Hop GUI (`Table input`, `Select values 2`) ou ausência de `<description>`/`<notepad>` | Renomear com prefixo semântico (`IN_`, `OUT_`, `FLT_`) e documentar via `<notepad>` |
+| **`SQL-002` / `STRUCT-003`** | 🟡 Médio | `SELECT *` sem limite em `TableInput` ou hop desabilitado (`<enabled>N</enabled>`) deixado no canvas | Projetar colunas explicitamente e remover hops desabilitados |
+| **`META-001`** | 🟠 Alto | Subpasta dentro de `metadata/` fora do padrão `kebab-case` exigido pelo `FileMetadataFolderProvider` | Padronizar em `kebab-case` (`rdbms`, `variable-resolver`, `workflow-log`) |
 
 ---
 
-## 📂 3. Destino Canônico de Saída, Pacote Autocontido e Templates
+## 🛠️ 3. Motores Nativos Apache Hop 2.x Integrados (`auditar_esteira_hop.py`)
 
-Quando acionada para geração, salve os artefatos em `saida/planejador_dw/06_pipelines_hop/` (ou `06_etl_hop/<PROJETO>/` para pacote autocontido de deploy no servidor Hop contendo `project-config.json`, `config_env.json`, `metadata/rdbms/ORACLE_STG.json`, `wf_*.hwf`, `ppl_*.hpl` e `scripts/*.py`) utilizando como base estrutural [template_pipeline.hpl](./templates/template_pipeline.hpl).
+- **🎨 Desenhador Visual de Canvas SVG & Auto-Documentação (`--svg-doc`):** Renderiza os grafos `.hpl` e `.hwf` em SVG vetorial (`diagrama_esteira_hop.svg`, inspirado em `PipelineSvgPainter.java` e `WorkflowSvgPainter.java`) e gera `DOCUMENTACAO_HOP.md` (`DocBuilder.java`).
+- **🔄 Migrador Pentaho Kettle Legado (`.ktr`/`.kjb` $\rightarrow$ `.hpl`/`.hwf`) (`/migrar-kettle-hop`):** Converte transformações `.ktr` e jobs `.kjb` para Apache Hop 2.x conforme `KettleConst.java`, extraindo conexões embutidas para `metadata/rdbms/*.json` com `#{hop-pwd:...}`.
+- **⚡ Gerador de Pacote Hop 2.x com `OraBulkLoader` (`/gerar-pacote-hop`):** Gera o pacote completo Hop 2.x suportando tanto JDBC Batch (`TableOutput`) quanto `OraBulkLoader` (`SQL*Loader DIRECT=TRUE` + `AUTO_CONCURRENT` via [template_pipeline_orabulkloader.hpl](./templates/template_pipeline_orabulkloader.hpl)), além de `hop-lint.yml` e `metadata/variable-resolver/hop-pwd.json`.
+
+---
+
+## 📂 4. Destino Canônico de Saída, Pacote Autocontido e Templates
+
+Quando acionada para geração, salve os artefatos em `saida/planejador_dw/06_pipelines_hop/` (ou `06_etl_hop/<PROJETO>/` para pacote autocontido de deploy no servidor Hop contendo `project-config.json`, `hop-lint.yml`, `metadata/rdbms/ORACLE_STG.json`, `metadata/variable-resolver/hop-pwd.json`, `wf_*.hwf`, `ppl_*.hpl`, `diagrama_esteira_hop.svg` e `DOCUMENTACAO_HOP.md`) utilizando como base estrutural [template_pipeline.hpl](./templates/template_pipeline.hpl) ou [template_pipeline_orabulkloader.hpl](./templates/template_pipeline_orabulkloader.hpl).

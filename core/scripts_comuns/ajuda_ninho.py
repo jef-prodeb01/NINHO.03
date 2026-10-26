@@ -149,8 +149,33 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
             },
             {
                 "chat": "`/gerar-guia-bi`",
-                "objetivo": "Gera apenas o Guia do Analista de BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`).",
+                "objetivo": "Gera o Guia Completo do Analista de BI (`GUIA_ANALISTA_BI_<PROJETO>.md/.docx`), Mockup Visual (`mockup_painel_bi.svg` + `preview_painel_bi.html`), Planilha `.xlsx` 3 abas e Deck `.pptx`.",
                 "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo guia-bi`",
+            },
+            {
+                "chat": "`/gerar-mockup-bi`",
+                "objetivo": "Gera o Mockup Vetorial Full HD do Painel Power BI (`mockup_painel_bi.svg`, `mockup_painel_bi_devmode.svg` com Redlines DAX `①..⑦` e `preview_painel_bi.html` com exportação PNG 2x).",
+                "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo mockup-bi`",
+            },
+            {
+                "chat": "`/validar-medidas-bi`",
+                "objetivo": "Executa a Prova Real Pós-Carga das medidas DAX sobre amostras de `DIM_*` e `FATO_*` (`entrega/planejador_dw/amostras/`), detecta/corrige medidas parcialmente corretas (`MED-01..06`) e popula o Mockup Visual com os números reais da carga.",
+                "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo validar-medidas-bi`",
+            },
+            {
+                "chat": "`/gerar-apresentacao`",
+                "objetivo": "Gera a Apresentação Executiva `16:9` de Kickoff/Entrega do projeto (`apresentacao_executiva_<projeto>.pptx` + `apresentacao_slides.html`).",
+                "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo apresentacao`",
+            },
+            {
+                "chat": "`/exportar-docx`",
+                "objetivo": "Exporta os guias técnicos (`.md`) para documentos Microsoft Word corporativos estilizados (`.docx`).",
+                "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo exportar-docx`",
+            },
+            {
+                "chat": "`/exportar-pdf`",
+                "objetivo": "Exporta os guias técnicos (`.md`) para documentos PDF 1.4 corporativos multi-página (`.pdf`) prontos para anexação em SEI/Ofícios.",
+                "cli": "`python core/scripts_comuns/melhorar_dw_existente.py --modo exportar-pdf`",
             },
             {
                 "chat": "`/gerar-mock-bi`",
@@ -215,8 +240,18 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
             },
             {
                 "chat": "`/auditar-hop`",
-                "objetivo": "Audita projetos Apache Hop 2.x (`.hpl`, `.hwf`, `.json`) e extratores Python/FTPS com as heurísticas `HOP-H1` a `HOP-H8`.",
-                "cli": "`python core/scripts_comuns/auditar_esteira_hop.py <pasta_hop>`",
+                "objetivo": "Audita projetos Apache Hop 2.x (`.hpl`, `.hwf`, `.json`) e extratores Python/FTPS com `HOP-H1`..`H8`, catálogo oficial `hop-lint` (`TRANS-002`, `SQL-002`, `META-001`) e `THREAT_MODEL.md` (`HOP-SEC-01/02`).",
+                "cli": "`python core/scripts_comuns/auditar_esteira_hop.py <pasta_hop> --svg-doc --gerar-lint-yml`",
+            },
+            {
+                "chat": "`/migrar-kettle-hop`",
+                "objetivo": "Migra projetos legados do Pentaho Data Integration / Kettle (`.ktr`, `.kjb`, `shared.xml`) para Apache Hop 2.x (`.hpl`, `.hwf`, `metadata/rdbms/*.json` e diagramas SVG).",
+                "cli": "`python core/scripts_comuns/auditar_esteira_hop.py <pasta_kettle> --migrar-kettle saida/planejador_dw/06_pipelines_hop`",
+            },
+            {
+                "chat": "`/gerar-pacote-hop`",
+                "objetivo": "Gera um pacote completo Apache Hop 2.x (`wf_*.hwf`, `ppl_*.hpl` JDBC ou `OraBulkLoader`, `hop-lint.yml`, `hop-pwd.json`, `diagrama_esteira_hop.svg` e `DOCUMENTACAO_HOP.md`).",
+                "cli": "`python core/scripts_comuns/auditar_esteira_hop.py --gerar-pacote-hop [--orabulkloader]`",
             },
             {
                 "chat": "`/inspecionar-governanca`",
@@ -985,23 +1020,32 @@ def executar_demo() -> str:
         check=True,
     )
 
-    # 2. Marca ambas as Blueprints como aprovadas e executa a geração física
+    # 2. Marca ambas as Blueprints como aprovadas (e no /demo habilita todos os formatos de exportação) e executa a geração física
     for bp_path in (
         ENTREGA_DIR / "planejador_dw" / "SIMULACAO_BLUEPRINT_DW.md",
         ENTREGA_DIR / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md",
     ):
         if bp_path.exists():
             txt = bp_path.read_text(encoding="utf-8")
-            bp_path.write_text(
-                txt.replace(
-                    "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
-                    "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
-                ),
-                encoding="utf-8",
+            txt = txt.replace(
+                "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
             )
+            txt = txt.replace("- [ ] `12_apresentacao_executiva`", "- [x] `12_apresentacao_executiva`")
+            txt = txt.replace("- [ ] `13_exportar_docx`", "- [x] `13_exportar_docx`")
+            txt = txt.replace("- [ ] `14_exportar_pdf`", "- [x] `14_exportar_pdf`")
+            bp_path.write_text(txt, encoding="utf-8")
 
     subprocess.run(
-        [sys.executable, str(ROOT_DIR / "core" / "scripts_comuns" / "simular_projeto.py"), "--modulo", "ambos", "--acao", "executar"],
+        [
+            sys.executable,
+            str(ROOT_DIR / "core" / "scripts_comuns" / "simular_projeto.py"),
+            "--modulo",
+            "ambos",
+            "--acao",
+            "executar",
+            "--todos-formatos",
+        ],
         cwd=str(ROOT_DIR),
         capture_output=True,
         text=True,
@@ -1027,6 +1071,10 @@ def executar_demo() -> str:
     bp_sem_url = "file:///" + str(ENTREGA_DIR / "camada_semantica" / "SIMULACAO_BLUEPRINT_SEMANTICA.md").replace("\\", "/")
     dic_html_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "11_dicionario_dados" / "dicionario_dados.html").replace("\\", "/")
     mock_csv_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "08_datasets_bi" / "mock_dados_bi.csv").replace("\\", "/")
+    prev_bi_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "08_datasets_bi" / "preview_painel_bi.html").replace("\\", "/")
+    slides_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "08_datasets_bi" / "apresentacao_slides.html").replace("\\", "/")
+    star_svg_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "11_dicionario_dados" / "diagrama_star_schema.svg").replace("\\", "/")
+    odi_svg_url = "file:///" + str(SAIDA_DIR / "planejador_dw" / "09_relatorio_estrategias" / "mapa_canvas_odi.svg").replace("\\", "/")
     vw_kpi_url = "file:///" + str(SAIDA_DIR / "camada_semantica" / "vw_analiticas" / "03_vw_kpis.sql").replace("\\", "/")
 
     linhas = [
@@ -1038,11 +1086,14 @@ def executar_demo() -> str:
         "",
         "| O que Explorar | Arquivo Gerado | O que observar nele |",
         "| :--- | :--- | :--- |",
-        f"| **1. Blueprint Editável do DW** | [SIMULACAO_BLUEPRINT_DW.md]({bp_dw_url}) | Matriz De/Para com `[x]`/`[ ]`, amostra de 3 linhas + linha `-1` e Radar da IA |",
-        f"| **2. Blueprint da Camada Semântica** | [SIMULACAO_BLUEPRINT_SEMANTICA.md]({bp_sem_url}) | Views em 3 camadas, catálogo `META_METRICA` e KPIs sugeridos pela IA |",
-        f"| **3. Dicionário de Dados HTML** | [dicionario_dados.html]({dic_html_url}) | Página interativa com busca em tempo real, badges PK/FK e grão das tabelas |",
-        f"| **4. Views de KPIs Consolidados** | [03_vw_kpis.sql]({vw_kpi_url}) | Fórmulas oficiais + KPIs do Radar (`TICKET_MEDIO_*`, `TAXA_QUALID_*`) com `NULLIF` |",
-        f"| **5. Mock CSV Dinâmico para BI** | [mock_dados_bi.csv]({mock_csv_url}) | 50 linhas sintéticas das colunas reais + chaves sentinelas `-1` (`NAO INFORMADO`) |",
+        f"| **1. Mockup Visual do Painel BI (Novo)** | [preview_painel_bi.html]({prev_bi_url}) | Visão Executiva, **Dev Mode (`Redlines ①..⑦`)**, Tema Claro/Escuro e Download `.png` 2x |",
+        f"| **2. Diagramas Star Schema & ODI SVG** | [diagrama_star_schema.svg]({star_svg_url}) / [mapa_canvas_odi.svg]({odi_svg_url}) | Desenho vetorial do modelo estrela (`1:N`) e do pacote/fluxo no Canvas ODI 12c |",
+        f"| **3. Apresentação Executiva (`16:9`)** | [apresentacao_slides.html]({slides_url}) | Deck interativo de 6 slides (+ `.pptx`, `.xlsx` 3 abas e `.docx` em `08_datasets_bi/`) |",
+        f"| **4. Blueprint Editável do DW** | [SIMULACAO_BLUEPRINT_DW.md]({bp_dw_url}) | Matriz De/Para com `[x]`/`[ ]`, amostra de 3 linhas + linha `-1` e Radar da IA |",
+        f"| **5. Blueprint da Camada Semântica** | [SIMULACAO_BLUEPRINT_SEMANTICA.md]({bp_sem_url}) | Views em 3 camadas, catálogo `META_METRICA` e KPIs sugeridos pela IA |",
+        f"| **6. Dicionário de Dados HTML** | [dicionario_dados.html]({dic_html_url}) | Página interativa com busca em tempo real, badges PK/FK e grão das tabelas |",
+        f"| **7. Views de KPIs Consolidados** | [03_vw_kpis.sql]({vw_kpi_url}) | Fórmulas oficiais + KPIs do Radar (`TICKET_MEDIO_*`, `TAXA_QUALID_*`) com `NULLIF` |",
+        f"| **8. Mock CSV Dinâmico para BI** | [mock_dados_bi.csv]({mock_csv_url}) | 50 linhas sintéticas das colunas reais + chaves sentinelas `-1` (`NAO INFORMADO`) |",
     ]
     linhas.append(
         formatar_rodape_proximos_passos(

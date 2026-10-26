@@ -45,6 +45,41 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
 
+try:
+    from gerador_artefatos_visuais import (
+        gerar_mockup_painel_bi_svg,
+        gerar_preview_painel_bi_html,
+        gerar_diagrama_star_schema_svg,
+        gerar_mapa_canvas_odi_svg,
+        gerar_planilha_indicadores_xlsx,
+        gerar_apresentacao_executiva,
+        exportar_markdown_para_docx,
+        exportar_markdown_para_pdf,
+        ler_planilha_ods,
+        ler_documento_docx,
+        ler_documento_odt,
+        avaliar_medidas_guia_bi_amostra,
+    )
+except ImportError:
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from gerador_artefatos_visuais import (
+        gerar_mockup_painel_bi_svg,
+        gerar_preview_painel_bi_html,
+        gerar_diagrama_star_schema_svg,
+        gerar_mapa_canvas_odi_svg,
+        gerar_planilha_indicadores_xlsx,
+        gerar_apresentacao_executiva,
+        exportar_markdown_para_docx,
+        exportar_markdown_para_pdf,
+        ler_planilha_ods,
+        ler_documento_docx,
+        ler_documento_odt,
+        avaliar_medidas_guia_bi_amostra,
+    )
+
+_TEM_ARTEFATOS_VISUAIS = True
+
 # Configura encoding UTF-8 no Windows
 if hasattr(sys.stdout, "reconfigure"):
     try:
@@ -217,6 +252,7 @@ def extrair_schema_e_projeto(tabelas: list, schema_cli: str = None, projeto_cli:
                     break
 
     if not projeto_detectado:
+        candidatos_proj = {}
         for t in tabelas:
             nome = t["nome_tabela"].upper()
             m_mvw = re.match(r"^(?:MVW|VW)_([A-Z0-9]+)_(?:DIM|FATO|FAT|STG)_", nome)
@@ -225,8 +261,23 @@ def extrair_schema_e_projeto(tabelas: list, schema_cli: str = None, projeto_cli:
                 break
             m = re.match(r"^(?:DIM|FATO|FAT|STG|ODI_DIM)_([A-Z0-9]+)_", nome)
             if m and m.group(1) not in ("TEMPO", "CALENDARIO", "DATA"):
-                projeto_detectado = m.group(1)
-                break
+                tok = m.group(1)
+                candidatos_proj[tok] = candidatos_proj.get(tok, 0) + 1
+
+        if not projeto_detectado and candidatos_proj:
+            # Só assume o token intermediário como sigla de projeto se ele se repetir em >= 2 tabelas
+            tok_mais_freq, qtd_freq = max(candidatos_proj.items(), key=lambda x: x[1])
+            if qtd_freq >= 2:
+                projeto_detectado = tok_mais_freq
+
+        if not projeto_detectado and schema_detectado:
+            cand_schema = re.sub(
+                r"^(?:DW_|OLAP_|STG_|STAGE_|USR_)|_(?:ORIGEM|OLAP|DW|STG|STAGE|DEV|HOM|PROD|BI|DM)$",
+                "",
+                schema_detectado.upper(),
+            ).strip("_")
+            if cand_schema and cand_schema not in ("DW", "ORIGEM", "OLAP", "STAGE", "STG", "CORPORATIVO"):
+                projeto_detectado = cand_schema
 
     # Fallback para INTAKE_DW.md se preenchido
     base_dir = get_base_dir()
@@ -1004,124 +1055,211 @@ def carregar_indicadores_negocio_entrega(base_dir: Path = None) -> list:
         return []
 
     planilhas = sorted(
-        f for f in pasta_dw.rglob("*.xlsx")
-        if f.is_file() and not f.name.startswith("~$")
+        f for f in pasta_dw.rglob("*")
+        if f.is_file() and f.suffix.lower() in (".xlsx", ".ods", ".docx", ".odt") and not f.name.startswith("~$")
     )
     indicadores = []
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 
     for arq in planilhas:
         try:
-            with zipfile.ZipFile(arq, "r") as zf:
-                shared = []
-                if "xl/sharedStrings.xml" in zf.namelist():
-                    root_ss = ET.fromstring(zf.read("xl/sharedStrings.xml"))
-                    for si in root_ss.findall(f".//{ns}si"):
-                        shared.append("".join(t.text or "" for t in si.findall(f".//{ns}t")).strip())
+            sheets_rows_list = []
+            suf = arq.suffix.lower()
+            if suf == ".ods":
+                ods_rows = ler_planilha_ods(str(arq))
+                if ods_rows:
+                    sheets_rows_list.append(ods_rows)
+            elif suf == ".docx" and ler_documento_docx is not None:
+                doc_info = ler_documento_docx(str(arq))
+                for tbl in doc_info.get("tabelas", []):
+                    if tbl:
+                        sheets_rows_list.append(tbl)
+            elif suf == ".odt" and ler_documento_odt is not None:
+                doc_info = ler_documento_odt(str(arq))
+                for tbl in doc_info.get("tabelas", []):
+                    if tbl:
+                        sheets_rows_list.append(tbl)
+            else:
+                with zipfile.ZipFile(arq, "r") as zf:
+                    shared = []
+                    if "xl/sharedStrings.xml" in zf.namelist():
+                        root_ss = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+                        for si in root_ss.findall(f".//{ns}si"):
+                            shared.append("".join(t.text or "" for t in si.findall(f".//{ns}t")).strip())
 
-                sheets = sorted(n for n in zf.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"))
-                for sh in sheets:
-                    root_sh = ET.fromstring(zf.read(sh))
-                    rows_parsed = []
-                    for row in root_sh.findall(f".//{ns}row"):
-                        cells_map = {}
-                        max_idx = -1
-                        for c in row.findall(f"{ns}c"):
-                            ref = c.attrib.get("r", "")
-                            c_idx = _col_letter_to_idx(ref) if ref else (max_idx + 1)
-                            max_idx = max(max_idx, c_idx)
-                            t_attr = c.attrib.get("t", "")
-                            v_el = c.find(f"{ns}v")
-                            is_el = c.find(f"{ns}is")
-                            val = ""
-                            if t_attr == "s" and v_el is not None and v_el.text is not None:
-                                s_idx = int(v_el.text)
-                                val = shared[s_idx] if 0 <= s_idx < len(shared) else v_el.text
-                            elif is_el is not None:
-                                val = "".join(t.text or "" for t in is_el.findall(f".//{ns}t"))
-                            elif v_el is not None and v_el.text is not None:
-                                val = v_el.text
-                            cells_map[c_idx] = val.strip()
-                        if max_idx >= 0:
-                            linha = [cells_map.get(i, "") for i in range(max_idx + 1)]
-                            if any(linha):
-                                rows_parsed.append(linha)
+                    sheets = sorted(n for n in zf.namelist() if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"))
+                    for sh in sheets:
+                        root_sh = ET.fromstring(zf.read(sh))
+                        rows_parsed = []
+                        for row in root_sh.findall(f".//{ns}row"):
+                            cells_map = {}
+                            max_idx = -1
+                            for c in row.findall(f"{ns}c"):
+                                ref = c.attrib.get("r", "")
+                                c_idx = _col_letter_to_idx(ref) if ref else (max_idx + 1)
+                                max_idx = max(max_idx, c_idx)
+                                t_attr = c.attrib.get("t", "")
+                                v_el = c.find(f"{ns}v")
+                                is_el = c.find(f"{ns}is")
+                                val = ""
+                                if t_attr == "s" and v_el is not None and v_el.text is not None:
+                                    s_idx = int(v_el.text)
+                                    val = shared[s_idx] if 0 <= s_idx < len(shared) else v_el.text
+                                elif is_el is not None:
+                                    val = "".join(t.text or "" for t in is_el.findall(f".//{ns}t"))
+                                elif v_el is not None and v_el.text is not None:
+                                    val = v_el.text
+                                cells_map[c_idx] = val.strip()
+                            if max_idx >= 0:
+                                linha = [cells_map.get(i, "") for i in range(max_idx + 1)]
+                                if any(linha):
+                                    rows_parsed.append(linha)
+                        if rows_parsed:
+                            sheets_rows_list.append(rows_parsed)
 
-                    if len(rows_parsed) < 2:
+            for rows_parsed in sheets_rows_list:
+                if len(rows_parsed) < 2:
+                    continue
+
+                header = [h.strip().lower() for h in rows_parsed[0]]
+                if not any(
+                     any(k in h for k in ("indicador", "kpi", "métrica", "metrica"))
+                    for h in header
+                ):
+                    continue
+
+                def _achar_col(termos: tuple, default_idx: int = -1) -> int:
+                    for idx_h, h_val in enumerate(header):
+                        if any(t in h_val for t in termos):
+                            return idx_h
+                    return default_idx
+
+                idx_ind = _achar_col(("indicador", "kpi", "métrica", "metrica"), 0)
+                idx_desc = _achar_col(("descri", "objetivo", "defini"), 1)
+                idx_form = _achar_col(("fórmula", "formula", "cálculo", "calculo", "regra"), 2)
+                idx_unid = _achar_col(("unidade", "formato", "medida"), 3)
+                idx_per = _achar_col(("periodicidade", "frequência", "frequencia", "período"), 4)
+                idx_meta = _achar_col(("meta", "target", "alvo"), 5)
+                idx_filt = _achar_col(("filtro", "segmenta", "dimens"), 6)
+
+                for r in rows_parsed[1:]:
+                    get_c = lambda i: r[i].strip() if 0 <= i < len(r) else ""
+                    nome_ind = get_c(idx_ind)
+                    if not nome_ind:
                         continue
+                    meta_txt = get_c(idx_meta)
+                    metas_num = []
+                    if meta_txt and "não se aplica" not in meta_txt.lower():
+                        for m_num in re.finditer(
+                            r"(\d+(?:\.\d{3})+(?:,\d+)?|\d+(?:[\.,]\d+)?)\s*(%|bolsas\s+(?:de\s+|do\s+)?[^,\.;]+)?",
+                            meta_txt,
+                            flags=re.IGNORECASE,
+                        ):
+                            raw_n = m_num.group(1)
+                            if re.match(r"^\d+(?:\.\d{3})+$", raw_n):
+                                num_raw = raw_n.replace(".", "")
+                            else:
+                                num_raw = raw_n.replace(".", "").replace(",", ".") if "," in raw_n else raw_n
+                            ctx_raw = (m_num.group(2) or "").strip()
+                            metas_num.append({"valor": num_raw, "contexto": ctx_raw})
 
-                    header = [h.strip().lower() for h in rows_parsed[0]]
-                    if not any(
-                         any(k in h for k in ("indicador", "kpi", "métrica", "metrica"))
-                        for h in header
-                    ):
-                        continue
-
-                    def _achar_col(termos: tuple, default_idx: int = -1) -> int:
-                        for idx_h, h_val in enumerate(header):
-                            if any(t in h_val for t in termos):
-                                return idx_h
-                        return default_idx
-
-                    idx_ind = _achar_col(("indicador", "kpi", "métrica", "metrica"), 0)
-                    idx_desc = _achar_col(("descri", "objetivo", "defini"), 1)
-                    idx_form = _achar_col(("fórmula", "formula", "cálculo", "calculo", "regra"), 2)
-                    idx_unid = _achar_col(("unidade", "formato", "medida"), 3)
-                    idx_per = _achar_col(("periodicidade", "frequência", "frequencia", "período"), 4)
-                    idx_meta = _achar_col(("meta", "target", "alvo"), 5)
-                    idx_filt = _achar_col(("filtro", "segmenta", "dimens"), 6)
-
-                    for r in rows_parsed[1:]:
-                        get_c = lambda i: r[i].strip() if 0 <= i < len(r) else ""
-                        nome_ind = get_c(idx_ind)
-                        if not nome_ind:
-                            continue
-                        meta_txt = get_c(idx_meta)
-                        metas_num = []
-                        if meta_txt and "não se aplica" not in meta_txt.lower():
-                            for m_num in re.finditer(
-                                r"(\d+(?:\.\d{3})+(?:,\d+)?|\d+(?:[\.,]\d+)?)\s*(%|bolsas\s+(?:de\s+|do\s+)?[^,\.;]+)?",
-                                meta_txt,
-                                flags=re.IGNORECASE,
-                            ):
-                                raw_n = m_num.group(1)
-                                if re.match(r"^\d+(?:\.\d{3})+$", raw_n):
-                                    num_raw = raw_n.replace(".", "")
-                                else:
-                                    num_raw = raw_n.replace(".", "").replace(",", ".") if "," in raw_n else raw_n
-                                ctx_raw = (m_num.group(2) or "").strip()
-                                metas_num.append({"valor": num_raw, "contexto": ctx_raw})
-
-                        indicadores.append({
-                            "arquivo_origem": arq.name,
-                            "indicador": nome_ind,
-                            "descricao": get_c(idx_desc),
-                            "formula": get_c(idx_form),
-                            "unidade": get_c(idx_unid),
-                            "periodicidade": get_c(idx_per),
-                            "meta": meta_txt or "Não se aplica",
-                            "filtros": get_c(idx_filt),
-                            "metas_numericas": metas_num,
-                        })
+                    indicadores.append({
+                        "arquivo_origem": arq.name,
+                        "indicador": nome_ind,
+                        "descricao": get_c(idx_desc),
+                        "formula": get_c(idx_form),
+                        "unidade": get_c(idx_unid),
+                        "periodicidade": get_c(idx_per),
+                        "meta": meta_txt or "Não se aplica",
+                        "filtros": get_c(idx_filt),
+                        "metas_numericas": metas_num,
+                    })
         except Exception:
             continue
 
     return indicadores
 
 
-def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str, base_dir: Path = None) -> str:
+def construir_guia_bi_rapido(
+    dims: list,
+    fatos: list,
+    schema: str,
+    projeto: str,
+    base_dir: Path = None,
+    dados_amostra: dict = None,
+) -> str:
     """
-    Gera o Guia Completo de Implementação no Power BI (08_datasets_bi/) em nível executivo e técnico:
-    1. Contexto Executivo, Dores Resolvidas, Estratégia Import Mode e Catálogo Detalhado (Fatos e Dimensões)
-    2. Diagrama Star Schema (Mermaid), Matriz de Relacionamentos 1:* e Regras de Ouro (Sem Ambos, Sem Fato-Fato)
-    3. Dimensão Tempo (Sort by Column), Comportamento SCD Tipo 2 no BI e Tratamento da Linha Sentinela (-1)
-    4. Dicionário Completo de Fórmulas DAX (SCD2-Safe via SUMMARIZE na NK, Somas, Médias, Taxas DIVIDE, YoY/MoM, Metas .xlsx e Qualidade)
-    5. Matriz Completa de Segmentadores Globais (Sync Slicers)
-    6. Proposta Detalhada de Estrutura Visual e Wireframe em 4 Páginas (com medidas DAX e colunas reais)
-    7. Consultas SQL Completas de Reconciliação (com JOIN em DIM_TEMPO e Dimensões + Auditoria de -1)
-    8. Radar Consultivo da IA
-    9. Checklist de Homologação Pré-Publicação
+    Gera o Guia Completo de Implementação no Power BI (08_datasets_bi/) em nível executivo e técnico,
+    operando em ciclo de vida de 2 estágios:
+      - Estágio 1 (VERSÃO PRÉVIA — PRÉ-CARGA): Gerado na modelagem inicial a partir do DDL, antes da
+        carga e validação com amostra real.
+      - Estágio 2 (VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA): Gerado após processar a carga das DIMs e Fatos
+        e validar as medidas DAX contra uma amostra real (/validar-medidas-bi), substituindo eventuais
+        fórmulas parcialmente corretas pelas versões corrigidas e anexando a Prova Real SQL x DAX.
+    Cada medida DAX possui uma Ficha Técnica individual detalhando:
+      - O que calcula (Definição Funcional)
+      - Por que esta medida existe (Objetivo de Negócio no Painel)
+      - Por que a fórmula DAX foi construída assim (Racional Técnico Detalhado)
+      - Onde utilizar no Power BI & Formatação recomendada
     """
+    homologado_pos_carga = bool(dados_amostra and dados_amostra.get("tem_amostra"))
+    mapa_medidas_avaliadas = {
+        m["nome"].strip(): m
+        for m in (dados_amostra.get("medidas_avaliadas", []) if homologado_pos_carga else [])
+        if m.get("nome")
+    }
+
+    def _render_ficha_medida(
+        nome_med: str,
+        o_que_calcula: str,
+        por_que_existe: str,
+        por_que_formula_assim: str,
+        onde_usar_formato: str,
+        expr_dax_padrao: str,
+        comentario_dax: str = "",
+    ) -> str:
+        info_av = mapa_medidas_avaliadas.get(nome_med.strip())
+        expr_final = expr_dax_padrao.strip()
+        if homologado_pos_carga and info_av:
+            if info_av.get("dax_corrigido"):
+                expr_final = info_av["dax_corrigido"].strip()
+                status_linha = (
+                    f"- **🧪 Validação na Amostra Pós-Carga:** Valor apurado = **`{info_av.get('valor_formatado', '-')}`** "
+                    f"(⚠️ *Medida ajustada automaticamente na Prova Real pós-carga para blindar `{ ' '.join(info_av.get('diagnosticos', [])) }`*)"
+                )
+            else:
+                status_linha = (
+                    f"- **🧪 Validação na Amostra Pós-Carga:** Valor apurado = **`{info_av.get('valor_formatado', '-')}`** "
+                    f"(✅ *Fórmula 100% conciliada com o SQL da amostra pós-carga*)"
+                )
+        elif homologado_pos_carga:
+            status_linha = "- **🧪 Validação na Amostra Pós-Carga:** ✅ *Estrutura validada no modelo estrela pós-carga*"
+        else:
+            status_linha = (
+                "- **⏳ Status do Ciclo de Vida:** **Versão Prévia (Pré-Carga)** — "
+                "*Fórmula projetada a partir do DDL; aguarda conciliação com amostra pós-carga via `/validar-medidas-bi`.*"
+            )
+
+        bloco_cod = []
+        if comentario_dax:
+            bloco_cod.append(f"// {comentario_dax}")
+        if "\n" in expr_final:
+            bloco_cod.append(f"{nome_med} = \n{expr_final}")
+        else:
+            bloco_cod.append(f"{nome_med} = {expr_final}")
+
+        return (
+            f"##### 📌 Medida: `[{nome_med}]`\n"
+            f"- **O que calcula (Definição Funcional):** {o_que_calcula}\n"
+            f"- **Por que esta medida existe (Objetivo de Negócio no Painel):** {por_que_existe}\n"
+            f"- **Por que a fórmula DAX foi construída assim (Racional Técnico Detalhado):** {por_que_formula_assim}\n"
+            f"- **Onde utilizar no Power BI & Formatação:** {onde_usar_formato}\n"
+            f"{status_linha}\n\n"
+            f"```dax\n"
+            + "\n".join(bloco_cod)
+            + "\n```\n"
+        )
+
     nomes_dims = {d["nome_tabela"].upper(): d for d in dims}
     linhas_er = ["```mermaid", "erDiagram"]
     linhas_rel_matrix = []
@@ -1251,15 +1389,21 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
         medidas_kpi_topo.append(f"[{nome_med_qtd_reg}]")
 
         bloco_dax = [
-            f"### 4.{idx_f + 1} Grupo de Medidas da Tabela Fato `{nt_f}` ({leg_f})",
+            f"### 4.{idx_f + 1} Catálogo Detalhado de Medidas DAX da Tabela Fato `{nt_f}` ({leg_f})",
             "",
             f"* **Conceito de Negócio:** Consolida os indicadores de **{leg_f}** no grão das chaves estrangeiras ({', '.join('`' + fk['coluna'].upper() + '`' for fk in fks_f) or 'registro transacional'}).",
             "",
             "#### A. Volumetria e Contagens Distintas Blindadas contra SCD Tipo 2 (`SCD2 Safe`)",
-            "```dax",
-            f"// Total de lançamentos/eventos na tabela {nt_f}",
-            f"{nome_med_qtd_reg} = COALESCE(COUNTROWS('{nt_f}'), 0)",
             "",
+            _render_ficha_medida(
+                nome_med=nome_med_qtd_reg,
+                o_que_calcula=f"Contabiliza o volume total de linhas/eventos registrados na tabela fato `{nt_f}` dentro dos filtros ativos no painel.",
+                por_que_existe=f"Fornece ao gestor e ao analista o indicador base de volumetria operacional de **{leg_f}**, além de servir como denominador para os indicadores de qualidade e participação.",
+                por_que_formula_assim=f"Utiliza `COUNTROWS('{nt_f}')` encapsulado em `COALESCE(..., 0)`. No motor colunar *VertiPaq*, `COUNTROWS` lê diretamente a cardinalidade do segmento de tabela (muito mais performático que `COUNT` em coluna física), e o `COALESCE` garante que os cartões KPI exibam `0` em vez de `(Em branco)` quando um filtro não retornar registros.",
+                onde_usar_formato="Cartão KPI de Topo na **Página 1 (Visão Executiva)**, eixo de tendência e denominador na **Página 4 (Governança)**. Formatar como **Número Inteiro** (`#,0`).",
+                expr_dax_padrao=f"COALESCE(COUNTROWS('{nt_f}'), 0)",
+                comentario_dax=f"Total de lançamentos/eventos na tabela {nt_f}",
+            ),
         ]
 
         medida_entidade_principal = None
@@ -1275,36 +1419,50 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
             if not medida_entidade_principal:
                 medida_entidade_principal = (nome_med_scd2, ent_leg, tab_r, nk_dim, col_fk)
                 medidas_kpi_topo.append(f"[{nome_med_scd2}]")
+
+            expr_scd2 = (
+                "COALESCE(\n"
+                "    COUNTROWS(\n"
+                "        SUMMARIZE(\n"
+                f"            FILTER('{nt_f}', '{nt_f}'[{col_fk}] <> -1 && NOT(ISBLANK(RELATED('{tab_r}'[{nk_dim}])))),\n"
+                f"            '{tab_r}'[{nk_dim}]\n"
+                "        )\n"
+                "    ),\n"
+                "    0\n"
+                ")"
+            )
+            expr_dist_sk = (
+                "COALESCE(\n"
+                "    CALCULATE(\n"
+                f"        DISTINCTCOUNT('{nt_f}'[{col_fk}]),\n"
+                f"        '{nt_f}'[{col_fk}] <> -1\n"
+                "    ),\n"
+                "    0\n"
+                ")"
+            )
             bloco_dax.extend([
-                f"// Contagem Distinta de {ent_leg} pela Chave Natural ({tab_r}[{nk_dim}])",
-                f"// Evita dupla contagem caso a entidade possua mais de 1 versão histórica SCD Tipo 2 no período",
-                f"{nome_med_scd2} = ",
-                "COALESCE(",
-                "    COUNTROWS(",
-                "        SUMMARIZE(",
-                f"            FILTER('{nt_f}', '{nt_f}'[{col_fk}] <> -1),",
-                f"            '{tab_r}'[{nk_dim}]",
-                "        )",
-                "    ),",
-                "    0",
-                ")",
-                "",
-                f"// Contagem Distinta de Versões SK de {ent_leg} (Excluindo Linha Sentinela -1)",
-                f"Distintos {ent_leg} (SK) = ",
-                "COALESCE(",
-                "    CALCULATE(",
-                f"        DISTINCTCOUNT('{nt_f}'[{col_fk}]),",
-                f"        '{nt_f}'[{col_fk}] <> -1",
-                "    ),",
-                "    0",
-                ")",
-                "",
+                _render_ficha_medida(
+                    nome_med=nome_med_scd2,
+                    o_que_calcula=f"Quantidade real de entidades únicas de **{ent_leg}** (identificadas pela Chave Natural `{tab_r}[{nk_dim}]`) com movimentação na fato `{nt_f}`.",
+                    por_que_existe=f"Na modelagem Kimball com **SCD Tipo 2**, quando um registro de `{tab_r}` sofre alteração cadastral ao longo do tempo, o ODI 12c gera uma nova versão histórica (`DIMENSION_KEY`) mantendo a mesma Chave Natural (`{nk_dim}`). Contar a FK da Fato duplicaria a mesma entidade no ano. Esta medida entrega ao gestor o número **exato e sem duplicidade** de **{ent_leg}** reais.",
+                    por_que_formula_assim=f"Filtra a fato `{nt_f}` excluindo a linha sentinela `-1` (`'{nt_f}'[{col_fk}] <> -1`) e eventuais *Blank Rows* de FKs órfãs (`NOT(ISBLANK(RELATED('{tab_r}'[{nk_dim}])))`), agrupa as transações pela Chave Natural `{tab_r}[{nk_dim}]` via `SUMMARIZE` e conta os grupos reais com `COUNTROWS`.",
+                    onde_usar_formato="Cartão KPI Estratégico na **Página 1 (Visão Executiva)** e denominador de intensidade média na **Página 2**. Formatar como **Número Inteiro** (`#,0`).",
+                    expr_dax_padrao=expr_scd2,
+                    comentario_dax=f"Contagem Distinta de {ent_leg} pela Chave Natural ({tab_r}[{nk_dim}]) — Blindada contra SCD Tipo 2 e Blank Row",
+                ),
+                _render_ficha_medida(
+                    nome_med=f"Distintos {ent_leg} (SK)",
+                    o_que_calcula=f"Quantidade distinta de chaves substitutas (`{nt_f}[{col_fk}]`) referenciadas na tabela fato `{nt_f}`, desconsiderando a linha sentinela `-1`.",
+                    por_que_existe=f"Permite ao analista de BI e à engenharia de dados confrontar o volume de versões históricas (`SK`) movimentadas na Fato contra a quantidade de entidades reais (`[{nome_med_scd2}]`). A diferença entre as duas medidas revela quantas entidades mudaram de versão cadastral (SCD2) no período.",
+                    por_que_formula_assim=f"Aplica `CALCULATE(DISTINCTCOUNT('{nt_f}'[{col_fk}]), '{nt_f}'[{col_fk}] <> -1)` com `COALESCE(..., 0)`, isolando o código técnico `-1` (`Não Informado`).",
+                    onde_usar_formato="Tabela de Auditoria na **Página 4 (Governança de Dados)** ao lado da medida `(SCD2 Safe)`. Formatar como **Número Inteiro** (`#,0`).",
+                    expr_dax_padrao=expr_dist_sk,
+                    comentario_dax=f"Contagem Distinta de Versões SK de {ent_leg} (Excluindo Linha Sentinela -1)",
+                ),
             ])
 
-        bloco_dax.append("```\n")
-
         # B. Somatórios Base, Médias e Percentuais
-        bloco_somas = ["#### B. Somatórios Base, Médias Operacionais e Taxas Ponderadas (`SUM`, `AVERAGE`, `DIVIDE`)", "```dax"]
+        bloco_somas = ["#### B. Somatórios Base, Médias Operacionais e Taxas Ponderadas (`SUM`, `AVERAGE`, `DIVIDE`)", ""]
         cols_metricas_sql = []
         cols_val_num = []
         for c in f["colunas"]:
@@ -1315,11 +1473,27 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
                 nome_med = f"Media {leg}"
                 cols_val_num.append((cn, leg, nome_tot))
                 medidas_kpi_topo.append(f"[{nome_tot}]")
+                eh_moeda = cn.startswith(("VAL_", "VLR_"))
+                fmt_recomendado = "Moeda (`R$ #,0.00`)" if eh_moeda else "Número Inteiro ou Decimal (`#,0`)"
                 bloco_somas.extend([
-                    f"// Somatório e Média de {leg} ({nt_f}[{cn}])",
-                    f"{nome_tot} = COALESCE(SUM('{nt_f}'[{cn}]), 0)",
-                    f"{nome_med} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
-                    "",
+                    _render_ficha_medida(
+                        nome_med=nome_tot,
+                        o_que_calcula=f"Somatório consolidado da métrica aditiva `{nt_f}[{cn}]` (**{leg}**) para o recorte selecionado.",
+                        por_que_existe=f"Representa a grandeza financeira/quantitativa principal de **{leg}** nos eventos de **{leg_f}**, permitindo agregar valores desde o nível diário até o consolidado anual por dimensão.",
+                        por_que_formula_assim=f"Utiliza `SUM('{nt_f}'[{cn}])` com `COALESCE(..., 0)` sem filtrar a chave sentinela `-1`, garantindo que o total exibido nos cartões do Power BI feche em **100%** com o `SELECT SUM({cn}) FROM {schema}.{nt_f}` no banco Oracle.",
+                        onde_usar_formato=f"Cartão KPI Principal na **Página 1**, Gráfico de Evolução Mensal, Ranking Top 10 e Curva de Pareto na **Página 3**. Formatar como **{fmt_recomendado}**.",
+                        expr_dax_padrao=f"COALESCE(SUM('{nt_f}'[{cn}]), 0)",
+                        comentario_dax=f"Somatório de {leg} ({nt_f}[{cn}])",
+                    ),
+                    _render_ficha_medida(
+                        nome_med=nome_med,
+                        o_que_calcula=f"Valor médio aritmético por transação/registro da coluna `{nt_f}[{cn}]` (**{leg}**) na tabela fato `{nt_f}`.",
+                        por_que_existe=f"Enquanto `[{nome_tot}]` mede o volume acumulado (influenciado pelo porte da unidade), `[{nome_med}]` expõe o **ticket médio por lançamento**, revelando dispersões, *outliers* e mudanças no padrão unitário de **{leg_f}**.",
+                        por_que_formula_assim=f"Aplica `AVERAGE('{nt_f}'[{cn}])` com `COALESCE(..., 0)`, dividindo a soma de `{cn}` pela contagem de registros válidos no grão da fato `{nt_f}`.",
+                        onde_usar_formato=f"**Página 2 (Eficiência e Detalhamento Operacional)** e Matriz Resumo Executiva. Formatar como **{fmt_recomendado}**.",
+                        expr_dax_padrao=f"COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
+                        comentario_dax=f"Média por transação de {leg} ({nt_f}[{cn}])",
+                    ),
                 ])
                 cols_metricas_sql.append(f"    SUM(NVL(f.{cn}, 0)) AS TOTAL_{cn}")
                 radar_rows.append(
@@ -1329,11 +1503,17 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
                 leg = humanizar_identificador(re.sub(r"^(PER|PRC)_", "", cn))
                 nome_per = f"Taxa Media {leg}"
                 medidas_eficiencia.append(f"[{nome_per}]")
-                bloco_somas.extend([
-                    f"// Atenção: Coluna de percentual ({cn}) — NUNCA usar SUM()!",
-                    f"{nome_per} = COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
-                    "",
-                ])
+                bloco_somas.append(
+                    _render_ficha_medida(
+                        nome_med=nome_per,
+                        o_que_calcula=f"Taxa média aritmética observada na coluna de percentual `{nt_f}[{cn}]` (**{leg}**).",
+                        por_que_existe=f"Permite acompanhar o indicador percentual médio de **{leg}** sem incorrer no erro grave de somar taxas pré-calculadas.",
+                        por_que_formula_assim=f"**Regra de Ouro DAX:** colunas prefixadas por `PER_`/`PRC_` armazenam razões não-aditivas e **jamais devem usar `SUM()`** (somar `50% + 50%` geraria `100%` ou `200%`). Utiliza-se `AVERAGE('{nt_f}'[{cn}])` com `COALESCE(..., 0)`.",
+                        onde_usar_formato="Cartões de Eficiência na **Página 2** e Matriz Analítica. Formatar como **Percentual (`0.00%`)**.",
+                        expr_dax_padrao=f"COALESCE(AVERAGE('{nt_f}'[{cn}]), 0)",
+                        comentario_dax=f"Atenção: Coluna de percentual ({cn}) — NUNCA usar SUM()!",
+                    )
+                )
                 cols_metricas_sql.append(f"    ROUND(AVG(NVL(f.{cn}, 0)), 2) AS MEDIA_{cn}")
             elif cn.startswith(("IND_", "FLG_", "SIN_")):
                 leg = humanizar_identificador(re.sub(r"^(IND|FLG|SIN)_", "", cn))
@@ -1345,58 +1525,97 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
         if len(cols_val_num) >= 2:
             c1, leg1, tot1 = cols_val_num[0]
             c2, leg2, tot2 = cols_val_num[1]
-            nome_rel = f"% Relacao {leg1} vs {leg2}"
+            if c1.startswith(("VAL_", "VLR_")) and c2.startswith(("QTD_", "QT_")):
+                nome_rel = f"Valor Medio {leg1} por {leg2}"
+            else:
+                nome_rel = f"Indice Ponderado {leg1} vs {leg2}"
             medidas_eficiencia.append(f"[{nome_rel}]")
-            bloco_somas.extend([
-                f"// Taxa Ponderada (Regra de Ouro: Soma do Numerador dividida pela Soma do Denominador)",
-                f"{nome_rel} = DIVIDE([{tot1}], [{tot2}], 0)",
-                "",
-            ])
+            bloco_somas.append(
+                _render_ficha_medida(
+                    nome_med=nome_rel,
+                    o_que_calcula=f"Razão ponderada entre o somatório `[{tot1}]` (numerador) e o somatório `[{tot2}]` (denominador).",
+                    por_que_existe=f"Avalia a relação financeira/operacional real entre **{leg1}** e **{leg2}** (ex: proporção de execução/pagamento ou custo unitário ponderado), respeitando o peso de grandes contratos/eventos frente a pequenos lançamentos.",
+                    por_que_formula_assim=f"Utiliza `DIVIDE([{tot1}], [{tot2}], 0)` sobre medidas já agregadas (`SUM` dividido por `SUM`), nunca média simples de razões linha a linha. A função `DIVIDE` protege automaticamente contra divisão por zero retornando `0`.",
+                    onde_usar_formato="Cartões de Eficiência na **Página 2 (Metas e Eficiência)** e Matriz Executiva. Formatar como **Moeda/Decimal (`#,0.00`)** ou **Percentual (`0.00%`)**.",
+                    expr_dax_padrao=f"DIVIDE([{tot1}], [{tot2}], 0)",
+                    comentario_dax="Razão Ponderada (Regra de Ouro: Soma do Numerador dividida pela Soma do Denominador)",
+                )
+            )
 
         if cols_val_num and medida_entidade_principal:
             c1, leg1, tot1 = cols_val_num[0]
             nome_med_scd2, ent_leg, _, _, _ = medida_entidade_principal
             nome_med_por_ent = f"Media {leg1} por {ent_leg}"
             medidas_eficiencia.append(f"[{nome_med_por_ent}]")
-            bloco_somas.extend([
-                f"// Intensidade Média de {leg1} por {ent_leg} Ativo (SCD2 Safe)",
-                f"{nome_med_por_ent} = DIVIDE([{tot1}], [{nome_med_scd2}], 0)",
-                "",
-            ])
+            bloco_somas.append(
+                _render_ficha_medida(
+                    nome_med=nome_med_por_ent,
+                    o_que_calcula=f"Intensidade média de **{leg1}** (`[{tot1}]`) por entidade única ativa de **{ent_leg}** (`[{nome_med_scd2}]`).",
+                    por_que_existe=f"Responde à pergunta executiva: *\"Qual é o volume/valor médio de {leg1} alocado para cada {ent_leg} real?\"*, normalizando a comparação entre diferentes órgãos ou períodos.",
+                    por_que_formula_assim=f"Divide a medida aditiva `[{tot1}]` pela medida blindada `[{nome_med_scd2}]` via `DIVIDE(..., ..., 0)`. Como o denominador já agrupa pela Chave Natural (`NK`) e remove a linha sentinela `-1`, o indicador per-capita não sofre distorção por múltiplas versões SCD Tipo 2.",
+                    onde_usar_formato="**Página 2 (Acompanhamento de Metas e Eficiência)** e gráfico de dispersão/intensidade. Formatar como **Moeda (`R$ #,0.00`)** ou **Decimal (`#,0.00`)**.",
+                    expr_dax_padrao=f"DIVIDE([{tot1}], [{nome_med_scd2}], 0)",
+                    comentario_dax=f"Intensidade Média de {leg1} por {ent_leg} Ativo (SCD2 Safe)",
+                )
+            )
 
         med_base_share = f"[{cols_val_num[0][2]}]" if cols_val_num else f"[{nome_med_qtd_reg}]"
         leg_base_share = cols_val_num[0][1] if cols_val_num else leg_f
-        bloco_somas.extend([
-            f"// Participação Percentual (% Share) sobre o Total Selecionado",
-            f"% Participacao {leg_base_share} = ",
-            "DIVIDE(",
-            f"    {med_base_share},",
-            f"    CALCULATE({med_base_share}, ALLSELECTED('{nt_f}')),",
-            "    0",
-            ")",
-            "```",
-            "",
-        ])
+        expr_share = (
+            "DIVIDE(\n"
+            f"    {med_base_share},\n"
+            f"    CALCULATE({med_base_share}, ALLSELECTED('{nt_f}')),\n"
+            "    0\n"
+            ")"
+        )
+        bloco_somas.append(
+            _render_ficha_medida(
+                nome_med=f"% Participacao {leg_base_share}",
+                o_que_calcula=f"Participação percentual (*% Share*) de cada categoria/entidade sobre o total visível da métrica `{med_base_share}`.",
+                por_que_existe=f"Indispensável para gráficos de composição (Rosca) e **Curva de Pareto (80/20)**, mostrando de imediato quais categorias concentram a maior fatia de **{leg_base_share}**.",
+                por_que_formula_assim=f"Divide `{med_base_share}` (avaliado na linha/fatia atual do visual) por `CALCULATE({med_base_share}, ALLSELECTED('{nt_f}'))`, que remove o filtro da categoria do gráfico mas **respeita todos os segmentadores (*slicers*) externos escolhidos pelo usuário no topo da página**.",
+                onde_usar_formato="Gráfico de Rosca na **Página 1**, Curva de Pareto na **Página 3** e coluna `% Total` na Matriz Executiva. Formatar como **Percentual (`0.00%`)**.",
+                expr_dax_padrao=expr_share,
+                comentario_dax="Participação Percentual (% Share) sobre o Total Selecionado",
+            )
+        )
         bloco_dax.extend(bloco_somas)
 
         # C. Inteligência Temporal e Auditoria de Qualidade (-1)
+        expr_py = (
+            "CALCULATE(\n"
+            f"    {med_base_share},\n"
+            f"    SAMEPERIODLASTYEAR('{dim_tempo_nome}'[DTC_DATA])\n"
+            ")"
+        )
+        expr_yoy = (
+            "DIVIDE(\n"
+            f"    {med_base_share} - [{leg_base_share} (Ano Anterior)],\n"
+            f"    [{leg_base_share} (Ano Anterior)],\n"
+            "    0\n"
+            ")"
+        )
         bloco_tempo_qual = [
             "#### C. Inteligência Temporal (`YoY`, `MoM`) e Auditoria da Linha Sentinela (`-1`)",
-            "```dax",
-            f"// Valor no Ano Anterior (SamePeriodLastYear) — requer {dim_tempo_nome} marcada como Tabela de Data",
-            f"{leg_base_share} (Ano Anterior) = ",
-            "CALCULATE(",
-            f"    {med_base_share},",
-            f"    SAMEPERIODLASTYEAR('{dim_tempo_nome}'[DTC_DATA])",
-            ")",
             "",
-            f"// Variação Percentual Ano contra Ano (% YoY)",
-            f"% Variacao YoY ({leg_base_share}) = ",
-            "DIVIDE(",
-            f"    {med_base_share} - [{leg_base_share} (Ano Anterior)],",
-            f"    [{leg_base_share} (Ano Anterior)],",
-            "    0",
-            ")",
+            _render_ficha_medida(
+                nome_med=f"{leg_base_share} (Ano Anterior)",
+                o_que_calcula=f"Valor da métrica `{med_base_share}` apurado exatamente no mesmo período do ano anterior (*Same Period Last Year*).",
+                por_que_existe=f"Fornece a referência histórica homóloga para avaliar sazonalidade e evolução real de **{leg_base_share}** entre exercícios.",
+                por_que_formula_assim=f"Utiliza `CALCULATE({med_base_share}, SAMEPERIODLASTYEAR('{dim_tempo_nome}'[DTC_DATA]))` sobre a dimensão `{dim_tempo_nome}` marcada como *Tabela de Data*, deslocando automaticamente o contexto de dia, mês, semestre ou ano em `-1 ano`.",
+                onde_usar_formato="Gráfico comparativo *Atual vs. Ano Anterior* na **Página 3** e base do cálculo de `% Variação YoY`.",
+                expr_dax_padrao=expr_py,
+                comentario_dax=f"Valor no Ano Anterior (SamePeriodLastYear) — requer {dim_tempo_nome} marcada como Tabela de Data",
+            ),
+            _render_ficha_medida(
+                nome_med=f"% Variacao YoY ({leg_base_share})",
+                o_que_calcula=f"Variação percentual (*Year-over-Year*) de `{med_base_share}` em relação ao mesmo período do exercício anterior.",
+                por_que_existe=f"Alimenta os badges de tendência (`▲ +X%` / `▼ -Y%`) nos cartões KPI executivos, sinalizando aceleração ou retração de **{leg_base_share}**.",
+                por_que_formula_assim=f"Calcula a diferença `{med_base_share} - [{leg_base_share} (Ano Anterior)]` e divide pela base do ano anterior via `DIVIDE(..., ..., 0)`, prevenindo erros matemáticos quando não houver histórico no ano anterior.",
+                onde_usar_formato="Rótulo secundário nos Cartões KPI da **Página 1** e destaque na **Página 3**. Formatar como **Percentual (`+0.0%;-0.0%;0.0%`)**.",
+                expr_dax_padrao=expr_yoy,
+                comentario_dax="Variação Percentual Ano contra Ano (% YoY)",
+            ),
         ]
 
         if fk_dim_princ:
@@ -1405,19 +1624,33 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
             nome_per_orfao = f"% Nao Informado -1 ({leg_f})"
             medidas_qualidade.append(f"[{nome_med_orfao}]")
             medidas_qualidade.append(f"[{nome_per_orfao}]")
+            expr_orfao = (
+                "COALESCE(\n"
+                f"    CALCULATE(COUNTROWS('{nt_f}'), '{nt_f}'[{col_fk_p}] = -1),\n"
+                "    0\n"
+                ")"
+            )
             bloco_tempo_qual.extend([
-                "",
-                f"// Monitoramento de Governança: Registros com Chave Sentinela -1 em {col_fk_p}",
-                f"{nome_med_orfao} = ",
-                "COALESCE(",
-                f"    CALCULATE(COUNTROWS('{nt_f}'), '{nt_f}'[{col_fk_p}] = -1),",
-                "    0",
-                ")",
-                "",
-                f"{nome_per_orfao} = DIVIDE([{nome_med_orfao}], [{nome_med_qtd_reg}], 0)",
+                _render_ficha_medida(
+                    nome_med=nome_med_orfao,
+                    o_que_calcula=f"Quantidade absoluta de registros na fato `{nt_f}` vinculados à linha sentinela `-1` (`Não Informado`) na chave estrangeira `{col_fk_p}`.",
+                    por_que_existe=f"Quando o processo ETL no ODI 12c encontra um evento sem código dimensional válido na origem, ele grava `{col_fk_p} = -1` para preservar 100% do valor financeiro/operacional. Esta medida permite auditar quantos registros possuem pendência cadastral na origem.",
+                    por_que_formula_assim=f"Aplica `CALCULATE(COUNTROWS('{nt_f}'), '{nt_f}'[{col_fk_p}] = -1)` com `COALESCE(..., 0)`, isolando estritamente as linhas mapeadas para a chave sentinela `-1`.",
+                    onde_usar_formato="Cartão KPI de Governança na **Página 4 (Governança de Dados e Monitoramento de Sentinela `-1`)**. Formatar como **Número Inteiro (`#,0`)**.",
+                    expr_dax_padrao=expr_orfao,
+                    comentario_dax=f"Monitoramento de Governança: Registros com Chave Sentinela -1 em {col_fk_p}",
+                ),
+                _render_ficha_medida(
+                    nome_med=nome_per_orfao,
+                    o_que_calcula=f"Percentual de registros da tabela fato `{nt_f}` alocados na chave sentinela `-1` em relação ao total de registros `[{nome_med_qtd_reg}]`.",
+                    por_que_existe=f"Atua como SLA de Qualidade de Dados (*Data Quality Threshold*): se ultrapassar o limite de tolerância (ex: `> 5%`), alerta a engenharia e o gestor de negócio sobre falha de preenchimento no sistema transacional de origem.",
+                    por_que_formula_assim=f"Divide `[{nome_med_orfao}]` pelo volume total `[{nome_med_qtd_reg}]` utilizando `DIVIDE(..., ..., 0)`.",
+                    onde_usar_formato="Cartão KPI de Qualidade e gráfico de evolução mensal na **Página 4**. Formatar como **Percentual (`0.00%`)** com regra condicional de alerta se `> 5%`.",
+                    expr_dax_padrao=f"DIVIDE([{nome_med_orfao}], [{nome_med_qtd_reg}], 0)",
+                    comentario_dax=f"Taxa percentual de registros na linha sentinela -1 em {nt_f}",
+                ),
             ])
 
-        bloco_tempo_qual.append("```\n")
         bloco_dax.extend(bloco_tempo_qual)
         medidas_dax.append("\n".join(bloco_dax))
 
@@ -1489,14 +1722,36 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
     if indicadores_negocio:
         arq_origem_ind = indicadores_negocio[0].get("arquivo_origem", "Planilha de Indicadores")
         linhas_tab_ind = []
-        dax_metas = ["### 🎯 Medidas DAX de Indicadores e Metas Oficiais do Negócio\n\n```dax"]
+        dax_metas = ["### 🎯 Medidas DAX de Indicadores e Metas Oficiais do Negócio\n"]
         nt_fato_princ = fatos[0]["nome_tabela"].upper() if fatos else "FATO"
-        medida_base_ref = f"[Qtd Registros ({humanizar_identificador(re.sub(r'^(FATO_|FAT_)', '', nt_fato_princ))})]"
+        medida_qtd_padrao = f"[Qtd Registros ({humanizar_identificador(re.sub(r'^(FATO_|FAT_)', '', nt_fato_princ))})]"
+        medida_valor_padrao = medidas_kpi_topo[0] if medidas_kpi_topo else medida_qtd_padrao
 
         for idx_i, ind in enumerate(indicadores_negocio, 1):
             linhas_tab_ind.append(
                 f"| **{idx_i}. {ind['indicador']}** | {ind['formula'] or '-'} | `{ind['unidade'] or '-'}` | `{ind['periodicidade'] or '-'}` | {ind['meta'] or '-'} | `{ind['filtros'] or '-'}` |"
             )
+            unid_up = (ind.get("unidade") or "").upper()
+            form_up = (ind.get("formula") or "").upper()
+            if any(k in unid_up or k in form_up for k in ("R$", "VALOR", "MONET", "RECEITA", "DESPESA", "PAGO")):
+                medida_base_ref = medida_valor_padrao
+            else:
+                medida_base_ref = medida_qtd_padrao
+
+            filtro_ind = (ind.get("filtros") or "").strip()
+            expr_realizado_ind = medida_base_ref
+            if filtro_ind and "=" in filtro_ind and not filtro_ind.startswith("-"):
+                m_f_ind = re.search(r"([A-Za-z0-9_]+)\s*=\s*'([^']+)'", filtro_ind)
+                if m_f_ind:
+                    col_f_i = m_f_ind.group(1).upper()
+                    val_f_i = m_f_ind.group(2)
+                    tab_f_i = nt_fato_princ
+                    for d_cand in dims:
+                        if any(c["nome_dw"].upper() == col_f_i for c in d_cand["colunas"]):
+                            tab_f_i = d_cand["nome_tabela"].upper()
+                            break
+                    expr_realizado_ind = f"CALCULATE({medida_base_ref}, '{tab_f_i}'[{col_f_i}] = \"{val_f_i}\")"
+
             for m_num in ind.get("metas_numericas", []):
                 val_m = m_num["valor"]
                 ctx_m = m_num["contexto"]
@@ -1506,12 +1761,29 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
                 else:
                     nome_med_meta = f"Meta {ind['indicador']}"
                 val_dax = f"{float(val_m) / 100.0:.2f}" if ctx_m == "%" else val_m
-                dax_metas.append(f"{nome_med_meta} = {val_dax}")
                 dax_metas.append(
-                    f"% Atingimento {nome_med_meta} = DIVIDE({medida_base_ref}, [{nome_med_meta}], 0)\n"
+                    _render_ficha_medida(
+                        nome_med=nome_med_meta,
+                        o_que_calcula=f"Constante oficial de meta pactuada para o indicador **{ind['indicador']}** ({ctx_m or 'Geral'}).",
+                        por_que_existe=f"Permite traçar linhas de referência constante em gráficos de evolução e servir de denominador para o cálculo de atingimento da meta estipulada na planilha `{arq_origem_ind}`.",
+                        por_que_formula_assim=f"Retorna o valor escalar `{val_dax}` extraído diretamente da especificação de metas do negócio (`{ind['meta']}`).",
+                        onde_usar_formato="Linha de Meta constante em gráficos da **Página 1** e **Página 2**, ou referência de velocímetro (*Gauge*).",
+                        expr_dax_padrao=str(val_dax),
+                        comentario_dax=f"Meta oficial estabelecida para {ind['indicador']}",
+                    )
                 )
-        dax_metas.append("```\n")
-        if len(dax_metas) > 2:
+                dax_metas.append(
+                    _render_ficha_medida(
+                        nome_med=f"% Atingimento {nome_med_meta}",
+                        o_que_calcula=f"Percentual de cumprimento da meta `[{nome_med_meta}]` pelo valor realizado `{expr_realizado_ind}`.",
+                        por_que_existe=f"Mostra ao gestor o quão próximo o realizado está do alvo pactuado para **{ind['indicador']}** (`>= 100%` indica meta batida).",
+                        por_que_formula_assim=f"Utiliza `DIVIDE({expr_realizado_ind}, [{nome_med_meta}], 0)`, aplicando eventual filtro obrigatório (`{filtro_ind or 'Sem filtro fixo'}`) no numerador e dividindo pela medida de meta.",
+                        onde_usar_formato="Cartões de Atingimento na **Página 2 (Metas e Eficiência)** com semáforo condicional (Verde `>= 100%`, Amarelo `80%..99%`, Vermelho `< 80%`). Formatar como **Percentual (`0.00%`)**.",
+                        expr_dax_padrao=f"DIVIDE({expr_realizado_ind}, [{nome_med_meta}], 0)",
+                        comentario_dax=f"Percentual de atingimento da {nome_med_meta}",
+                    )
+                )
+        if len(dax_metas) > 1:
             medidas_dax.append("\n".join(dax_metas))
 
         secao_indicadores_negocio = (
@@ -1544,11 +1816,61 @@ def construir_guia_bi_rapido(dims: list, fatos: list, schema: str, projeto: str,
     radar_txt = "\n".join(radar_rows[:8]) if radar_rows else "| **Evolução Temporal e Concentração (Pareto 80/20)** | Colunas de Métricas e FKs | Permite avaliar sazonalidade, participação percentual (`% Share`) e desvios em relação à meta. |"
     sql_conf_txt = "\n\n".join(sql_conferencia) if sql_conferencia else (f"SELECT COUNT(*) FROM {schema}.{fatos[0]['nome_tabela']};" if fatos else "-- Sem fatos")
 
-    return f"""# 📊 Guia Completo do Analista de BI e Especificação de Painel — Projeto {projeto}
+    if homologado_pos_carga:
+        titulo_doc = f"# 📊 Guia Oficial do Analista de BI (VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA) — Projeto {projeto}"
+        status_doc_meta = (
+            f"> **Status do Documento:** ✅ **VERSÃO OFICIAL (Homologada Pós-Carga com Amostra Real — "
+            f"{len(dados_amostra.get('medidas_avaliadas', []))} Medidas DAX Conciliadas)**  "
+        )
+        banner_ciclo_vida = (
+            "> [!IMPORTANT]\n"
+            f"> **✅ Guia Oficial Homologado Pós-Carga (`DIM_*` + `FATO_*`):**\n"
+            f"> Todas as medidas DAX, relacionamentos `1:*`, chaves sentinelas (`-1`) e regras de negócio deste guia foram "
+            f"testadas e conciliadas contra a amostra pós-carga da tabela fato `{dados_amostra.get('nome_fato')}` "
+            f"(`{dados_amostra.get('total_linhas_fato', 0)}` registros analisados; `{dados_amostra.get('qtd_ok', 0)}` medidas exatas e "
+            f"`{dados_amostra.get('qtd_parciais', 0)}` medida(s) parcialmente correta(s) já corrigida(s) automaticamente nas fichas técnicas da Seção 4). "
+            "Consulte a **Seção 10** para o laudo completo de conciliação SQL x DAX."
+        )
+        linhas_sec10 = [
+            "\n---\n",
+            "## 10. 🧪 Prova Real Pós-Carga (`DIM_*` + `FATO_*`) e Conciliação de Medidas DAX\n",
+            f"- **Origem da Amostra Auditada:** `{dados_amostra.get('origem_amostra', 'AMOSTRA_FORNECIDA')}`",
+            f"- **Linhas avaliadas na Fato (`{dados_amostra.get('nome_fato')}`):** `{dados_amostra.get('total_linhas_fato', 0)}`",
+            f"- **Registros em Chave Sentinela (`SK = -1`):** `{dados_amostra.get('qtd_sentinela_fato', 0)}` (`{dados_amostra.get('pct_sentinela_fato', 0.0):.2f}%`)",
+            f"- **FKs Órfãs detectadas:** `{dados_amostra.get('qtd_orfaos_fato', 0)}`",
+            f"- **Medidas DAX auditadas:** `{len(dados_amostra.get('medidas_avaliadas', []))}` (`{dados_amostra.get('qtd_ok', 0)}` exatas | `{dados_amostra.get('qtd_parciais', 0)}` parcialmente corretas corrigidas)\n",
+            "| Medida DAX | Valor Calculado na Amostra | Status | Diagnóstico / Correção Automática |",
+            "| :--- | :---: | :---: | :--- |",
+        ]
+        for mr in dados_amostra.get("medidas_avaliadas", []):
+            st_ic = "✅ Exata" if mr["status"] == "OK" else "⚠️ Parcial (Corrigida)"
+            diag_res = " ".join(mr.get("diagnosticos", [])) or "Validada contra SQL na amostra."
+            if mr.get("dax_corrigido"):
+                diag_res += f" **DAX Corrigido:** `{mr['nome']} = {mr['dax_corrigido']}`"
+            linhas_sec10.append(f"| `[{mr['nome']}]` | **{mr['valor_formatado']}** | {st_ic} | {diag_res} |")
+        secao_prova_final = "\n".join(linhas_sec10) + "\n"
+    else:
+        titulo_doc = f"# 📊 Guia do Analista de BI (VERSÃO PRÉVIA — PRÉ-CARGA) — Projeto {projeto}"
+        status_doc_meta = (
+            "> **Status do Documento:** ⏳ **VERSÃO PRÉVIA (Pré-Carga — Aguardando Validação com Amostra Real Pós-Carga)**  "
+        )
+        banner_ciclo_vida = (
+            "> [!WARNING]\n"
+            "> **⚠️ Documento em Versão Prévia (Gerado Antes da Carga e Validação com Amostra Real):**\n"
+            "> Este guia foi projetado a partir do DDL das tabelas (`DIM_*` e `FATO_*`) para orientar o desenho inicial do modelo e o entendimento do racional de cada medida. "
+            "**Após processar a carga do DW (ODI 12c / Hop)**, deposite uma amostra dos dados carregados em `entrega/planejador_dw/amostras/` e execute **`/validar-medidas-bi`**: "
+            "o NINHO testará todas as fórmulas na prova real, corrigirá eventuais medidas parcialmente corretas e promoverá este documento automaticamente para o **Guia Oficial do Analista de BI**."
+        )
+        secao_prova_final = ""
+
+    return f"""{titulo_doc}
 
 > **Schema Oracle:** `{schema}` | **Data de Geração:** {datetime.now().strftime('%Y-%m-%d %H:%M')}  
+{status_doc_meta}
 > **Público-Alvo:** Analistas de BI, Engenheiros de Analytics, Gestores de Negócio e Designers de UI/UX  
 > **Padrão Arquitetural:** Modelo Estrela (`Star Schema` / *Fact Constellation*) em Modo Importação (`Import Mode`)
+
+{banner_ciclo_vida}
 
 ---
 
@@ -1647,7 +1969,18 @@ Configure o painel de filtros e os segmentadores no topo das páginas sincroniza
 
 ---
 
-## 6. Proposta Detalhada de Estrutura Visual para o Painel (Power BI)
+## 6. Proposta Detalhada de Estrutura Visual para o Painel (Power BI) & Mockup Visual
+
+> [!TIP]
+> **🎨 Pacote Visual Interativo e Executivos Gerados Automaticamente nesta Pasta (`08_datasets_bi/`):**
+> * 🖼️ **[`preview_painel_bi.html`](preview_painel_bi.html)**: Visualizador Interativo (com alternância **Tema Claro / Dark Mode**, **Modo Executivo vs. Dev Mode Redlines `①..⑦`** e botão **Baixar PNG 2x Alta Resolução**).
+> * 📐 **[`mockup_painel_bi.svg`](mockup_painel_bi.svg)** e **[`mockup_painel_bi_devmode.svg`](mockup_painel_bi_devmode.svg)**: Mockups vetoriais Full HD (`1440x960`) prontos para anexar na validação com o cliente ou guiar o desenvolvedor Power BI.
+> * ⭐ **[`../11_dicionario_dados/diagrama_star_schema.svg`](../11_dicionario_dados/diagrama_star_schema.svg)**: Diagrama vetorial da topologia Star Schema (`FATO` no centro + `DIMs` satélites com `PK`, `NK`, `SCD2` e `SK -1`).
+> * 📊 **[`Indicadores_PowerBI_{projeto}.xlsx`](Indicadores_PowerBI_{projeto}.xlsx)**: Planilha Excel formatada em 3 abas (`Catalogo_Indicadores`, `Metas_e_Thresholds` e `Guia_Preenchimento`) com larguras auto-ajustadas e painel congelado.
+> * 📽️ **[`apresentacao_executiva_{projeto.lower()}.pptx`](apresentacao_executiva_{projeto.lower()}.pptx)** e **[`apresentacao_slides.html`](apresentacao_slides.html)**: Deck executivo `16:9` de Kickoff/Entrega do projeto.
+> * 📄 **[`GUIA_ANALISTA_BI_{projeto}.docx`](GUIA_ANALISTA_BI_{projeto}.docx)**: Versão corporativa em Microsoft Word deste guia.
+
+![Mockup Visual do Painel Power BI](mockup_painel_bi.svg)
 
 ### 6.1 Mapa de Navegação Superior (Wireframe do Painel)
 
@@ -1727,7 +2060,7 @@ Execute as consultas abaixo no DBeaver / SQL Developer antes de publicar o paine
 - [ ] **Check 5 (Tratamento da Linha Sentinela `-1`):** Somatórios gerais incluem a linha `-1` (`"Não Informado"`) e contagens distintas de entidades filtram `FK <> -1`.
 - [ ] **Check 6 (*Sync Slicers*):** Os filtros globais de Ano, Mês e dimensões principais estão sincronizados entre as Páginas 1, 2 e 3.
 - [ ] **Check 7 (Reconciliação SQL 100%):** Os números exibidos nos Cartões KPI do Power BI foram confrontados com as 3 queries SQL da **Seção 7** e apresentaram divergência **zero**.
-"""
+{secao_prova_final}"""
 
 
 def construir_relatorio_diagnostico(
@@ -2945,6 +3278,12 @@ def construir_guias_odi_modulares(
         "",
         "Este documento consolida a arquitetura de integração de dados no **Oracle Data Integrator (ODI 12c)** para o Data Warehouse do projeto **`" + projeto + "`**, conectando os scripts SQL gerados aos guias passo a passo de cada Dimensão e Tabela Fato.",
         "",
+        "> 🎨 **Topologia Visual do Canvas ODI 12c e Documento Word:**",
+        "> * 🖼️ **[`mapa_canvas_odi.svg`](mapa_canvas_odi.svg)**: Diagrama vetorial completo do fluxo `MAP_DIM_*` (*Dimension Pattern SCD2*), `MAP_FATO_*` (`FIL_VALIDOS` ➔ `RN_DEDUP` ➔ `LKP_DIM_*` ➔ `EXP NVL(-1)` ➔ `IKM`) e pacote `PACK_CARGA_*`.",
+        "> * 📄 **[`RELATORIO_ESTRATEGIAS.docx`](RELATORIO_ESTRATEGIAS.docx)**: Versão corporativa em Microsoft Word deste relatório consolidado.",
+        "",
+        "![Topologia do Canvas ODI 12c](mapa_canvas_odi.svg)",
+        "",
         "---",
         "",
         "## 1. Regra de Ouro de Nomenclatura Física no ODI 12c (Limite de 30 Caracteres — `ORA-00972`)",
@@ -3026,6 +3365,8 @@ def executar_melhoria_rapida(
     schema_cli: str = None,
     projeto_cli: str = None,
     ts_idx_cli: str = None,
+    caminho_amostras: Path = None,
+    incluir_extras: bool = False,
 ) -> dict:
     base_dir = get_base_dir()
     saida_dw = base_dir / "saida" / "planejador_dw"
@@ -3079,9 +3420,27 @@ def executar_melhoria_rapida(
     gerar_linha_def = modo_norm in ("linha-default", "patch", "melhorias", "ajustes", "tudo", "all")
     gerar_constraints = modo_norm in ("constraints", "patch", "melhorias", "ajustes", "tudo", "all")
     gerar_testes = modo_norm in ("testes", "patch", "melhorias", "ajustes", "tudo", "all")
-    gerar_guia_bi = modo_norm in ("guia-bi", "patch", "melhorias", "ajustes", "tudo", "all")
+    gerar_guia_bi = modo_norm in (
+        "guia-bi",
+        "mockup-bi",
+        "validar-medidas-bi",
+        "apresentacao",
+        "exportar-docx",
+        "exportar-pdf",
+        "patch",
+        "melhorias",
+        "ajustes",
+        "tudo",
+        "all",
+    )
     gerar_sel_odi = modo_norm in ("selects-odi", "odi")
-    gerar_guia_odi = modo_norm in ("guia-odi", "odi")
+    gerar_guia_odi = modo_norm in ("guia-odi", "odi", "exportar-docx", "exportar-pdf")
+
+    # Formatos alternativos (.docx, .pdf) e Apresentação Executiva (.pptx / slides HTML)
+    # são gerados SOMENTE quando solicitados explicitamente pelo modo ou via --todos-formatos (incluir_extras=True)
+    gerar_apresentacao_flag = (modo_norm == "apresentacao") or incluir_extras
+    gerar_docx_flag = (modo_norm == "exportar-docx") or incluir_extras
+    gerar_pdf_flag = (modo_norm == "exportar-pdf") or incluir_extras
 
     # 1. Comentários SQL (COMMENT ON TABLE / COLUMN)
     if gerar_comm:
@@ -3109,7 +3468,7 @@ def executar_melhoria_rapida(
             arquivos_gerados.append(str(p_comm_stg.relative_to(base_dir).as_posix()))
             print(f"  {VERDE}[OK]{RESET} Comentários de Staging ({qt_s} tabelas, {qc_s} colunas) -> {p_comm_stg.relative_to(base_dir)}")
 
-    # 1.1 Dicionário de Dados HTML Interativo
+    # 1.1 Dicionário de Dados HTML Interativo + Diagrama Star Schema SVG
     if gerar_dic:
         html_dic = construir_dicionario_html(tabelas_classificadas, schema, projeto)
         p_dic = saida_dw / "11_dicionario_dados" / "dicionario_dados.html"
@@ -3117,6 +3476,13 @@ def executar_melhoria_rapida(
         p_dic.write_text(html_dic, encoding="utf-8")
         arquivos_gerados.append(str(p_dic.relative_to(base_dir).as_posix()))
         print(f"  {VERDE}[OK]{RESET} Dicionário de Dados HTML interativo -> {p_dic.relative_to(base_dir)}")
+
+        if _TEM_ARTEFATOS_VISUAIS and gerar_diagrama_star_schema_svg is not None:
+            svg_star = gerar_diagrama_star_schema_svg(dims, fatos, schema, projeto)
+            p_star = saida_dw / "11_dicionario_dados" / "diagrama_star_schema.svg"
+            p_star.write_text(svg_star, encoding="utf-8")
+            arquivos_gerados.append(str(p_star.relative_to(base_dir).as_posix()))
+            print(f"  {VERDE}[OK]{RESET} Diagrama Vetorial Star Schema (SVG) -> {p_star.relative_to(base_dir)}")
 
     # 2. Índices e PRC_POS_CARGA_FATO
     if gerar_idx:
@@ -3179,14 +3545,132 @@ def executar_melhoria_rapida(
         arquivos_gerados.append(str(p_testes.relative_to(base_dir).as_posix()))
         print(f"  {VERDE}[OK]{RESET} Suíte de Testes de Integridade adaptada ao DW -> {p_testes.relative_to(base_dir)}")
 
-    # 6. Guia do Analista de BI
+    # 6. Guia do Analista de BI + Mockup Visual (SVG/HTML/PNG 2x) + Planilha .xlsx + Deck .pptx + Word .docx
     if gerar_guia_bi:
-        md_bi = construir_guia_bi_rapido(dims, fatos, schema, projeto, base_dir=base_dir)
-        p_bi = saida_dw / "08_datasets_bi" / f"GUIA_ANALISTA_BI_{projeto}.md"
-        p_bi.parent.mkdir(parents=True, exist_ok=True)
+        pasta_bi = saida_dw / "08_datasets_bi"
+        pasta_bi.mkdir(parents=True, exist_ok=True)
+        # Garante que exista apenas 1 Guia do Analista de BI na pasta (remove versões órfãs de siglas anteriores)
+        for padrao_antigo in ("GUIA_ANALISTA_BI_*.*", "Indicadores_PowerBI_*.xlsx", "apresentacao_executiva_*.pptx"):
+            for arq_ant in list(pasta_bi.glob(padrao_antigo)):
+                nome_up = arq_ant.stem.upper()
+                if not nome_up.endswith(f"_{projeto.upper()}"):
+                    try:
+                        arq_ant.unlink()
+                    except OSError:
+                        pass
+
+        md_bi_previa = construir_guia_bi_rapido(dims, fatos, schema, projeto, base_dir=base_dir, dados_amostra=None)
+        p_bi = pasta_bi / f"GUIA_ANALISTA_BI_{projeto}.md"
+
+        dados_amostra = None
+        if _TEM_ARTEFATOS_VISUAIS and avaliar_medidas_guia_bi_amostra is not None:
+            try:
+                dados_amostra = avaliar_medidas_guia_bi_amostra(
+                    dims,
+                    fatos,
+                    schema,
+                    projeto,
+                    base_dir=base_dir,
+                    caminho_amostras=caminho_amostras,
+                    guia_md_texto=md_bi_previa,
+                )
+            except Exception:
+                dados_amostra = None
+
+        promover_para_oficial = bool(
+            dados_amostra
+            and dados_amostra.get("tem_amostra")
+            and (
+                modo_norm == "validar-medidas-bi"
+                or dados_amostra.get("origem_amostra") == "AMOSTRA_FORNECIDA"
+                or caminho_amostras is not None
+            )
+        )
+
+        if promover_para_oficial:
+            md_bi = construir_guia_bi_rapido(
+                dims, fatos, schema, projeto, base_dir=base_dir, dados_amostra=dados_amostra
+            )
+            label_versao_guia = "VERSÃO OFICIAL — HOMOLOGADA PÓS-CARGA"
+        else:
+            md_bi = md_bi_previa
+            label_versao_guia = "VERSÃO PRÉVIA — PRÉ-CARGA"
+
         p_bi.write_text(md_bi, encoding="utf-8")
         arquivos_gerados.append(str(p_bi.relative_to(base_dir).as_posix()))
-        print(f"  {VERDE}[OK]{RESET} Guia Rápido do Analista de BI (Star Schema + DAX) -> {p_bi.relative_to(base_dir)}")
+        print(
+            f"  {VERDE}[OK]{RESET} Guia do Analista de BI ({label_versao_guia}) -> {p_bi.relative_to(base_dir)}"
+        )
+
+        if promover_para_oficial and dados_amostra:
+            p_rel_prova = pasta_bi / "RELATORIO_PROVA_REAL_MEDIDAS.md"
+            p_rel_prova.write_text(dados_amostra.get("relatorio_md", ""), encoding="utf-8")
+            arquivos_gerados.append(str(p_rel_prova.relative_to(base_dir).as_posix()))
+            print(
+                f"  {VERDE}[OK]{RESET} Prova Real de Medidas DAX na Amostra ({len(dados_amostra.get('medidas_avaliadas', []))} medidas, "
+                f"{dados_amostra.get('qtd_parciais', 0)} corrigida(s)) -> {p_rel_prova.relative_to(base_dir)}"
+            )
+
+        if _TEM_ARTEFATOS_VISUAIS:
+            ind_neg = carregar_indicadores_negocio_entrega(base_dir)
+            pasta_bi = saida_dw / "08_datasets_bi"
+
+            # Garante também o diagrama Star Schema caso gerar_dic não tenha rodado neste modo isolado
+            p_star = saida_dw / "11_dicionario_dados" / "diagrama_star_schema.svg"
+            if not p_star.exists() and gerar_diagrama_star_schema_svg is not None:
+                p_star.parent.mkdir(parents=True, exist_ok=True)
+                p_star.write_text(gerar_diagrama_star_schema_svg(dims, fatos, schema, projeto), encoding="utf-8")
+                arquivos_gerados.append(str(p_star.relative_to(base_dir).as_posix()))
+
+            if gerar_mockup_painel_bi_svg is not None and gerar_preview_painel_bi_html is not None:
+                svg_mock_l = gerar_mockup_painel_bi_svg(
+                    dims, fatos, schema, projeto, dev_mode=False, tema="light", dados_amostra=dados_amostra
+                )
+                svg_dev_l = gerar_mockup_painel_bi_svg(
+                    dims, fatos, schema, projeto, dev_mode=True, tema="light", dados_amostra=dados_amostra
+                )
+
+                p_mock = pasta_bi / "mockup_painel_bi.svg"
+                p_mock.write_text(svg_mock_l, encoding="utf-8")
+                arquivos_gerados.append(str(p_mock.relative_to(base_dir).as_posix()))
+
+                p_mock_dev = pasta_bi / "mockup_painel_bi_devmode.svg"
+                p_mock_dev.write_text(svg_dev_l, encoding="utf-8")
+                arquivos_gerados.append(str(p_mock_dev.relative_to(base_dir).as_posix()))
+
+                p_prev = pasta_bi / "preview_painel_bi.html"
+                p_prev.write_text(
+                    gerar_preview_painel_bi_html(dims, fatos, schema, projeto, dados_amostra=dados_amostra),
+                    encoding="utf-8",
+                )
+                arquivos_gerados.append(str(p_prev.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Mockup Visual do Painel BI (SVG + Dev Mode Redlines + HTML/PNG 2x) -> {p_prev.relative_to(base_dir)}")
+
+            if gerar_planilha_indicadores_xlsx is not None:
+                p_xlsx = pasta_bi / f"Indicadores_PowerBI_{projeto}.xlsx"
+                gerar_planilha_indicadores_xlsx(dims, fatos, schema, projeto, str(p_xlsx), ind_neg)
+                arquivos_gerados.append(str(p_xlsx.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Planilha Estilizada de Indicadores e Metas (3 abas .xlsx) -> {p_xlsx.relative_to(base_dir)}")
+
+            if gerar_apresentacao_flag and gerar_apresentacao_executiva is not None:
+                p_pptx, p_slides = gerar_apresentacao_executiva(
+                    dims, fatos, schema, projeto, str(pasta_bi)
+                )
+                arquivos_gerados.append(str(Path(p_pptx).relative_to(base_dir).as_posix()))
+                arquivos_gerados.append(str(Path(p_slides).relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Apresentação Executiva (.pptx + .html 16:9) -> {Path(p_pptx).relative_to(base_dir)}")
+
+            if gerar_docx_flag and exportar_markdown_para_docx is not None:
+                p_docx_bi = pasta_bi / f"GUIA_ANALISTA_BI_{projeto}.docx"
+                exportar_markdown_para_docx(str(p_bi), str(p_docx_bi), titulo=f"Guia do Analista de BI — {projeto}")
+                arquivos_gerados.append(str(p_docx_bi.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Guia do Analista de BI em Word (.docx) -> {p_docx_bi.relative_to(base_dir)}")
+
+            if gerar_pdf_flag and exportar_markdown_para_pdf is not None:
+                p_pdf_bi = pasta_bi / f"GUIA_ANALISTA_BI_{projeto}.pdf"
+                exportar_markdown_para_pdf(str(p_bi), str(p_pdf_bi), titulo=f"Guia Oficial do Analista de BI - {projeto}")
+                arquivos_gerados.append(str(p_pdf_bi.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Guia do Analista de BI em PDF Oficial (.pdf) -> {p_pdf_bi.relative_to(base_dir)}")
 
     # 7. Micro-Processo ODI: Consultas SQL e Tabelas ODI_DIM_*
     if gerar_sel_odi:
@@ -3210,7 +3694,7 @@ def executar_melhoria_rapida(
             arquivos_gerados.append(str(p_odi_sfato.relative_to(base_dir).as_posix()))
             print(f"  {VERDE}[OK]{RESET} Consulta de Resolução de SKs da Fato para ODI -> {p_odi_sfato.relative_to(base_dir)}")
 
-    # 8. Micro-Processo ODI: Guias Modulares do Canvas ODI 12c
+    # 8. Micro-Processo ODI: Guias Modulares do Canvas ODI 12c + Diagrama SVG + Word .docx + PDF .pdf
     if gerar_guia_odi:
         guias_odi = construir_guias_odi_modulares(dims, fatos, schema, projeto, estrategia)
         pasta_rel = saida_dw / "09_relatorio_estrategias"
@@ -3220,6 +3704,36 @@ def executar_melhoria_rapida(
             p_g.write_text(conteudo_md, encoding="utf-8")
             arquivos_gerados.append(str(p_g.relative_to(base_dir).as_posix()))
             print(f"  {VERDE}[OK]{RESET} Guia Modular ODI 12c -> {p_g.relative_to(base_dir)}")
+
+        if _TEM_ARTEFATOS_VISUAIS:
+            if gerar_mapa_canvas_odi_svg is not None:
+                p_odi_svg = pasta_rel / "mapa_canvas_odi.svg"
+                p_odi_svg.write_text(
+                    gerar_mapa_canvas_odi_svg(dims, fatos, schema, projeto, estrategia=estrategia),
+                    encoding="utf-8",
+                )
+                arquivos_gerados.append(str(p_odi_svg.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Diagrama Vetorial do Canvas ODI 12c (SVG) -> {p_odi_svg.relative_to(base_dir)}")
+
+            if gerar_docx_flag and exportar_markdown_para_docx is not None and "RELATORIO_ESTRATEGIAS.md" in guias_odi:
+                p_docx_odi = pasta_rel / "RELATORIO_ESTRATEGIAS.docx"
+                exportar_markdown_para_docx(
+                    str(pasta_rel / "RELATORIO_ESTRATEGIAS.md"),
+                    str(p_docx_odi),
+                    titulo=f"Relatório de Estratégias ODI 12c — {projeto}",
+                )
+                arquivos_gerados.append(str(p_docx_odi.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Relatório de Estratégias ODI em Word (.docx) -> {p_docx_odi.relative_to(base_dir)}")
+
+            if gerar_pdf_flag and exportar_markdown_para_pdf is not None and "RELATORIO_ESTRATEGIAS.md" in guias_odi:
+                p_pdf_odi = pasta_rel / "RELATORIO_ESTRATEGIAS.pdf"
+                exportar_markdown_para_pdf(
+                    str(pasta_rel / "RELATORIO_ESTRATEGIAS.md"),
+                    str(p_pdf_odi),
+                    titulo=f"Relatorio de Estrategias ODI 12c - {projeto}",
+                )
+                arquivos_gerados.append(str(p_pdf_odi.relative_to(base_dir).as_posix()))
+                print(f"  {VERDE}[OK]{RESET} Relatório de Estratégias ODI em PDF Oficial (.pdf) -> {p_pdf_odi.relative_to(base_dir)}")
 
     # Gera o diagnóstico consolidado apenas nos modos de auditoria/patch amplo (evita poluir micro-processos isolados como guia-bi)
     if modo_norm in ("patch", "melhorias", "ajustes", "tudo", "all", "diagnostico"):
@@ -3233,6 +3747,7 @@ def executar_melhoria_rapida(
     print(f"\n{VERDE}{NEGRITO}✅ Micro-processo '{modo_norm}' concluído com sucesso! {len(arquivos_gerados)} artefato(s) gerado(s) em 'saida/planejador_dw/'.{RESET}")
     print(f"{CIANO}🧭 O que você pode fazer agora:{RESET}")
     print("  • `/iniciar-semantica`  ➔ Gerar as 3 camadas de Views Semânticas + Catálogo META_* sobre este DW")
+    print("  • `/exportar-docx` / `/exportar-pdf` / `/gerar-apresentacao` ➔ Exportar guias (.docx/.pdf) ou Apresentação (.pptx) sob demanda")
     print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética para testar dashboards no Power BI")
     print("  • `/validar-entrega`    ➔ Rodar o auditor de qualidade Fast-Track (`validar_entrega.py fast-track`)")
     print("  • `/onde-estou`         ➔ Consultar o status completo do workspace\n")
@@ -3263,6 +3778,11 @@ def main():
             "constraints",
             "testes",
             "guia-bi",
+            "mockup-bi",
+            "validar-medidas-bi",
+            "apresentacao",
+            "exportar-docx",
+            "exportar-pdf",
             "selects-odi",
             "guia-odi",
             "odi",
@@ -3271,7 +3791,7 @@ def main():
         ],
         help=(
             "Micro-processo a executar: 'comentarios', 'dicionario', 'indices', 'linha-default', "
-            "'constraints', 'testes', 'guia-bi', 'selects-odi', 'guia-odi', 'odi', 'patch' ou 'tudo'"
+            "'constraints', 'testes', 'guia-bi', 'validar-medidas-bi', 'selects-odi', 'guia-odi', 'odi', 'patch' ou 'tudo'"
         ),
     )
     parser.add_argument(
@@ -3284,12 +3804,31 @@ def main():
     parser.add_argument("--schema", type=str, default=None, help="Nome do Schema Oracle alvo (opcional, inferido do DDL)")
     parser.add_argument("--projeto", type=str, default=None, help="Sigla do Projeto (opcional, inferido do DDL)")
     parser.add_argument("--tablespace-idx", type=str, default=None, help="Tablespace de Índices opcional")
+    parser.add_argument(
+        "--amostras",
+        type=str,
+        default=None,
+        help="Caminho opcional de arquivo/pasta com amostras pós-carga (DIM_* e FATO_* em CSV/SQL/XLSX/ODS)",
+    )
+    parser.add_argument(
+        "--todos-formatos",
+        "--incluir-extras",
+        dest="incluir_extras",
+        action="store_true",
+        help="Gera também os formatos sob demanda (.docx, .pdf e Apresentação Executiva .pptx/.html)",
+    )
 
     args = parser.parse_args()
     base_dir = get_base_dir()
     caminho_alvo = Path(args.caminho)
     if not caminho_alvo.is_absolute():
         caminho_alvo = base_dir / caminho_alvo
+
+    caminho_amostras = None
+    if args.amostras:
+        caminho_amostras = Path(args.amostras)
+        if not caminho_amostras.is_absolute():
+            caminho_amostras = base_dir / caminho_amostras
 
     res = executar_melhoria_rapida(
         caminho_ddl=caminho_alvo,
@@ -3298,6 +3837,8 @@ def main():
         schema_cli=args.schema,
         projeto_cli=args.projeto,
         ts_idx_cli=args.tablespace_idx,
+        caminho_amostras=caminho_amostras,
+        incluir_extras=args.incluir_extras,
     )
     sys.exit(1 if res["erros"] > 0 else 0)
 

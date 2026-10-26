@@ -42,6 +42,7 @@ from melhorar_dw_existente import (
     _obter_nk_dim,
     _obter_sk_dim,
     abreviar_identificador_odi,
+    carregar_indicadores_negocio_entrega,
     classificar_tabela_dw,
     construir_dicionario_html,
     construir_guia_bi_rapido,
@@ -61,6 +62,11 @@ from melhorar_dw_existente import (
     parse_ddl_text,
     validar_tamanho_identificador_odi,
 )
+
+try:
+    from gerador_artefatos_visuais import gerar_pacote_visual_completo_dw
+except Exception:
+    gerar_pacote_visual_completo_dw = None
 from modular_semantica import (
     _nome_entidade_curto,
     construir_catalogo_meta,
@@ -610,9 +616,14 @@ def gerar_blueprint_simulacao_dw(
         "- [x] `06_indices` : Scripts de criação de Índices Bitmap/B-Tree e `DBMS_STATS` (`03_dimensoes/06_create_indexes_dim.sql` e `04_fatos/06_create_indexes_fato.sql`)",
         "- [x] `07_procedures` : Procedure `PRC_POS_CARGA_FATO` (`05_procedimentos_manutencao/07_prc_pos_carga_fato.sql`)",
         "- [x] `08_testes_qualidade` : Script de auditoria de integridade pós-carga (`10_testes_integridade/13_testes_integridade.sql`)",
-        "- [x] `09_guias_odi` : Relatório de Estratégias e Guias passo a passo de Canvas ODI 12c (`09_relatorio_estrategias/`)",
-        "- [x] `10_guia_bi` : Guia do Analista de BI e Power BI (`08_datasets_bi/GUIA_ANALISTA_BI_<PROJETO>.md`)",
+        "- [x] `09_guias_odi` : Relatório de Estratégias e Guias passo a passo de Canvas ODI 12c em Markdown (`09_relatorio_estrategias/`)",
+        "- [x] `10_guia_bi` : Guia do Analista de BI em Markdown + Mockup Visual SVG/HTML + Planilha `.xlsx` (`08_datasets_bi/`)",
         "- [x] `11_dicionario_html` : Dicionário de Dados HTML Interativo (`11_dicionario_dados/dicionario_dados.html`)",
+        "",
+        "**Exportações Alternativas e Apresentação Executiva (Sob Demanda — marque `[x]` apenas se desejar gerar):**",
+        "- [ ] `12_apresentacao_executiva` : Apresentação Executiva em PowerPoint (`.pptx`) e Deck HTML 16:9 *(ou via `/gerar-apresentacao`)*",
+        "- [ ] `13_exportar_docx` : Exportação dos Guias de BI e ODI em Microsoft Word (`.docx`) *(ou via `/exportar-docx`)*",
+        "- [ ] `14_exportar_pdf` : Exportação dos Guias de BI e ODI em PDF Oficial (`.pdf`) *(ou via `/exportar-pdf`)*",
         "",
     ])
 
@@ -1305,7 +1316,11 @@ def _gerar_scripts_ddl_completos_dw(
     return gerados
 
 
-def executar_simulacao_aprovada_dw(tabelas_base: list[dict], forcar: bool = False) -> list[Path]:
+def executar_simulacao_aprovada_dw(
+    tabelas_base: list[dict],
+    forcar: bool = False,
+    todos_formatos: bool = False,
+) -> list[Path]:
     """Lê `SIMULACAO_BLUEPRINT_DW.md`, valida aprovação, aplica edições e gera `saida/planejador_dw/`."""
     if not BLUEPRINT_DW_PATH.exists():
         print(f"[ERRO] Blueprint de simulação não encontrada em: {BLUEPRINT_DW_PATH}")
@@ -1425,6 +1440,37 @@ def executar_simulacao_aprovada_dw(tabelas_base: list[dict], forcar: bool = Fals
         tabelas_classificadas = [(t, classificar_tabela_dw(t)) for t in tabelas]
         p.write_text(construir_dicionario_html(tabelas_classificadas, schema_dw, projeto), encoding="utf-8")
         gerados.append(p)
+
+    # Pacote Visual (Mockup SVG/HTML/PNG 2x, Star Schema SVG, ODI Canvas SVG, Planilha .xlsx; e sob demanda .pptx/.html, .docx e .pdf)
+    if gerar_pacote_visual_completo_dw is not None and any(
+        k in entregaveis
+        for k in (
+            "09_guias_odi",
+            "10_guia_bi",
+            "11_dicionario_html",
+            "12_apresentacao_executiva",
+            "13_exportar_docx",
+            "14_exportar_pdf",
+        )
+    ):
+        ind_neg = carregar_indicadores_negocio_entrega(ROOT_DIR)
+        caminhos_vis = gerar_pacote_visual_completo_dw(
+            dims=dims,
+            fatos=fatos,
+            schema=schema_dw,
+            projeto=projeto,
+            pasta_saida_dw=str(SAIDA_DW_DIR),
+            indicadores_existentes=ind_neg,
+            estrategia=estrategia,
+            incluir_apresentacao=("12_apresentacao_executiva" in entregaveis or todos_formatos),
+            incluir_docx=("13_exportar_docx" in entregaveis or todos_formatos),
+            incluir_pdf=("14_exportar_pdf" in entregaveis or todos_formatos),
+            incluir_todos_formatos=todos_formatos,
+        )
+        for cv in caminhos_vis.values():
+            pv = Path(cv)
+            if pv not in gerados:
+                gerados.append(pv)
 
     print("=" * 80)
     print(f"🚀 EXECUÇÃO REAL DO DW CONCLUÍDA A PARTIR DA SIMULAÇÃO APROVADA ({projeto})")
@@ -1611,6 +1657,11 @@ def main() -> None:
         action="store_true",
         help="Autoriza a execução real (`--acao executar`) mesmo sem o checkbox `[x]` marcado no arquivo Markdown.",
     )
+    parser.add_argument(
+        "--todos-formatos",
+        action="store_true",
+        help="Gera também os formatos sob demanda (.docx, .pdf e Apresentação Executiva .pptx/.html), usado por exemplo no /demo.",
+    )
 
     args = parser.parse_args()
 
@@ -1659,10 +1710,11 @@ def main() -> None:
 
     elif args.acao == "executar":
         if args.modulo in ("dw", "ambos"):
-            executar_simulacao_aprovada_dw(tabelas, forcar=args.forcar)
+            executar_simulacao_aprovada_dw(tabelas, forcar=args.forcar, todos_formatos=args.todos_formatos)
         if args.modulo in ("semantica", "ambos"):
             executar_simulacao_aprovada_semantica(tabelas, forcar=args.forcar)
         print("🧭 O QUE VOCÊ PODE FAZER AGORA (PRÓXIMOS PASSOS):")
+        print("  • `/exportar-docx` / `/exportar-pdf` / `/gerar-apresentacao` ➔ Gerar formatos Word, PDF ou Apresentação (.pptx) sob demanda")
         print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética 100% fiel às suas tabelas para Power BI")
         print("  • `/validar-entrega`    ➔ Auditar sintaxe Oracle, linha -1 e integridade dos scripts em `saida/`")
         print("  • `/empacotar-projeto`  ➔ Exportar a entrega consolidada em arquivo `.zip`")

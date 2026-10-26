@@ -77,17 +77,54 @@ def mapear_tipo_oracle(tipo_origem: str) -> str:
 
 
 def ler_texto_sql(caminho: Path) -> str:
-    """Lê um arquivo SQL tentando UTF-8 (com/sem BOM) e, em seguida, CP1252 (padrão de exportações no Windows).
+    """Lê um arquivo SQL/DDL/PDF/ODS tentando UTF-8 (com/sem BOM) e, em seguida, CP1252.
 
-    Evita a perda silenciosa de acentos em comentários/COMMENT ON que ocorria com `errors="ignore"`.
+    Suporta também extração de texto nativo de `.pdf` (`extrair_texto_pdf_nativo`) e `.ods`
+    (`ler_planilha_ods`), com resiliência total a arquivos corrompidos (`panic_hunt`).
     """
-    dados = Path(caminho).read_bytes()
+    p = Path(caminho)
+    suf = p.suffix.lower()
+    if suf == ".pdf":
+        try:
+            from gerador_artefatos_visuais import extrair_texto_pdf_nativo
+            res_pdf = extrair_texto_pdf_nativo(str(p))
+            return res_pdf if isinstance(res_pdf, str) else ""
+        except Exception:
+            return ""
+    if suf == ".ods":
+        try:
+            from gerador_artefatos_visuais import ler_planilha_ods
+            rows_ods = ler_planilha_ods(str(p))
+            linhas = []
+            for row in rows_ods:
+                linhas.append(";".join(str(c or "") for c in row))
+            return "\n".join(linhas)
+        except Exception:
+            return ""
+    if suf == ".docx":
+        try:
+            from gerador_artefatos_visuais import ler_documento_docx
+            info = ler_documento_docx(str(p))
+            return str(info.get("texto", ""))
+        except Exception:
+            return ""
+    if suf == ".odt":
+        try:
+            from gerador_artefatos_visuais import ler_documento_odt
+            info = ler_documento_odt(str(p))
+            return str(info.get("texto", ""))
+        except Exception:
+            return ""
+    try:
+        dados = p.read_bytes()
+    except Exception:
+        return ""
     for enc in ("utf-8-sig", "cp1252"):
         try:
             return dados.decode(enc)
         except UnicodeDecodeError:
             continue
-    return dados.decode("latin-1")
+    return dados.decode("latin-1", errors="replace")
 
 
 def _remover_comentarios_sql(sql_text: str) -> str:
@@ -845,7 +882,7 @@ def main():
         if p.is_file():
             alvos.append(p)
         elif p.is_dir():
-            for ext in ("*.sql", "*.ddl", "*.csv", "*.txt"):
+            for ext in ("*.sql", "*.ddl", "*.csv", "*.txt", "*.pdf", "*.ods", "*.docx", "*.odt"):
                 alvos.extend(sorted(p.glob(ext)))
     else:
         for d in [
@@ -856,7 +893,7 @@ def main():
         ]:
             if d.exists():
                 alvos.extend(
-                    [f for f in sorted(d.iterdir()) if f.is_file() and f.suffix.lower() in [".sql", ".ddl", ".csv", ".txt"] and f.name.lower() != "readme.md"]
+                    [f for f in sorted(d.iterdir()) if f.is_file() and f.suffix.lower() in [".sql", ".ddl", ".csv", ".txt", ".pdf", ".ods", ".docx", ".odt"] and f.name.lower() != "readme.md"]
                 )
 
     print(f"\n{CIANO}{NEGRITO}{'=' * 75}{RESET}")
