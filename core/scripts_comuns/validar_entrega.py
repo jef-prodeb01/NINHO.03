@@ -745,7 +745,7 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                         k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
                         if k != "DIMENSION_KEY"
                     ]
-                    if sk_invalidas and not is_simulacao_dw:
+                    if sk_invalidas and not is_fast_track_dw:
                         print_err(
                             f"[{f_sql.name}] Surrogate Key fora do padrao corporativo detectada ({sk_invalidas[0]})! "
                             f"Em todas as dimensoes a SK deve chamar-se estritamente 'DIMENSION_KEY'."
@@ -760,7 +760,7 @@ def validar_saida_gerada(base_dir: Path) -> dict:
             # Verificação de FKs na Fato (padrão corporativo DIM_<PROJETO>_<...> apontando para DIMENSION_KEY), DIM_TEMPO e proibição de DTC_CARGA_DW
             if "04_fatos" in f_sql.parts or f_sql.name.upper().startswith("FATO_"):
                 if re.search(r"\b(DTC_CARGA_DW|DTC_CARGA)\b", txt, re.IGNORECASE):
-                    if is_fast_track_dw or is_simulacao_dw:
+                    if is_fast_track_dw:
                         print_warn(
                             f"[{f_sql.name}] Coluna legada 'DTC_CARGA_DW'/'DTC_CARGA' detectada no DW existente (documentada sem alterar estrutura)."
                         )
@@ -771,14 +771,14 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                             f"O controle de carga ja existe em TB_CONTROLE_CARGA / ETA_ETAPAS_CARGA (evite redundancia)."
                         )
                         results["erros"] += 1
-                if re.search(r"\bDIM_TEMPO\b", txt, re.IGNORECASE):
+                if re.search(r"\b(DIM_TEMPO|SK_TEMPO)\b", txt, re.IGNORECASE):
                     tem_dim_tempo_fk = True
                 fk_invalidas = [
                     k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
                     if k != "DIMENSION_KEY"
                 ]
                 if fk_invalidas:
-                    if is_fast_track_dw or is_simulacao_dw:
+                    if is_fast_track_dw:
                         print_warn(
                             f"[{f_sql.name}] Coluna FK legada ({fk_invalidas[0]}) preservada para nao quebrar a estrutura existente."
                         )
@@ -793,7 +793,7 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                 for fk_col in fks_declaradas:
                     fk_clean = fk_col.replace('"', '').strip().upper()
                     if not fk_clean.startswith(("DIM_", "SK_")):
-                        if is_fast_track_dw or is_simulacao_dw:
+                        if is_fast_track_dw:
                             print_warn(
                                 f"[{f_sql.name}] Foreign Key legada '{fk_clean}' preservada."
                             )
@@ -831,12 +831,8 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                     print_ok("Registro padrao -1 ('NAO INFORMADO') confirmado nos scripts de dimensao.")
                     results["sucessos"] += 1
                 if not tem_dim_tempo_ddl:
-                    if is_simulacao_dw:
-                        print_warn("Simulacao executada sem 'DIM_TEMPO' explicita no DDL de entrada (considere vincular a DIM_TEMPO corporativa).")
-                        results["avisos"] += 1
-                    else:
-                        print_err("Dimensao conformada obrigatoria 'DIM_TEMPO' ausente em '03_dimensoes/'! Todo schema de trabalho deve conter a DIM_TEMPO corporativa.")
-                        results["erros"] += 1
+                    print_err("Dimensao conformada obrigatoria 'DIM_TEMPO' ausente em '03_dimensoes/'! Todo schema de trabalho deve conter a DIM_TEMPO corporativa.")
+                    results["erros"] += 1
                 else:
                     print_ok("Dimensao conformada obrigatoria 'DIM_TEMPO' presente em '03_dimensoes/'.")
                     results["sucessos"] += 1
@@ -860,12 +856,8 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                 results["sucessos"] += 1
             else:
                 if not tem_dim_tempo_fk:
-                    if is_simulacao_dw:
-                        print_warn("Simulacao de Fato executada conforme colunas aprovadas na Blueprint (sem FK explicita para DIM_TEMPO).")
-                        results["avisos"] += 1
-                    else:
-                        print_err("Referencia obrigatoria para 'DIM_TEMPO' ausente nas tabelas Fato em '04_fatos/'!")
-                        results["erros"] += 1
+                    print_err("Referencia obrigatoria para 'DIM_TEMPO' ausente nas tabelas Fato em '04_fatos/'!")
+                    results["erros"] += 1
                 else:
                     print_ok("FK obrigatoria 'DIM_TEMPO' presente e sem redundancia de 'DTC_CARGA_DW' nas tabelas Fato.")
                     results["sucessos"] += 1

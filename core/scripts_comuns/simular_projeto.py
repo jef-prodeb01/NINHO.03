@@ -319,65 +319,158 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
 
     classif = _pontuar_e_classificar_oltp(tabelas_oltp, tabelas_brutas)
 
+    mapa_orig_para_dim: dict[str, str] = {}
+    mapa_nk_para_dim: dict[str, str] = {}
+
+    for d_exist in resultado_dw:
+        if classificar_tabela_dw(d_exist) == "DIM":
+            d_nome = d_exist["nome_tabela"].upper()
+            mapa_orig_para_dim[d_nome] = d_nome
+            nk_exist = _obter_nk_dim(d_exist)
+            if nk_exist:
+                mapa_nk_para_dim[nk_exist.upper()] = d_nome
+
+    # 1ª Passada: Converte todas as Dimensões OLTP (DIM_*) e mapeia NKs -> DIM_*
     for t in tabelas_oltp:
         t_nome = t["nome_tabela"].upper()
         papel = classif.get(t_nome, "DIM")
+        if papel != "DIM":
+            continue
         raw_name = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL)_", "", t_nome)
-
-        if papel == "DIM":
-            dim_name = abreviar_identificador_odi("DIM", raw_name, max_len=22)
-            sk_name = "DIMENSION_KEY"
-            cols_novas = [
-                {
-                    "nome_original": "SEQUENCE",
-                    "nome_dw": sk_name,
-                    "tipo_origem": "NUMBER(10)",
-                    "tipo_oracle": "NUMBER(10)",
-                    "obrigatorio": "NOT NULL",
+        dim_name = abreviar_identificador_odi("DIM", raw_name, max_len=22)
+        sk_name = "DIMENSION_KEY"
+        cols_novas = [
+            {
+                "nome_original": "SEQUENCE",
+                "nome_dw": sk_name,
+                "tipo_origem": "NUMBER(38,0)",
+                "tipo_oracle": "NUMBER(38,0)",
+                "obrigatorio": "NOT NULL",
+                "comentario": "",
+            }
+        ]
+        for c in t["colunas"]:
+            cols_novas.append(dict(c))
+        for aud_col, aud_tipo, aud_obrig in [
+            ("SIN_ATIVO", "CHAR(1 CHAR) DEFAULT 'S'", "NOT NULL"),
+            ("DTC_EFETIVACAO", "DATE", "NOT NULL"),
+            ("DTC_EXPIRACAO", "DATE", "NULL"),
+            ("DES_ATUALIZAR", "CHAR(1 CHAR) DEFAULT 'S'", "NOT NULL"),
+        ]:
+            if not any(x["nome_dw"] == aud_col for x in cols_novas):
+                cols_novas.append({
+                    "nome_original": "SYSDATE/SCD2",
+                    "nome_dw": aud_col,
+                    "tipo_origem": aud_tipo,
+                    "tipo_oracle": aud_tipo,
+                    "obrigatorio": aud_obrig,
                     "comentario": "",
-                }
-            ]
-            for c in t["colunas"]:
-                cols_novas.append(dict(c))
-            for aud_col, aud_tipo, aud_obrig in [
-                ("SIN_ATIVO", "CHAR(1)", "NOT NULL"),
-                ("DTC_EFETIVACAO", "DATE", "NOT NULL"),
-                ("DTC_EXPIRACAO", "DATE", "NULL"),
-                ("DES_ATUALIZAR", "CHAR(1)", "NULL"),
-            ]:
-                if not any(x["nome_dw"] == aud_col for x in cols_novas):
-                    cols_novas.append({
-                        "nome_original": "SYSDATE/SCD2",
-                        "nome_dw": aud_col,
-                        "tipo_origem": aud_tipo,
-                        "tipo_oracle": aud_tipo,
-                        "obrigatorio": aud_obrig,
-                        "comentario": "",
-                    })
-            resultado_dw.append({
-                "arquivo": t.get("arquivo", "simulacao.sql"),
-                "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
-                "nome_tabela": dim_name,
-                "tabela_origem": t["nome_tabela"],
-                "comentario_tabela": t.get("comentario_tabela", ""),
-                "colunas": cols_novas,
-                "pks": [sk_name],
-                "fks": [],
-                "indices": [],
+                })
+        mapa_orig_para_dim[t_nome] = dim_name
+        nk_cols = t.get("pks") or ([t["colunas"][0]["nome_dw"]] if t.get("colunas") else [])
+        for nk_c in nk_cols:
+            mapa_nk_para_dim[nk_c.upper()] = dim_name
+
+        resultado_dw.append({
+            "arquivo": t.get("arquivo", "simulacao.sql"),
+            "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
+            "nome_tabela": dim_name,
+            "tabela_origem": t["nome_tabela"],
+            "comentario_tabela": t.get("comentario_tabela", ""),
+            "colunas": cols_novas,
+            "pks": [sk_name],
+            "fks": [],
+            "indices": [],
+        })
+
+    # 2ª Passada: Converte todas as Tabelas Fato OLTP (FATO_*) com FKs no padrão DIM_<ENTIDADE> + DIM_TEMPO
+    for t in tabelas_oltp:
+        t_nome = t["nome_tabela"].upper()
+        papel = classif.get(t_nome, "DIM")
+        if papel == "DIM":
+            continue
+        raw_name = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL)_", "", t_nome)
+        fato_name = abreviar_identificador_odi("FATO", raw_name, max_len=26)
+        fks_orig_por_col = {fk["coluna"].upper(): fk for fk in t.get("fks", [])}
+        pks_fato_orig = {p.upper() for p in t.get("pks", [])}
+
+        cols_fato = []
+        fks_novas = []
+        dims_ja_fk: set[str] = set()
+
+        for c in t["colunas"]:
+            c_up = c["nome_dw"].upper()
+            if c_up in ("DTC_CARGA_DW", "DTC_CARGA"):
+                continue
+            dim_ref = None
+            if c_up in fks_orig_por_col:
+                tab_ref_orig = fks_orig_por_col[c_up]["tabela_ref"].upper()
+                dim_ref = mapa_orig_para_dim.get(tab_ref_orig)
+                if not dim_ref:
+                    raw_ref = re.sub(r"^(?:TB|TAB|TBL|CAD|MOV|REL|RL)_", "", tab_ref_orig)
+                    dim_ref = abreviar_identificador_odi("DIM", raw_ref, max_len=22)
+            elif c_up in mapa_nk_para_dim and (c_up not in pks_fato_orig or len(pks_fato_orig) > 1):
+                dim_ref = mapa_nk_para_dim[c_up]
+
+            if dim_ref and dim_ref not in dims_ja_fk:
+                dims_ja_fk.add(dim_ref)
+                cols_fato.append({
+                    "nome_original": c.get("nome_original", c["nome_dw"]),
+                    "nome_dw": dim_ref,
+                    "tipo_origem": c.get("tipo_origem", c.get("tipo_oracle", "NUMBER(10)")),
+                    "tipo_oracle": "NUMBER(38,0)",
+                    "obrigatorio": "NOT NULL",
+                    "comentario": f"Chave estrangeira (FK) referenciando {dim_ref}(DIMENSION_KEY).",
+                })
+                fks_novas.append({
+                    "coluna": dim_ref,
+                    "tabela_ref": dim_ref,
+                    "coluna_ref": "DIMENSION_KEY",
+                })
+            else:
+                cols_fato.append(dict(c))
+
+        if not any(x["nome_dw"].upper() in ("DIM_TEMPO", "SK_TEMPO") for x in cols_fato):
+            col_data_orig = next(
+                (
+                    c["nome_dw"]
+                    for c in t["colunas"]
+                    if "DATE" in c.get("tipo_oracle", "").upper()
+                    or "TIMESTAMP" in c.get("tipo_oracle", "").upper()
+                    or c["nome_dw"].upper().startswith(("DTC_", "DTH_", "DAT_", "DT_"))
+                ),
+                "SYSDATE",
+            )
+            cols_fato.append({
+                "nome_original": col_data_orig,
+                "nome_dw": "DIM_TEMPO",
+                "tipo_origem": "DATE",
+                "tipo_oracle": "NUMBER(38,0)",
+                "obrigatorio": "NOT NULL",
+                "comentario": "Chave estrangeira (FK) para a dimensão calendário conformada DIM_TEMPO(DIMENSION_KEY).",
             })
-        else:
-            fato_name = abreviar_identificador_odi("FATO", raw_name, max_len=26)
-            resultado_dw.append({
-                "arquivo": t.get("arquivo", "simulacao.sql"),
-                "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
-                "nome_tabela": fato_name,
-                "tabela_origem": t["nome_tabela"],
-                "comentario_tabela": t.get("comentario_tabela", ""),
-                "colunas": [dict(c) for c in t["colunas"]],
-                "pks": list(t.get("pks", [])),
-                "fks": list(t.get("fks", [])),
-                "indices": [],
+            fks_novas.append({
+                "coluna": "DIM_TEMPO",
+                "tabela_ref": "DIM_TEMPO",
+                "coluna_ref": "DIMENSION_KEY",
             })
+
+        pks_fato_finais = [
+            mapa_nk_para_dim.get(p.upper(), p) if (p.upper() in dims_ja_fk) else p
+            for p in t.get("pks", [])
+        ]
+
+        resultado_dw.append({
+            "arquivo": t.get("arquivo", "simulacao.sql"),
+            "nome_completo_origem": t.get("nome_completo_origem", t["nome_tabela"]),
+            "nome_tabela": fato_name,
+            "tabela_origem": t["nome_tabela"],
+            "comentario_tabela": t.get("comentario_tabela", ""),
+            "colunas": cols_fato,
+            "pks": pks_fato_finais,
+            "fks": fks_novas,
+            "indices": [],
+        })
 
     return resultado_dw
 
@@ -435,8 +528,8 @@ def gerar_blueprint_simulacao_dw(
         f"| `SCHEMA_STG` | `STG_{projeto}` | Schema Oracle de Staging (`STG_*` e `ODI_DIM_*`) |",
         f"| `ESTRATEGIA_CARGA` | `{estrategia}` | `A` = Truncate & Load + Bitmap Index; `B` = MERGE Incremental + B-Tree |",
         f"| `REUSAR_DIM_TEMPO` | `{reusar_tempo_default}` | `SIM` = Reutiliza `DIM_TEMPO` corporativa já existente no schema; `NAO` = Gera DDL de `DIM_TEMPO` |",
-        f"| `TABLESPACE_DADOS` | `TS_DW_{projeto}_DAT` | Tablespace padrão de armazenamento de tabelas |",
-        f"| `TABLESPACE_INDICES` | `TS_DW_{projeto}_IDX` | Tablespace dedicada para índices de performance |",
+        f"| `TABLESPACE_DADOS` | `{projeto}_DATA` | Tablespace padrão de armazenamento de tabelas (`<PROJETO>_DATA`) |",
+        f"| `TABLESPACE_INDICES` | `{projeto}_INDEX` | Tablespace dedicada para índices de performance (`<PROJETO>_INDEX`) |",
         "",
         "---",
         "",
@@ -1038,7 +1131,10 @@ def parse_tabelas_editadas_blueprint_dw(caminho_bp: Path, tabelas_base: list[dic
                 papel_s = m_row.group(5).strip().upper()
                 nome_col_dw = m_row.group(3).strip().upper()
                 tipo_col_ora = m_row.group(4).strip().upper()
-                is_not_null = papel_s in ("SK", "NK", "PK_DEGENERADA", "FK_DIMENSAO")
+                is_not_null = papel_s in ("SK", "NK", "PK_DEGENERADA", "FK_DIMENSAO") or (
+                    papel_s == "AUDITORIA_SCD2"
+                    and nome_col_dw in ("SIN_ATIVO", "FLG_ATIVO", "DTC_EFETIVACAO", "DTC_INICIO", "DES_ATUALIZAR")
+                )
                 cols_editadas.append({
                     "nome_original": m_row.group(2).strip(),
                     "nome": nome_col_dw,
@@ -1079,8 +1175,8 @@ def parse_tabelas_editadas_blueprint_dw(caminho_bp: Path, tabelas_base: list[dic
             fks = [
                 {
                     "coluna": c["nome_dw"],
-                    "tabela_ref": "DIM_" + c["nome_dw"].replace("SK_", ""),
-                    "coluna_ref": c["nome_dw"],
+                    "tabela_ref": c["nome_dw"] if c["nome_dw"].startswith("DIM_") else "DIM_" + c["nome_dw"].replace("SK_", ""),
+                    "coluna_ref": "DIMENSION_KEY",
                 }
                 for c in cols_ed
                 if c["papel_scd"] == "FK_DIMENSAO"
@@ -1166,15 +1262,50 @@ def _gerar_scripts_ddl_completos_dw(
         ]
         tabelas_stg_comm = []
         for t in tabelas:
+            if t["nome_tabela"].upper() in ("DIM_TEMPO", "DIM_CALENDARIO", "DIM_DATA"):
+                continue
             stg_name = re.sub(r"^(DIM|FATO|FAT)_", "STG_", t["nome_tabela"])
-            cols_stg = [
-                c for c in t["colunas"]
-                if c["nome_dw"] != "DIMENSION_KEY"
-                and not c["nome_dw"].startswith("SK_")
-                and c["nome_dw"] not in ("DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO", "SIN_ATIVO", "DES_ATUALIZAR")
-            ]
+            cols_stg = []
+            vistas_stg: set[str] = set()
+            for c in t["colunas"]:
+                cn_dw = c["nome_dw"].upper()
+                if (
+                    cn_dw in ("DIMENSION_KEY", "DIM_TEMPO", "SK_TEMPO", "DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO", "SIN_ATIVO", "DES_ATUALIZAR")
+                    or cn_dw.startswith("SK_")
+                ):
+                    continue
+                corig = (c.get("nome_original") or cn_dw).strip().upper()
+                if cn_dw.startswith("DIM_") and corig and corig not in ("SEQUENCE", "SYSDATE", "SYSDATE/SCD2") and not corig.startswith("DIM_"):
+                    col_stg_nome = corig
+                    tipo_stg = re.sub(r"\s+DEFAULT\s+.+$", "", c.get("tipo_origem", "NUMBER(10)"), flags=re.IGNORECASE).strip()
+                    if tipo_stg == "NUMBER(38,0)":
+                        tipo_stg = "NUMBER(10)"
+                else:
+                    col_stg_nome = cn_dw
+                    tipo_stg = re.sub(r"\s+DEFAULT\s+.+$", "", c["tipo_oracle"], flags=re.IGNORECASE).strip()
+                tipo_stg = re.sub(r"\bNOT\s+NULL\b|\bNULL\b", "", tipo_stg, flags=re.IGNORECASE).strip()
+                if col_stg_nome not in vistas_stg:
+                    vistas_stg.add(col_stg_nome)
+                    c_stg = dict(c)
+                    c_stg["nome_dw"] = col_stg_nome
+                    c_stg["tipo_oracle"] = tipo_stg
+                    cols_stg.append(c_stg)
             if not cols_stg:
-                cols_stg = t["colunas"]
+                cols_stg = [dict(c) for c in t["colunas"]]
+            for aud_stg_nome, aud_stg_tipo, aud_stg_comm in [
+                ("DTC_EXTRACAO", "DATE DEFAULT SYSDATE", "Data e hora em que o registro foi extraído da origem para a Staging."),
+                ("ID_LOTE", "NUMBER", "Identificador do lote de execução da carga na área de Staging."),
+            ]:
+                if aud_stg_nome not in vistas_stg:
+                    vistas_stg.add(aud_stg_nome)
+                    cols_stg.append({
+                        "nome_original": aud_stg_nome,
+                        "nome_dw": aud_stg_nome,
+                        "tipo_origem": aud_stg_tipo,
+                        "tipo_oracle": aud_stg_tipo,
+                        "obrigatorio": "NULL",
+                        "comentario": aud_stg_comm,
+                    })
             linhas_stg.append(f"CREATE TABLE {schema_stg}.{stg_name} (")
             for idx, c in enumerate(cols_stg):
                 virg = "," if idx < len(cols_stg) - 1 else ""
@@ -1214,7 +1345,7 @@ def _gerar_scripts_ddl_completos_dw(
             linhas_dim.append(f"CREATE TABLE {schema_dw}.{tname} (")
             for c in d["colunas"]:
                 eh_nn = c.get("obrigatorio") in (True, "NOT NULL") or c["nome_dw"] == sk
-                nn = " NOT NULL" if eh_nn else ""
+                nn = " NOT NULL" if (eh_nn and "NOT NULL" not in c["tipo_oracle"].upper()) else ""
                 linhas_dim.append(f"    {c['nome_dw']} {c['tipo_oracle']}{nn},")
             linhas_dim.append(f"    CONSTRAINT PK_{tname} PRIMARY KEY ({sk}) USING INDEX TABLESPACE {ts_idx}")
             linhas_dim.append(f") TABLESPACE {ts_dat};")
@@ -1232,23 +1363,37 @@ def _gerar_scripts_ddl_completos_dw(
                 ])
             else:
                 linhas_dim.extend([
-                    f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO",
+                    f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO (CONVENCOES_DW.md Seção 3.4 - 24 colunas)",
+                    f"-- Surrogate Key Padrão: DIMENSION_KEY (compatível com SK_TEMPO no formato YYYYMMDD ou -1)",
                     f"CREATE TABLE {schema_dw}.DIM_TEMPO (",
-                    f"    SK_TEMPO          NUMBER(8)          NOT NULL,",
-                    f"    DTC_DATA          DATE               NOT NULL,",
-                    f"    NUM_ANO           NUMBER(4)          NOT NULL,",
-                    f"    NUM_SEMESTRE      NUMBER(1)          NOT NULL,",
-                    f"    NUM_TRIMESTRE     NUMBER(1)          NOT NULL,",
-                    f"    NUM_MES           NUMBER(2)          NOT NULL,",
-                    f"    NOM_MES           VARCHAR2(20 CHAR)  NOT NULL,",
-                    f"    SGL_MES            VARCHAR2(3 CHAR)   NOT NULL,",
-                    f"    NUM_DIA           NUMBER(2)          NOT NULL,",
-                    f"    NOM_DIA_SEMANA    VARCHAR2(20 CHAR)  NOT NULL,",
-                    f"    IND_FIM_SEMANA    CHAR(1)            DEFAULT 'N' NOT NULL,",
-                    f"    IND_FERIADO       CHAR(1)            DEFAULT 'N' NOT NULL,",
-                    f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (SK_TEMPO) USING INDEX TABLESPACE {ts_idx}",
+                    f"    DIMENSION_KEY          NUMBER(38,0)       NOT NULL,",
+                    f"    DTC_COMPLETA           DATE               NOT NULL,",
+                    f"    DES_DATA_DIA           VARCHAR2(10 CHAR)  NOT NULL,",
+                    f"    NUM_ANO                NUMBER(4,0)        NOT NULL,",
+                    f"    NUM_MES                NUMBER(2,0)        NOT NULL,",
+                    f"    NOM_MES                VARCHAR2(20 CHAR)  NOT NULL,",
+                    f"    SIG_MES                CHAR(3 CHAR)       NOT NULL,",
+                    f"    DES_ANO_MES            VARCHAR2(7 CHAR)   NOT NULL,",
+                    f"    NUM_ANO_MES            NUMBER(6,0)        NOT NULL,",
+                    f"    NUM_DIA                NUMBER(2,0)        NOT NULL,",
+                    f"    NUM_DIA_ANO            NUMBER(3,0)        NOT NULL,",
+                    f"    NUM_DIA_SEMANA         NUMBER(1,0)        NOT NULL,",
+                    f"    NOM_DIA_SEMANA         VARCHAR2(20 CHAR)  NOT NULL,",
+                    f"    SIG_DIA_SEMANA         CHAR(3 CHAR)       NOT NULL,",
+                    f"    NUM_SEMANA_ANO         NUMBER(2,0)        NOT NULL,",
+                    f"    NUM_SEMANA_MES         NUMBER(1,0)        NOT NULL,",
+                    f"    NUM_BIMESTRE           NUMBER(1,0)        NOT NULL,",
+                    f"    DES_BIMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
+                    f"    NUM_TRIMESTRE          NUMBER(1,0)        NOT NULL,",
+                    f"    DES_TRIMESTRE          VARCHAR2(15 CHAR)  NOT NULL,",
+                    f"    DES_ANO_TRIMESTRE      VARCHAR2(7 CHAR)   NOT NULL,",
+                    f"    NUM_SEMESTRE           NUMBER(1,0)        NOT NULL,",
+                    f"    DES_SEMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
+                    f"    FLG_FINAL_SEMANA       CHAR(1 CHAR)       DEFAULT 'N' NOT NULL,",
+                    f"    FLG_DIA_UTIL           CHAR(1 CHAR)       DEFAULT 'S' NOT NULL,",
+                    f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (DIMENSION_KEY) USING INDEX TABLESPACE {ts_idx}",
                     f") TABLESPACE {ts_dat};",
-                    f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal (SK no formato YYYYMMDD ou -1).';",
+                    f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal. Uma linha representa um dia civil único no calendário (DIMENSION_KEY no formato YYYYMMDD ou -1).';",
                     "",
                 ])
         sql_comm_dim, _, _ = construir_script_comentarios([(d, "DIM") for d in dims], schema_dw, "DIMENSÕES (DIM_*)")
@@ -1271,7 +1416,7 @@ def _gerar_scripts_ddl_completos_dw(
             linhas_fato.append(f"CREATE TABLE {schema_dw}.{fname} (")
             for idx, c in enumerate(f["colunas"]):
                 eh_nn = c.get("obrigatorio") in (True, "NOT NULL")
-                nn = " NOT NULL" if eh_nn else ""
+                nn = " NOT NULL" if (eh_nn and "NOT NULL" not in c["tipo_oracle"].upper()) else ""
                 virg = "," if idx < len(f["colunas"]) - 1 else ""
                 linhas_fato.append(f"    {c['nome_dw']} {c['tipo_oracle']}{nn}{virg}")
             linhas_fato.append(f") TABLESPACE {ts_dat};")
@@ -1348,8 +1493,8 @@ def executar_simulacao_aprovada_dw(
     estrategia = params.get("ESTRATEGIA_CARGA", "A").upper()[:1]
     if estrategia not in ("A", "B"):
         estrategia = "A"
-    ts_dat = params.get("TABLESPACE_DADOS", f"TS_DW_{projeto}_DAT").upper()
-    ts_idx = params.get("TABLESPACE_INDICES", f"TS_DW_{projeto}_IDX").upper()
+    ts_dat = params.get("TABLESPACE_DADOS", f"{projeto}_DATA").upper()
+    ts_idx = params.get("TABLESPACE_INDICES", f"{projeto}_INDEX").upper()
     reusar_dim_tempo = params.get("REUSAR_DIM_TEMPO", "NAO").upper().startswith(("S", "Y", "1", "T"))
 
     dims = [t for t in tabelas if classificar_tabela_dw(t) == "DIM"]
@@ -1579,12 +1724,21 @@ def executar_simulacao_aprovada_semantica(tabelas_base: list[dict], forcar: bool
 
 def carregar_insumos_para_simulacao(caminho_custom: Path | None = None, acao: str = "simular") -> tuple[list[dict], Path]:
     """Localiza e faz o parse de arquivos .sql em `entrega/planejador_dw/ddl/`, `entrega/camada_semantica/ddl/`, `--caminho` ou da própria Blueprint."""
-    arqs, pasta = localizar_ddls_para_semantica(caminho_custom)
+    arqs: list[Path] = []
+    pasta: Path = ENTREGA_DW_DIR / "ddl"
+    if caminho_custom is None and (ENTREGA_DW_DIR / "ddl").exists():
+        from modular_semantica import _listar_arquivos_ddl_pasta
+
+        arqs_dw_in = _listar_arquivos_ddl_pasta(ENTREGA_DW_DIR / "ddl")
+        if arqs_dw_in:
+            arqs, pasta = arqs_dw_in, ENTREGA_DW_DIR / "ddl"
     if not arqs:
-        if acao == "executar" and BLUEPRINT_DW_PATH.exists():
+        arqs, pasta = localizar_ddls_para_semantica(caminho_custom)
+    if not arqs:
+        if acao in ("executar", "direto") and BLUEPRINT_DW_PATH.exists():
             return parse_tabelas_editadas_blueprint_dw(BLUEPRINT_DW_PATH, []), ENTREGA_DW_DIR
         print(
-            "[ERRO] Nenhum arquivo .sql encontrado para simulação em:\n"
+            "[ERRO] Nenhum arquivo .sql encontrado para simulação/execução em:\n"
             f"  - {ENTREGA_DW_DIR / 'ddl'}\n"
             f"  - {ENTREGA_SEM_DIR / 'ddl'}\n"
             "Deposite o DDL de origem ou do DW existente ou informe `--caminho <arquivo_ou_pasta>`."
@@ -1639,9 +1793,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--acao",
-        choices=["simular", "executar", "status"],
+        choices=["simular", "executar", "direto", "status"],
         default="simular",
-        help="'simular' gera a Blueprint editável; 'executar' roda a esteira real a partir da Blueprint aprovada; 'status' consulta aprovação.",
+        help="'simular' gera a Blueprint editável; 'executar' roda a esteira real a partir da Blueprint aprovada; 'direto' gera e executa direto sem exigir revisão prévia; 'status' consulta aprovação.",
     )
     parser.add_argument("--caminho", type=str, default=None, help="Caminho opcional para DDL .sql de entrada.")
     parser.add_argument("--schema", type=str, default=None, help="Override do Schema Oracle.")
@@ -1717,6 +1871,45 @@ def main() -> None:
         print("  • `/exportar-docx` / `/exportar-pdf` / `/gerar-apresentacao` ➔ Gerar formatos Word, PDF ou Apresentação (.pptx) sob demanda")
         print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética 100% fiel às suas tabelas para Power BI")
         print("  • `/validar-entrega`    ➔ Auditar sintaxe Oracle, linha -1 e integridade dos scripts em `saida/`")
+        print("  • `/empacotar-projeto`  ➔ Exportar a entrega consolidada em arquivo `.zip`")
+        print("  • `/onde-estou`         ➔ Ver o resumo completo do projeto")
+        print("=" * 80)
+
+    elif args.acao == "direto":
+        if args.modulo in ("dw", "ambos"):
+            ENTREGA_DW_DIR.mkdir(parents=True, exist_ok=True)
+            conteudo_dw = gerar_blueprint_simulacao_dw(
+                tabelas, schema, projeto, args.estrategia, pasta_origem
+            ).replace(
+                "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+            )
+            BLUEPRINT_DW_PATH.write_text(conteudo_dw, encoding="utf-8")
+            executar_simulacao_aprovada_dw(tabelas, forcar=True, todos_formatos=args.todos_formatos)
+
+        if args.modulo in ("semantica", "ambos"):
+            ENTREGA_SEM_DIR.mkdir(parents=True, exist_ok=True)
+            if not BLUEPRINT_DW_PATH.exists():
+                ENTREGA_DW_DIR.mkdir(parents=True, exist_ok=True)
+                conteudo_dw = gerar_blueprint_simulacao_dw(
+                    tabelas, schema, projeto, args.estrategia, pasta_origem
+                ).replace(
+                    "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                    "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                )
+                BLUEPRINT_DW_PATH.write_text(conteudo_dw, encoding="utf-8")
+            conteudo_sem = gerar_blueprint_simulacao_semantica(
+                tabelas, schema, projeto, pasta_origem
+            ).replace(
+                "- [ ] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+                "- [x] **SIMULAÇÃO 100% FECHADA E APROVADA PARA EXECUÇÃO REAL**",
+            )
+            BLUEPRINT_SEM_PATH.write_text(conteudo_sem, encoding="utf-8")
+            executar_simulacao_aprovada_semantica(tabelas, forcar=True)
+
+        print("🧭 O QUE VOCÊ PODE FAZER AGORA (PRÓXIMOS PASSOS):")
+        print("  • `/validar-entrega`    ➔ Auditar sintaxe Oracle, convenções e integridade dos scripts em `saida/`")
+        print("  • `/gerar-mock-bi`      ➔ Gerar massa CSV sintética 100% fiel às suas tabelas para Power BI")
         print("  • `/empacotar-projeto`  ➔ Exportar a entrega consolidada em arquivo `.zip`")
         print("  • `/onde-estou`         ➔ Ver o resumo completo do projeto")
         print("=" * 80)

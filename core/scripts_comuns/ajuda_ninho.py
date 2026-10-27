@@ -265,6 +265,16 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
         "descricao": "Comandos do fluxo arquitetural completo para desenhar e gerar um Data Warehouse Star Schema do zero.",
         "comandos": [
             {
+                "chat": "`/executar-dw` (ou `/gerar-dw`, `/construir-dw`)",
+                "objetivo": "Executa **diretamente** a construção completa do DW (pastas `01` a `11` em `saida/planejador_dw/`) a partir de `entrega/planejador_dw/`, sem precisar passar pela etapa de simulação.",
+                "cli": "`python core/scripts_comuns/simular_projeto.py --modulo dw --acao direto`",
+            },
+            {
+                "chat": "`/executar-projeto` (ou `/gerar-projeto`, `/construir-projeto`)",
+                "objetivo": "Executa **diretamente** a construção ponta a ponta do DW + Camada Semântica em `saida/` sem exigir simulação prévia.",
+                "cli": "`python core/scripts_comuns/simular_projeto.py --modulo ambos --acao direto`",
+            },
+            {
                 "chat": "`/desafiar-grao`",
                 "objetivo": "Propõe e compara alternativas de granularidade para a tabela Fato contra as perguntas de negócio.",
                 "cli": "Interativo via Agente Arquiteto (`planejador-dw-oracle`)",
@@ -306,9 +316,9 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
                 "cli": "`python core/scripts_comuns/transicionar_dw_para_semantica.py`",
             },
             {
-                "chat": "`/iniciar-semantica`",
-                "objetivo": "Gera o pacote completo da Camada Semântica (Views em 3 camadas, RLS/VPD, 8 tabelas `META_*`, validações e documento) em `saida/camada_semantica/`.",
-                "cli": "`python core/scripts_comuns/modular_semantica.py --modo tudo`",
+                "chat": "`/executar-semantica` (ou `/iniciar-semantica`, `/gerar-semantica`)",
+                "objetivo": "Gera diretamente o pacote completo da Camada Semântica (Views em 3 camadas, RLS/VPD, 8 tabelas `META_*`, validações e documento) em `saida/camada_semantica/`.",
+                "cli": "`python core/scripts_comuns/simular_projeto.py --modulo semantica --acao direto`",
             },
         ],
     },
@@ -322,9 +332,9 @@ CATALOGO_TOPICOS: Dict[str, Dict] = {
                 "cli": "`python core/scripts_comuns/inspecionar_insumos_governanca.py`",
             },
             {
-                "chat": "`/gerar-governanca`",
-                "objetivo": "Gera os schemas/scripts das 5 coleções MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`, `tb_quarentena`), matriz LGPD/LAI e AWS SageMaker Catalog.",
-                "cli": "Interativo via Agente (`governanca-dados-corporativa`)",
+                "chat": "`/executar-governanca` (ou `/gerar-governanca`, `/iniciar-governanca`)",
+                "objetivo": "Gera diretamente os schemas/scripts das 5 coleções MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`, `tb_quarentena`), matriz LGPD/LAI e AWS SageMaker Catalog.",
+                "cli": "`python core/scripts_comuns/gerar_governanca_corporativa.py`",
             },
         ],
     },

@@ -2511,11 +2511,14 @@ def construir_scripts_odi(
         nomes_cols_dim = {c["nome_dw"].upper() for c in d["colunas"]}
         for c in d["colunas"]:
             cname = c["nome_dw"].upper()
-            # Remover qualquer NOT NULL residual para garantir 100% NULLABLE na ODI_DIM_* (evita ORA-01400 no STG_DIM)
-            ctype = re.sub(r"\bNOT\s+NULL\b", "", c["tipo_oracle"], flags=re.IGNORECASE).strip()
+            # Remover qualquer DEFAULT / NOT NULL residual para garantir 100% NULLABLE na ODI_DIM_* (evita ORA-01400 no STG_DIM)
+            ctype = re.sub(r"\bDEFAULT\s+(?:'[^']*'|[A-Z0-9_]+)\b", "", c["tipo_oracle"], flags=re.IGNORECASE)
+            ctype = re.sub(r"\bNOT\s+NULL\b", "", ctype, flags=re.IGNORECASE).strip()
             col_defs.append(f"    {cname:<28} {ctype}")
             if cname not in (sk_col, nk_col) and cname not in cols_scd_controle:
                 cols_negocio.append(cname)
+        if "DES_STATUS_REGISTRO" not in nomes_cols_dim:
+            col_defs.append(f"    {'DES_STATUS_REGISTRO':<28} CHAR(1 CHAR)")
 
         col_dt_idx = next(
             (c for c in ("DTC_EFETIVACAO", "DTC_INICIO", "DTC_INICIO_VIGENCIA") if c in nomes_cols_dim),
@@ -2621,7 +2624,27 @@ def construir_scripts_odi(
                                 break
                 alias = f"D{alias_idx}"
                 alias_idx += 1
-                if dim_match:
+                if cname in ("DIM_TEMPO", "SK_TEMPO") or (dim_match and dim_match["nome_tabela"].upper() in ("DIM_TEMPO", "DIM_CALENDARIO", "DIM_DATA")):
+                    d_name = dim_match["nome_tabela"].upper() if dim_match else "DIM_TEMPO"
+                    d_sk = _obter_sk_dim(dim_match) if dim_match else "DIMENSION_KEY"
+                    col_dt_orig = (c.get("nome_original") or "").strip().upper()
+                    if not re.match(r"^[A-Z0-9_]+$", col_dt_orig) or col_dt_orig in ("DIM_TEMPO", "SK_TEMPO", "SEQUENCE"):
+                        col_dt_orig = next(
+                            (
+                                col_f["nome_dw"].upper()
+                                for col_f in f["colunas"]
+                                if col_f["nome_dw"].upper().startswith(("DTC_", "DT_", "DAT_"))
+                                or "DATE" in (col_f.get("tipo_oracle") or "").upper()
+                            ),
+                            "",
+                        )
+                    expr_dt_stg = f"TRUNC(S.{col_dt_orig})" if col_dt_orig else "TRUNC(SYSDATE)"
+                    select_parts.append(f"    NVL({alias}.{d_sk}, -1) AS {cname}")
+                    join_parts.append(
+                        f"LEFT JOIN {schema}.{d_name} {alias}\n"
+                        f"    ON {expr_dt_stg} = {alias}.DTC_COMPLETA"
+                    )
+                elif dim_match:
                     d_name = dim_match["nome_tabela"].upper()
                     d_sk = _obter_sk_dim(dim_match)
                     d_nk = _obter_nk_dim(dim_match)

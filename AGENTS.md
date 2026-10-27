@@ -53,7 +53,19 @@ Todos os comandos com `/` estão registrados como **Skills nativas** em `.agents
 | Categoria | Comandos Nativo (Chat `/` ou `python ninho.py <cmd>`) | O que Executa |
 | :--- | :--- | :--- |
 | **Setup & UX** | `/instalar-comandos` (`/setup`), `/ajuda` (`/help`), `/onde-estou`, `/comecar`, `/duvida <tema>`, `/doctor`, `/demo`, `/limpar-demo` | Instalador de skills de comando, catálogo de comandos, bússola de progresso, onboarding, FAQ arquitetural, auto-organização de pastas e projeto Playground. |
+| **Execução Direta (Normal)** | `/executar-dw` (`/gerar-dw`), `/executar-semantica` (`/iniciar-semantica`), `/executar-projeto` (`/gerar-projeto`), `/executar-governanca` (`/gerar-governanca`) | Executa **diretamente** a geração física completa em `saida/` a partir dos insumos de `entrega/` (`--acao direto`), sem exigir a etapa intermediária de simulação. |
 | **Simulação Editável** | `/simular-dw`, `/simular-semantica`, `/simular-projeto`, `/executar-simulacao` | Gera Blueprints 100% editáveis em `entrega/` (`--acao simular`) e gera os scripts físicos em `saida/` após aprovação (`--acao executar`). |
 | **Fast-Track & Micro** | `/melhorar-dw-existente`, `/gerar-comentarios`, `/gerar-dicionario`, `/gerar-indices`, `/gerar-linha-default`, `/gerar-constraints`, `/gerar-testes-dw`, `/gerar-guia-bi`, `/gerar-mock-bi`, `/gerar-selects-odi`, `/gerar-guia-odi`, `/gerar-views-semantica`, `/gerar-catalogo-meta`, `/gerar-rls` | Executa recortes isolados sem exigir `INTAKE_*.md` e sem alterar o processo de carga existente. |
 | **Inspeção & Auditoria** | `/inspecionar-fontes`, `/inspecionar-pbix`, `/auditar-mapa-odi`, `/auditar-hop`, `/inspecionar-governanca` | Audita DDLs de origem, arquivos `.pbix`, XMLs do ODI 12c (`H1..H9`), projetos Apache Hop 2.x (`HOP-H1..H8`) e insumos de Governança (Gate 0.5). |
 | **Qualidade & Entrega** | `/validar-entrega`, `/auditar-ddl`, `/testar-ninho`, `/empacotar-projeto`, `/concluir-dw`, `/iniciar-semantica` | Valida pré-voo/saída, roda a suíte E2E (`T01..T10`), faz handoff DW -> Semântica e exporta `.zip`. |
+
+---
+
+## 📐 Regra de Versionamento do `PATCH_NOTES.md` (`0.0.0` / `X.Y.Z`)
+
+Sempre que atualizar o arquivo [`PATCH_NOTES.md`](PATCH_NOTES.md) ou [`README.md`](README.md) com evoluções da plataforma, aplique silenciosamente esta regra de versionamento (sem escrever a explicação da regra dentro do `PATCH_NOTES.md`):
+
+- **1º Dígito (`X.0.0`):** Aumentado apenas em uma **novidade extremamente grande no projeto** (mudança estrutural ou marco completo da plataforma, como a homologação final `1.0.0`). Zera o 2º e o 3º dígitos.
+- **2º Dígito (`0.Y.0`):** Aumentado para **novas funções e inclusão de novos recursos** (novos comandos, novos motores, novos geradores ou integrações). Zera o 3º dígito.
+- **3º Dígito (`0.0.Z`):** Aumentado para **correções dos processos existentes** (ajustes de convenções, correção de bugs e melhorias internas em fluxos que já existiam).
+

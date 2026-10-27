@@ -1,21 +1,23 @@
 # 📰 Histórico de Versões e Novidades (Patch Notes) — Plataforma NINHO
 
-> **Versão Atual:** `v0.9.5` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `26/10/2026` | **Status da Suíte de Testes:** `✅ 16/16 Aprovados (E2E)`
+> **Versão Atual:** `v0.11.1` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `27/10/2026` | **Status da Suíte de Testes:** `✅ 17/17 Aprovados (E2E)`
 
 Bem-vindo à página oficial de **Patch Notes** do **NINHO**!
-Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.9.5`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
+Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.11.1`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
+
+---
+
+## 🗺️ Resumo Rápido das Versões (`v0.1.0` $\rightarrow$ `v0.11.1`)
 
 > 🎯 **Quando chegaremos na Versão `1.0.0`?**
 > Os módulos de **Planejamento de Data Warehouse (Oracle + ODI 12c + Hop + BI)** e **Camada Semântica (`VW_*` + `META_*`)** já foram colocados à prova e aprimorados com projetos reais de ponta a ponta. A versão **`v1.0.0`** será oficializada quando o **Módulo de Governança de Dados (MongoDB PRODEB + AWS SageMaker Catalog)** passar pelo teste prático completo e for formalmente aprovado.
 
----
-
-## 🗺️ Resumo Rápido das Versões (`v0.1.0` $\rightarrow$ `v0.9.5`)
-
 | Versão | Data | Destaque Principal (Em uma frase) |
 | :---: | :---: | :--- |
 | 🎯 **`v1.0.0`** *(Planejada)* | *Em breve* | **Marco Oficial 1.0:** Homologação prática e aprovação final do Módulo de Governança de Dados (MongoDB + AWS SageMaker Catalog) em projeto real. |
-| **[`v0.9.5`](#-versão-095--26102026-versão-atual)** | `26/10/2026` | **Suíte Visual, Documentos Office/PDF Nativos, Scanner PII (`*Craft`) & 5 Motores Apache Hop (`hop-main`):** Mockup BI (`SVG` + *Dev Mode Redlines* + `PNG 2x`), diagramas Star Schema/ODI/Hop Canvas, gerador de `.xlsx`/`.pptx`/`.docx`/`.pdf` oficial, leitura de `.ods`/`.pdf`/`.docx`/`.odt`, scanner LGPD em linhas, catálogo `hop-lint`, migrador Kettle (`.ktr`/`.kjb` $\rightarrow$ `.hpl`/`.hwf`), auditoria `THREAT_MODEL.md` (`HopTwoWayPasswordEncoder`) e template `OraBulkLoader`. |
+| **[`v0.11.1`](#-versão-0111--27102026-versão-atual)** | `27/10/2026` | **Correção de Convenções no Simulador e Validador:** Adequação 100% do modo Simulador às convenções `CONVENCOES_DW.md` (`DIMENSION_KEY`, `SIN_ATIVO`, `DIM_TEMPO` 24 colunas, FKs `DIM_<ENTIDADE>`, `<PROJETO>_DATA`, `DES_STATUS_REGISTRO` em `ODI_DIM_*`) e remoção do bypass em `validar_entrega.py`. |
+| **[`v0.11.0`](#-versão-0110--27102026)** | `27/10/2026` | **Comandos de Execução Direta & Governança Modular:** Inclusão dos comandos `/executar-dw`, `/executar-semantica`, `/executar-projeto` e `/executar-governanca` (geração direta sem exigir simulação) e arquitetura modular de Governança em 5 etapas com script orquestrador. |
+| **[`v0.10.0`](#-versão-0100--26102026)** | `26/10/2026` | **Suíte Visual, Documentos Office/PDF Nativos, Scanner PII (`*Craft`), 5 Motores Apache Hop & Prova Real Pós-Carga:** Mockup BI (`SVG` + *Dev Mode Redlines* + `PNG 2x`), diagramas Star Schema/ODI/Hop Canvas, gerador `.xlsx`/`.pptx`/`.docx`/`.pdf`, leitura `.ods`/`.pdf`/`.docx`/`.odt`, scanner LGPD em linhas, `hop-lint`, migrador Kettle, `THREAT_MODEL.md`, `OraBulkLoader` e `/validar-medidas-bi`. |
 | **[`v0.9.0`](#-versão-090--23102026)** | `23/10/2026` | **Padrão Ouro de Produção (ODI 12c, DBA Oracle & BI):** Guias do ODI no padrão *Dimension Pattern* passo a passo, Guia do Analista de BI completo (com medidas SCD2 e wireframe de 4 páginas), controle `ETA_ETAPAS_CARGA` e trava contra erros de nomes longos e índices no Oracle. |
 | **[`v0.8.0`](#-versão-080--22102026)** | `22/10/2026` | **Integrações Reais de Campo:** Leitura de DDLs exportados em `.csv` (DBeaver/SQL Developer), suporte a Materialized Views (`MVW_*`), múltiplas datas na mesma Fato (*Role-Playing*) e leitura de planilhas `.xlsx` de indicadores para o Power BI. |
 | **[`v0.7.0`](#-versão-070--21102026)** | `21/10/2026` | **Atalhos de Chat (`/comando`) e Blindagem Geral:** Criado o executável único `ninho.py` (`.\ninho`), instalador de comandos `/instalar-comandos` na IDE e correção de 12 bugs silenciosos de parser SQL e HTML. |
@@ -27,10 +29,50 @@ Esta página foi escrita para ser **simples, direta e amigável para pessoas ler
 
 ---
 
-## 🎨 Versão `0.9.5` — `26/10/2026` *(Versão Atual)*
+## 🛠️ Versão `0.11.1` — `27/10/2026` *(Versão Atual)*
 
 ### 🎯 Em poucas palavras
-Esta versão intermediária (`0.9.5` — logo antes do marco `1.0.0`) incorpora ao NINHO uma **suíte visual, de documentos Office/PDF e auditoria LGPD 100% nativa** (inspirada nas ferramentas de código aberto *FigCraft*, *GridCraft*, *DeckCraft*, *WordCraft*, *PdfCraft* e *PhotoCraft*, sem depender de nenhuma biblioteca externa). Agora, além dos scripts e guias técnicos, o NINHO desenha sozinho a **imagem/mockup do painel Power BI sugerido** (com modo de especificação técnica *Dev Mode* e botão para baixar em `PNG` de alta resolução), gera diagramas vetoriais do **Star Schema** e do **Canvas ODI 12c**, produz apresentações executivas **`.pptx`**, documentos Word **`.docx`**, relatórios **`.pdf`** oficiais prontos para SEI/Ofício e planilhas Excel **`.xlsx`** com listas suspensas e formatação condicional, lê arquivos **`.ods`**, **`.pdf`**, **`.docx`** e **`.odt`**, e escaneia dados pessoais escondidos dentro das linhas de amostra.
+Esta atualização resolve os desvios de convenção identificados durante testes de validação no **Modo Simulador (`simular_projeto.py`)** e remove a trava de exceção que existia no validador (`validar_entrega.py`), garantindo que 100% dos artefatos gerados (seja por simulação ou por execução direta) sigam rigorosamente o padrão corporativo de [`CONVENCOES_DW.md`](core/convencoes/CONVENCOES_DW.md).
+
+### 🐛 Erros e Problemas Resolvidos
+* **Corrigida Chave Substituta (`DIMENSION_KEY`) nas Dimensões do Simulador:**
+  * Antes, ao converter tabelas transacionais (`TB_*`) para `DIM_*`, o simulador nomeava a PK como `SK_<ENTIDADE>`. Agora gera obrigatoriamente **`DIMENSION_KEY NUMBER(38,0) NOT NULL`**.
+* **Corrigidas as 4 Colunas de Controle SCD Tipo 2 nas Dimensões:**
+  * Adicionada a coluna obrigatória **`SIN_ATIVO CHAR(1 CHAR) DEFAULT 'S' NOT NULL`** junto com `DTC_EFETIVACAO DATE NOT NULL`, `DTC_EXPIRACAO DATE NULL` e `DES_ATUALIZAR CHAR(1 CHAR) DEFAULT 'S' NOT NULL` (preservando os constraints `NOT NULL` também no parser reverso da Blueprint).
+* **Corrigida Nomenclatura de FKs na Tabela Fato (`DIM_<ENTIDADE>`):**
+  * As chaves estrangeiras na `FATO_*` agora adotam o padrão **`DIM_<ENTIDADE> NUMBER(38,0) NOT NULL`** (ex.: `DIM_ORGAO_PUBLICO`, `DIM_FORNECEDOR`), preservando internamente a chave natural de origem para montar automaticamente os `LEFT JOIN` no script `04_select_odi_fato.sql`.
+* **Incluída Geração da `DIM_TEMPO` Canônica (24 Colunas) e Vínculo na Fato:**
+  * O script `03_create_dim_tables.sql` passa a emitir a `DIM_TEMPO` corporativa completa de 24 colunas (quando `REUSAR_DIM_TEMPO = NAO`), adicionando a FK `DIM_TEMPO` na tabela Fato e o `LEFT JOIN` com fallback `NVL(..., -1)` no `04_select_odi_fato.sql`.
+* **Corrigido Padrão de Tablespaces (`<PROJETO>_DATA` e `<PROJETO>_INDEX`):**
+  * Substituído o formato antigo `TBS_<PROJETO>_DADOS` pelo padrão oficial `<PROJETO>_DATA` e `<PROJETO>_INDEX`.
+* **Corrigida Estrutura das Tabelas `STG_*` e `ODI_DIM_*`:**
+  * As tabelas de Staging (`02_create_stg_tables.sql`) agora restauram as colunas naturais da fonte sem `NOT NULL`/`DEFAULT` e incluem `DTC_EXTRACAO DATE DEFAULT SYSDATE` e `ID_LOTE NUMBER`.
+  * As tabelas `ODI_DIM_*` (`03_create_odi_dim_tables.sql`) garantem todas as colunas `NULL` sem `DEFAULT` e adicionam a coluna obrigatória `DES_STATUS_REGISTRO CHAR(1 CHAR)`.
+* **Removido Bypass `is_simulacao_dw` em `validar_entrega.py`:**
+  * O validador de qualidade não ignora mais nenhuma regra quando os arquivos vêm do simulador, validando 100% das convenções e aprovando a nova suíte **T17 (`17/17 E2E`)**.
+
+---
+
+## 🚀 Versão `0.11.0` — `27/10/2026`
+
+### 🎯 Em poucas palavras
+Esta atualização adiciona os **comandos de Execução Direta / Normal** (para quando o engenheiro quer gerar todo o projeto diretamente em `saida/` sem precisar passar pela etapa intermediária de simulação), além de introduzir a **Arquitetura Modular em 5 Etapas com Orquestrador** para projetos de Governança de Dados e scripts utilitários de extração de DDL em banco.
+
+### ✨ O que há de novo
+* **Novos Comandos de Execução Direta (`/executar-dw`, `/executar-semantica`, `/executar-projeto`, `/executar-governanca`):**
+  * **`/executar-dw`** *(aliases: `/gerar-dw`, `/construir-dw`)*: Lê os insumos de `entrega/planejador_dw/` e gera diretamente todas as pastas `01` a `11` em `saida/planejador_dw/` (`--modulo dw --acao direto`).
+  * **`/executar-semantica`** *(aliases: `/gerar-semantica`, `/iniciar-semantica`)*: Gera diretamente as 3 camadas de Views (`VW_DIM`, `VW_EVENTO`, `VW_KPI`), as 8 tabelas `META_*` e RLS em `saida/camada_semantica/` (`--modulo semantica --acao direto`).
+  * **`/executar-projeto`** *(aliases: `/gerar-projeto`, `/construir-projeto`)*: Constrói **DW + Camada Semântica** de ponta a ponta em 1 único comando (`--modulo ambos --acao direto`).
+  * **`/executar-governanca`** *(aliases: `/gerar-governanca`, `/iniciar-governanca`)*: Executa diretamente o Gate 0.5 e a esteira de Governança Corporativa.
+* **Arquitetura Modular de Governança de Dados em 5 Etapas (`Ideias/bagov_identidade/`):**
+  * Divisão do pipeline de extração, higienização LGPD, geração das 5 coleções MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`, `tb_quarentena`) e carga condicional (`OFFLINE_JSON` vs `MONGO_DIRETO`) em 5 módulos independentes coordenados por um único `orquestrador_governanca_bagov.py` (com suporte a `--apenas-etapa`).
+
+---
+
+## 🎨 Versão `0.10.0` — `26/10/2026`
+
+### 🎯 Em poucas palavras
+Esta versão incorpora ao NINHO uma **suíte visual, de documentos Office/PDF e auditoria LGPD 100% nativa** (inspirada nas ferramentas de código aberto *FigCraft*, *GridCraft*, *DeckCraft*, *WordCraft*, *PdfCraft* e *PhotoCraft*, sem depender de nenhuma biblioteca externa). Agora, além dos scripts e guias técnicos, o NINHO desenha sozinho a **imagem/mockup do painel Power BI sugerido** (com modo de especificação técnica *Dev Mode* e botão para baixar em `PNG` de alta resolução), gera diagramas vetoriais do **Star Schema** e do **Canvas ODI 12c**, produz apresentações executivas **`.pptx`**, documentos Word **`.docx`**, relatórios **`.pdf`** oficiais prontos para SEI/Ofício e planilhas Excel **`.xlsx`** com listas suspensas e formatação condicional, lê arquivos **`.ods`**, **`.pdf`**, **`.docx`** e **`.odt`**, e escaneia dados pessoais escondidos dentro das linhas de amostra.
 
 ### ✨ O que há de novo
 * **Gerador de Imagem/Mockup Visual do Painel BI (`/gerar-mockup-bi`):**
@@ -55,7 +97,7 @@ Esta versão intermediária (`0.9.5` — logo antes do marco `1.0.0`) incorpora 
   * **1. Desenhador Visual de Pipelines (`.hpl`) e Workflows (`.hwf`) em SVG + Auto-Documentação (`PipelineSvgPainter` / `DocBuilder`):** Lê as coordenadas `<gui><xloc>/<yloc>` e `<notepads>` dos XMLs do Apache Hop e desenha `diagrama_esteira_hop.svg` (com cores semânticas para hops de sucesso, erro `<transform_error_handling>`, incondicionais e desabilitados, além de badges para etapas órfãs) e `DOCUMENTACAO_HOP.md` com Sumário (TOC), parâmetros e inventário técnico.
   * **2. Catálogo Oficial `hop-lint` (`hop-lint-core.yml`) + Gerador `hop-lint.yml`:** Expande o `/auditar-hop` com as regras oficiais do linter do Hop (`TRANS-002` transform órfão, `WORKFLOW-002` action órfã, `NAMING-004` nome genérico padrão da GUI, `SQL-002` `SELECT *` irrestrito em `TableInput`, `STRUCT-003` hop desabilitado, `DOC-001` ausência de `<description>`/`<notepad>` e `META-001` subpasta `metadata/` fora de `kebab-case`) e gera `hop-lint.yml` na raiz do projeto.
   * **3. Migrador Automático de Pentaho Kettle Legado (`.ktr` / `.kjb` / `shared.xml`) para Apache Hop 2.x (`/migrar-kettle-hop`):** Baseado no motor `KettleConst.java` do Apache Hop, converte recursivamente transformações `.ktr` em `.hpl` e jobs `.kjb` em `.hwf`, renomeia plugins legados (`TextFileInput` $\rightarrow$ `TextFileInput2`, `TRANS` $\rightarrow$ `PIPELINE`, `JOB` $\rightarrow$ `WORKFLOW`, `ModifiedJavaScriptValue` $\rightarrow$ `ScriptValueMod`), atualiza variáveis internas (`Internal.Transformation.*` $\rightarrow$ `Internal.Pipeline.*`) e extrai conexões `<connection>` embutidas para `metadata/rdbms/<CONEXAO>.json` usando `#{hop-pwd:...}`.
-  * **4. Blindagem de Segurança do `THREAT_MODEL.md` (`HopTwoWayPasswordEncoder` + `HOP-SEC-01/02`):** Implementa em Python puro o codificador/decodificador oficial `HopTwoWayPasswordEncoder` (semente hexadecimal `0933910847463829827159347601486730416058`) para detectar ofuscações reversíveis `Encrypted 2be98afc...` (`HOP-SEC-01`) e injeção de variáveis `${VAR}` em consultas SQL (`HOP-SEC-02`), gerando automaticamente `metadata/variable-resolver/hop-pwd.json`.
+  * **4. Blindagem de Segurança do `THREAT_MODEL.md` (`HopTwoWayPasswordEncoder` + `HOP-SEC-01/02`):** Implementa em Python puro o codificador/decificador oficial `HopTwoWayPasswordEncoder` (semente hexadecimal `0933910847463829827159347601486730416058`) para detectar ofuscações reversíveis `Encrypted 2be98afc...` (`HOP-SEC-01`) e injeção de variáveis `${VAR}` em consultas SQL (`HOP-SEC-02`), gerando automaticamente `metadata/variable-resolver/hop-pwd.json`.
   * **5. Template de Alta Volumetria `OraBulkLoader` (`SQL*Loader DIRECT=TRUE`) & Gerador de Pacote Hop (`/gerar-pacote-hop`):** Novo comando `/gerar-pacote-hop` (com suporte a `--orabulkloader`) e template `template_pipeline_orabulkloader.hpl` para cargas de milhões de linhas em tabelas `STG_* NOLOGGING` via `SQL*Loader` (`DIRECT=TRUE`, `LOAD_METHOD=AUTO_CONCURRENT`).
 * **Motor de Prova Real Pós-Carga (`DIM_*` + `FATO_*`), Auditoria de Medidas DAX (`MED-01..06`), Ciclo de Vida do Guia do Analista e 3 Layouts de Mockup (`/validar-medidas-bi`):**
   * Permite fornecer os DDLs e uma amostra real de dados pós-carga das tabelas `DIM_*` e `FATO_*` (em `.csv`/`.tsv`, `.sql` com `INSERT INTO`, `.xlsx`, `.ods` ou `.dax` na pasta `entrega/planejador_dw/amostras/`) para testar na prática o que foi construído.
@@ -237,12 +279,3 @@ O nascimento e os primeiros testes experimentais da plataforma **NINHO**, unific
 * **Camada Semântica em 3 Camadas + 8 Tabelas `META_*`:**
   * Arquitetura de Views Analíticas (`VW_DIM_*`, `VW_EVENTO_*`, `VW_KPI_*`) acoplada às 8 tabelas de metadados ativos (`META_PROJETO`, `META_DOMINIO`, `META_OBJETO`, `META_ATRIBUTO`, `META_METRICA`, `META_RELACIONAMENTO`, `META_CONSULTA_NEGOCIO` e `META_ORIENTACAO_IA` com 36 diretrizes para agentes Text-to-SQL).
 * **Handoff Automatizado (`/concluir-dw` $\rightarrow$ `/iniciar-semantica`):** Transição automática dos DDLs gerados no DW para a entrada da Camada Semântica, acompanhada do gerador de dados sintéticos (`gerar_mock_dados.py`) e validador pré-voo (`validar_entrega.py`).
-
----
-
-## 💡 Como Manter esta Página Atualizada?
-
-Sempre que uma nova versão ou melhoria for publicada no repositório:
-1. Adicione uma nova seção no topo (seguindo o formato `## 🚀 Versão X.Y.Z — DD/MM/AAAA`).
-2. Atualize a linha correspondente na tabela **[Resumo Rápido das Versões](#️-resumo-rápido-das-versões-v010--v090)**.
-3. Descreva as mudanças pensando em **quem vai ler**: explique **o que entrou**, **o que melhorou** e **qual problema real foi resolvido**!

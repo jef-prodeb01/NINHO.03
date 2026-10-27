@@ -79,6 +79,11 @@ DESCRICOES_SKILLS_SLASH: Dict[str, str] = {
     "simular-semantica": "Gera a Blueprint 100% editável de simulação da Camada Semântica (entrega/camada_semantica/SIMULACAO_BLUEPRINT_SEMANTICA.md).",
     "simular-projeto": "Gera simultaneamente as Blueprints editáveis de simulação do Planejador DW e da Camada Semântica.",
     "executar-simulacao": "Lê as edições feitas nas Blueprints aprovadas e executa a geração física dos scripts em saida/planejador_dw/ e saida/camada_semantica/.",
+    "executar-dw": "Executa diretamente a geração completa do Data Warehouse (pastas 01 a 11 em saida/planejador_dw/) a partir dos insumos em entrega/planejador_dw/ sem exigir etapa de simulação.",
+    "gerar-dw": "Alias para /executar-dw: executa diretamente a construção completa do Data Warehouse em saida/planejador_dw/.",
+    "executar-semantica": "Executa diretamente a geração completa da Camada Semântica (Views em 3 camadas, 8 tabelas META_* e RLS) em saida/camada_semantica/ sem exigir simulação.",
+    "executar-projeto": "Executa diretamente a geração completa do Data Warehouse e da Camada Semântica de ponta a ponta em saida/ sem exigir simulação prévia.",
+    "executar-governanca": "Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB padrão PRODEB + AWS SageMaker Catalog) em saida/governanca_dados/.",
     "melhorar-dw-existente": "Executa o Raio-X não-destrutivo de um DW já construído e gera patches de comentários, dicionário HTML, índices, linha -1 e constraints.",
     "gerar-guia-bi": "Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx/.ods, Sync Slicers, Mockup SVG/HTML/PNG 2x, Apresentação .pptx e Word .docx).",
     "gerar-mockup-bi": "Gera o Mockup Visual Full HD do Painel Power BI (mockup_painel_bi.svg, mockup_painel_bi_devmode.svg com Redlines DAX ①..⑦ e preview_painel_bi.html com exportação PNG 2x).",
@@ -180,6 +185,57 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
         "simular_projeto.py",
         ["--modulo", "semantica", "--acao", "executar"],
         "Executa geração física apenas da Camada Semântica",
+    ),
+    # 1.5. Execução Direta / Normal (Sem passar pela Simulação Editável)
+    "executar-dw": (
+        "simular_projeto.py",
+        ["--modulo", "dw", "--acao", "direto"],
+        "Executa diretamente a geração completa do DW em saida/planejador_dw/ sem exigir etapa de simulação",
+    ),
+    "gerar-dw": (
+        "simular_projeto.py",
+        ["--modulo", "dw", "--acao", "direto"],
+        "Alias para 'executar-dw' (execução direta do Planejador de DW)",
+    ),
+    "construir-dw": (
+        "simular_projeto.py",
+        ["--modulo", "dw", "--acao", "direto"],
+        "Alias para 'executar-dw' (execução direta do Planejador de DW)",
+    ),
+    "executar-semantica": (
+        "simular_projeto.py",
+        ["--modulo", "semantica", "--acao", "direto"],
+        "Executa diretamente a geração completa da Camada Semântica em saida/camada_semantica/ sem exigir simulação",
+    ),
+    "gerar-semantica": (
+        "simular_projeto.py",
+        ["--modulo", "semantica", "--acao", "direto"],
+        "Alias para 'executar-semantica' (execução direta da Camada Semântica)",
+    ),
+    "executar-projeto": (
+        "simular_projeto.py",
+        ["--modulo", "ambos", "--acao", "direto"],
+        "Executa diretamente a geração completa do DW e da Camada Semântica em saida/ sem exigir simulação",
+    ),
+    "gerar-projeto": (
+        "simular_projeto.py",
+        ["--modulo", "ambos", "--acao", "direto"],
+        "Alias para 'executar-projeto' (execução direta de DW + Camada Semântica)",
+    ),
+    "construir-projeto": (
+        "simular_projeto.py",
+        ["--modulo", "ambos", "--acao", "direto"],
+        "Alias para 'executar-projeto' (execução direta de DW + Camada Semântica)",
+    ),
+    "executar-governanca": (
+        "inspecionar_insumos_governanca.py",
+        [],
+        "Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB PRODEB + AWS Catalog)",
+    ),
+    "iniciar-governanca": (
+        "inspecionar_insumos_governanca.py",
+        [],
+        "Alias para 'executar-governanca'",
     ),
     # 2. Micro-Processos Independentes & Fast-Track (DW, ODI e Semântica)
     "melhorar-dw-existente": (

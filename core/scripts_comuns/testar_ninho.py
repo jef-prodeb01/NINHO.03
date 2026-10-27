@@ -809,9 +809,11 @@ def teste_11_regressao_e5_e12_blindagem() -> str:
     assert "(ID_ORGAO, DTC_EFETIVACAO DESC)" in sql_odi_ddl, "Índice ODI_DIM deveria usar DTC_EFETIVACAO"
     assert "STG_TST.STG_ORGAO_PUBLICO" in sql_odi_dims, "Schema STG customizado não utilizado em 03_selects_odi_dimensoes.sql"
     assert "LEFT JOIN DW_TST.DIM_ORGAO_PUBLICO" in sql_odi_fato, "LEFT JOIN para DIM_ORGAO_PUBLICO ausente em 04_select_odi_fato.sql"
-    assert ", -1) AS SK_ORGAO_PUBLICO" in sql_odi_fato or ", -1) AS ID_ORGAO" in sql_odi_fato, (
-        f"Fallback NVL(..., -1) para FK de órgão ausente em 04_select_odi_fato.sql:\n{sql_odi_fato}"
-    )
+    assert (
+        ", -1) AS DIM_ORGAO_PUBLICO" in sql_odi_fato
+        or ", -1) AS SK_ORGAO_PUBLICO" in sql_odi_fato
+        or ", -1) AS ID_ORGAO" in sql_odi_fato
+    ), f"Fallback NVL(..., -1) para FK de órgão ausente em 04_select_odi_fato.sql:\n{sql_odi_fato}"
 
     # 11.6. E11 + E12: Rotas do ninho.py e templates FTPS/ODI seguros
     if str(BASE_DIR) not in sys.path:
@@ -1719,6 +1721,68 @@ def teste_16_prova_real_amostra_dim_fato_e_mockup_dax() -> str:
     return "Prova Real Pós-Carga (SQLite in-memory DIM+FATO), detecção/correção MED-01..05 e Mockup SVG/HTML populado aprovados."
 
 
+def teste_17_execucao_direta_e_convencoes_simulacao() -> str:
+    """
+    T17: Valida os novos comandos de Execução Direta (/executar-dw, /executar-semantica,
+    /executar-projeto, /executar-governanca) sem necessidade de simulação prévia e
+    garante aderência 100% às CONVENCOES_DW.md (DIMENSION_KEY, SIN_ATIVO, DTC_EFETIVACAO,
+    DTC_EXPIRACAO, DES_ATUALIZAR, DIM_<ENTIDADE> na Fato, DIM_TEMPO 24 colunas,
+    Tablespaces <PROJETO>_DATA/<PROJETO>_INDEX e ODI_DIM_* com DES_STATUS_REGISTRO)
+    sem qualquer bypass/isenção em validar_entrega.py.
+    """
+    _limpar_artefatos_workspace()
+    pasta_sql = BASE_DIR / "entrega" / "planejador_dw" / "ddl"
+    pasta_sql.mkdir(parents=True, exist_ok=True)
+    (pasta_sql / "01_origem_licitacao.sql").write_text(DDL_ORIGEM_TESTE.strip() + "\n", encoding="utf-8")
+
+    # 1. Testar /executar-dw direto (sem rodar simular-dw antes)
+    rc, out, err = _executar_cli(["ninho.py", "executar-dw"])
+    assert rc == 0, f"Falha em 'ninho.py executar-dw': {err}\n{out}"
+
+    saida_dw = BASE_DIR / "saida" / "planejador_dw"
+    ddl_dims = (saida_dw / "03_dimensoes" / "03_create_dim_tables.sql").read_text(encoding="utf-8")
+    ddl_fatos = (saida_dw / "04_fatos" / "04_create_fato_tables.sql").read_text(encoding="utf-8")
+    ddl_stg = (saida_dw / "02_staging" / "02_create_stg_tables.sql").read_text(encoding="utf-8")
+    ddl_odi = (saida_dw / "03_dimensoes" / "03_create_odi_dim_tables.sql").read_text(encoding="utf-8")
+    sql_odi_fato = (saida_dw / "04_fatos" / "04_select_odi_fato.sql").read_text(encoding="utf-8")
+
+    assert "DIMENSION_KEY" in ddl_dims, "Dimensões geradas por /executar-dw devem usar DIMENSION_KEY como PK"
+    assert "SIN_ATIVO" in ddl_dims and "DES_ATUALIZAR" in ddl_dims, (
+        "Dimensões geradas devem conter as 4 colunas SCD2 oficiais (SIN_ATIVO, DTC_EFETIVACAO, DTC_EXPIRACAO, DES_ATUALIZAR)"
+    )
+    assert "DIM_TEMPO" in ddl_dims and "NUM_ANO_MES" in ddl_dims, (
+        "03_ddl_dimensoes.sql deve incluir a DIM_TEMPO canônica de 24 colunas"
+    )
+    assert "DIM_ORGAO_PUBLICO" in ddl_fatos and "DIM_FORNECEDOR" in ddl_fatos and "DIM_TEMPO" in ddl_fatos, (
+        "Fato gerada deve usar FKs no padrão DIM_<ENTIDADE> e incluir DIM_TEMPO"
+    )
+    assert "_DATA" in ddl_dims, "Tablespace de dados deve seguir <PROJETO>_DATA"
+    assert "DES_STATUS_REGISTRO" in ddl_odi, "ODI_DIM_* deve conter DES_STATUS_REGISTRO CHAR(1 CHAR)"
+    assert "DTC_EXTRACAO" in ddl_stg and "ID_LOTE" in ddl_stg, "Staging deve conter DTC_EXTRACAO e ID_LOTE"
+    assert "NVL(" in sql_odi_fato and "AS DIM_TEMPO" in sql_odi_fato, (
+        "04_select_odi_fato.sql deve resolver DIM_TEMPO com fallback NVL(..., -1)"
+    )
+
+    # 2. Validar saída com validar_entrega.py saida (sem isenção de simulação!)
+    rc_val, out_val, err_val = _executar_cli(["core/scripts_comuns/validar_entrega.py", "saida"])
+    assert rc_val == 0, f"validar_entrega.py saida reprovou artefatos de /executar-dw:\n{out_val}\n{err_val}"
+
+    # 3. Testar /executar-projeto direto (DW + Semântica juntos)
+    _limpar_artefatos_workspace()
+    pasta_sql.mkdir(parents=True, exist_ok=True)
+    (pasta_sql / "01_origem_licitacao.sql").write_text(DDL_ORIGEM_TESTE.strip() + "\n", encoding="utf-8")
+    rc_proj, out_proj, err_proj = _executar_cli(["ninho.py", "executar-projeto"])
+    assert rc_proj == 0, f"Falha em 'ninho.py executar-projeto': {err_proj}\n{out_proj}"
+    assert (BASE_DIR / "saida" / "camada_semantica" / "vw_analiticas" / "01_vw_dim_atuais.sql").exists(), (
+        "Views da Camada Semântica não foram geradas por /executar-projeto"
+    )
+    rc_val2, out_val2, err_val2 = _executar_cli(["core/scripts_comuns/validar_entrega.py", "saida"])
+    assert rc_val2 == 0, f"validar_entrega.py saida reprovou artefatos de /executar-projeto:\n{out_val2}\n{err_val2}"
+
+    _limpar_artefatos_workspace()
+    return "Comandos /executar-dw, /executar-semantica, /executar-projeto e conformidade 100% com CONVENCOES_DW.md aprovados."
+
+
 def executar_suite_completa(manter_arquivos: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
@@ -1741,6 +1805,7 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T14: Suíte Visual & OOXML (*Craft) + Leitura .ods/.pdf + Panic Hunt", teste_14_suite_visual_craft_e_panic_hunt),
         ("T15: Suíte Apache Hop 2.x (SVG Painter, hop-lint, Migrador Kettle, THREAT_MODEL & OraBulkLoader)", teste_15_apache_hop_5_mecanismos),
         ("T16: Prova Real Pós-Carga (DIM+FATO) + Auditor DAX (MED-01..06) + Mockup Populado", teste_16_prova_real_amostra_dim_fato_e_mockup_dax),
+        ("T17: Execução Direta (/executar-dw, /executar-projeto) & Convenções 100% no Simulador", teste_17_execucao_direta_e_convencoes_simulacao),
     ]
 
     passou = 0
