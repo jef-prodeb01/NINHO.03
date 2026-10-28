@@ -906,7 +906,7 @@ def _checagens_ambiente() -> List[str]:
         if importlib.util.find_spec(pacote):
             linhas.append(f"- ✅ **Pacote opcional `{pacote}`:** instalado ({uso}).")
         else:
-            linhas.append(f"- 🟡 **Pacote opcional `{pacote}`:** ausente ({uso}). Instale com `pip install -r requirements.txt`.")
+            linhas.append(f"- 🟡 **Pacote opcional `{pacote}`:** ausente ({uso} — há fallback nativo na biblioteca padrão). Se desejar instalar: `pip install {pacote}`.")
 
     try:
         spec = importlib.util.spec_from_file_location("ninho_cli", ROOT_DIR / "ninho.py")

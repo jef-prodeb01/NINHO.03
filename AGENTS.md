@@ -61,7 +61,7 @@ Todos os comandos com `/` estão registrados como **Skills nativas** em `.agents
 | **DBA & Evolução do DW** | `/comparar-modelo`, `/estimar-volumetria`, `/inspecionar-banco` | ALTERs incrementais seguros (DW em produção x modelo novo), volumetria/particionamento/tablespaces e extração do DDL real do Oracle. |
 | **Governança** | `/simular-governanca`, `/executar-governanca` | Prévia (Gate 0.5 + LGPD) e geração completa MongoDB PRODEB + AWS Glue/SageMaker. |
 | **Inspeção & Auditoria** | `/inspecionar-fontes`, `/inspecionar-pbix`, `/auditar-mapa-odi`, `/auditar-hop`, `/inspecionar-governanca` | Audita DDLs de origem, arquivos `.pbix`, XMLs do ODI 12c (`H1..H9`), projetos Apache Hop 2.x (`HOP-H1..H8`) e insumos de Governança (Gate 0.5). |
-| **Qualidade & Entrega** | `/validar-entrega`, `/auditar-ddl`, `/testar-ninho`, `/empacotar-projeto`, `/concluir-dw`, `/iniciar-semantica` | Valida pré-voo/saída, roda a suíte E2E em sandbox isolada + `pytest`, faz handoff DW -> Semântica e exporta `.zip`. |
+| **Qualidade & Entrega** | `/validar-entrega`, `/auditar-ddl`, `/testar-ninho`, `/empacotar-projeto`, `/concluir-dw`, `/iniciar-semantica` | Valida pré-voo/saída, roda a suíte E2E de 18 testes em sandbox isolada, faz handoff DW -> Semântica e exporta `.zip`. |
 
 ---
 

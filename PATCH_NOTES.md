@@ -1,6 +1,6 @@
 # 📰 Histórico de Versões e Novidades (Patch Notes) — Plataforma NINHO
 
-> **Versão Atual:** `v0.13.1` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `28/10/2026` | **Status da Suíte de Testes:** `✅ E2E (18/18 em sandbox) + pytest (14/14) + ruff no CI`
+> **Versão Atual:** `v0.13.1` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `28/10/2026` | **Status da Suíte de Testes:** `✅ 18/18 Suítes E2E Aprovadas em Sandbox Isolada (100% Pass)`
 
 Bem-vindo à página oficial de **Patch Notes** do **NINHO**!
 Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.13.1`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.

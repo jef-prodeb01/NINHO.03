@@ -1,4 +1,0 @@
-# Os motores do NINHO rodam apenas com a biblioteca padrão do Python (>= 3.10).
-# Pacotes abaixo são OPCIONAIS e ampliam recursos quando instalados:
-openpyxl>=3.1      # leitura nativa de planilhas .xlsx da Governança de Dados
-defusedxml>=0.7    # parsing seguro de XMLs de terceiros (ODI, Hop, PBIX, DOCX)

@@ -9,8 +9,18 @@ htmlcov/
 credenciais.md
 .netrc
 
-# Pasta de rascunhos, referências e ideias de outros projetos
+# Pasta de rascunhos, referências, testes internos e arquivos de CI/dev não distribuídos
 ideias/
+tests/
+.github/
+.gitlab-ci.yml
+.mcp.json
+ninho_mcp_server.py
+PLANO_MELHORIAS.md
+CONTRIBUTING.md
+requirements.txt
+requirements-dev.txt
+pyproject.toml
 
 # Arquivos CSV de insumos brutos na raiz e arquivos temporários/marcadores
 META_ORIENTACAO_IA*.csv
