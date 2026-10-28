@@ -2,7 +2,7 @@
 
 > *"Onde os dados brutos são acolhidos, cuidados e preparados para ganhar asas."*
 >
-> 🏷️ **Versão Atual:** **`v0.11.1`** *(Pré-Lançamento — 27/10/2026)* — 📖 [**Ver Histórico Completo de Versões, Novidades e Correções (`PATCH_NOTES.md`)**](PATCH_NOTES.md)
+> 🏷️ **Versão Atual:** **`v0.13.1`** *(Pré-Lançamento — 28/10/2026)* — 📖 [**Ver Histórico Completo de Versões, Novidades e Correções (`PATCH_NOTES.md`)**](PATCH_NOTES.md)
 
 Bem-vindo ao **NINHO**, o framework corporativo de engenharia analítica que automatiza o ciclo completo de dados: desde o planejamento dimensional de Data Warehouses no Oracle, passando pela geração de camadas semânticas ativas e governança em nuvem, até a entrega de diretrizes prontas para Power BI.
 
@@ -81,7 +81,7 @@ NINHO /
 │   ├── scripts_comuns/                  # 🛠️ 14 Utilitários Python determinísticos
 │   │   ├── ajuda_ninho.py               # 🧭 Central UX (/help, /comecar, /onde-estou, /demo)
 │   │   ├── validar_entrega.py           # 🔍 Validador pré-voo e pós-geração (all/saida)
-│   │   ├── testar_ninho.py              # 🧪 Suíte automatizada de testes E2E (13 baterias)
+│   │   ├── testar_ninho.py              # 🧪 Suíte E2E em sandbox isolada (não toca entrega/ e saida/)
 │   │   ├── inspecionar_ddl_origem.py    # 🔎 Extrator de DDLs e Radar Consultivo de KPIs
 │   │   ├── simular_projeto.py           # 🧪 Simulador e Blueprints Editáveis (DW/Semântica)
 │   │   ├── melhorar_dw_existente.py     # ⚡ Motor Fast-Track e Micro-Processos DW & ODI

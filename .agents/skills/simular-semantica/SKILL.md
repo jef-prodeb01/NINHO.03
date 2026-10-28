@@ -9,7 +9,7 @@ Gera a Blueprint 100% editável de simulação da Camada Semântica (entrega/cam
 
 ## Execução Determinística
 
-Ao receber o comando /simular-semantica (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /simular-semantica (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py simular-semantica

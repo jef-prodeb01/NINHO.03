@@ -9,7 +9,7 @@ Gera apenas constraints PK/FK não-destrutivas (ENABLE/RELY NOVALIDATE) sobre DW
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-constraints (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-constraints (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-constraints

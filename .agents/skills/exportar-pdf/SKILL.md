@@ -9,7 +9,7 @@ Exporta os Guias do Analista de BI e de Estratégias ODI 12c em documentos PDF 1
 
 ## Execução Determinística
 
-Ao receber o comando /exportar-pdf (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /exportar-pdf (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py exportar-pdf

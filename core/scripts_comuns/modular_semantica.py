@@ -18,6 +18,10 @@ Modos disponíveis (`--modo`):
   - `tudo`            : Executa todos os micro-processos da Camada Semântica
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.modular_semantica")
+
 import argparse
 import re
 import shutil
@@ -28,8 +32,8 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (modular_semantica.py:31): %r", _exc)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -70,8 +74,8 @@ def _listar_arquivos_ddl_pasta(pasta: Path) -> list[Path]:
                 amostra = f.read_text(encoding="utf-8", errors="ignore")[:8192].upper()
                 if "CREATE TABLE" in amostra:
                     encontrados.append(f)
-            except Exception:
-                pass
+            except Exception as _exc:
+                _LOG.debug("Exceção tratada (modular_semantica.py:73): %r", _exc)
     return encontrados
 
 
@@ -245,6 +249,58 @@ def construir_views_dim_atuais(
     return "\n".join(linhas)
 
 
+LIMITE_IDENTIFICADOR_ORACLE = 30
+COLUNAS_DATA_TECNICAS = {"DTC_CARGA", "DTC_CARGA_DW", "DTC_EXTRACAO", "DTC_ATUALIZACAO", "DTC_INSERCAO", "DTC_EFETIVACAO", "DTC_EXPIRACAO"}
+
+
+def alias_oracle_seguro(base: str, usados: set, limite: int = LIMITE_IDENTIFICADOR_ORACLE) -> str:
+    """
+    Alias de coluna com no máximo `limite` caracteres, sem `_` no final e sem colidir com `usados`.
+    Registra o alias escolhido em `usados`.
+    """
+    nome = base.upper()
+    candidato = nome[:limite].rstrip("_")
+    seq = 2
+    while candidato in usados:
+        sufixo = f"_{seq}"
+        candidato = nome[: limite - len(sufixo)].rstrip("_") + sufixo
+        seq += 1
+    usados.add(candidato)
+    return candidato
+
+
+def situacao_evento_fato(fato: dict) -> tuple[str, str] | None:
+    """
+    Expressão de `IND_SITUACAO_EVENTO` derivada de uma coluna REAL de status da Fato.
+    Retorna (expressao_sql, tipo) com tipo 'FLAG' (ATIVO/INATIVO) ou 'STATUS' (valor da origem),
+    ou None quando a Fato não tem coluna de situação (a coluna então não é gerada).
+    """
+    nomes = [c["nome_dw"].upper() for c in fato["colunas"]]
+    for flag in ("SIN_ATIVO", "FLG_ATIVO", "IND_ATIVO"):
+        if flag in nomes:
+            return f"CASE WHEN f.{flag} IN ('S', '1') THEN 'ATIVO' ELSE 'INATIVO' END", "FLAG"
+    for nome in nomes:
+        if re.match(r"^(STS|SIT|STATUS|SITUACAO|DES_STATUS|DES_SITUACAO|COD_STATUS|COD_SITUACAO)(_|$)", nome):
+            return f"NVL(TO_CHAR(f.{nome}), 'Não Informado')", "STATUS"
+    return None
+
+
+def eixo_temporal_fato(fato: dict, fks: list) -> tuple[str, str, str] | None:
+    """
+    Eixo de tempo para a VW_KPI: (expressão sobre a view de evento `e`, alias, descrição).
+    Prioriza a data de negócio da Fato (agregada por mês); senão, a FK para DIM_TEMPO.
+    """
+    for c in fato["colunas"]:
+        nome = c["nome_dw"].upper()
+        tipo = str(c.get("tipo_oracle", "")).upper()
+        if nome.startswith(("DTC_", "DT_", "DAT_")) and nome not in COLUNAS_DATA_TECNICAS and tipo.startswith(("DATE", "TIMESTAMP")):
+            return f"TRUNC(e.{nome}, 'MM')", "DTC_MES_REFERENCIA", f"Mês de referência derivado de {nome}"
+    for fk in fks:
+        if fk["tabela_ref"].upper().startswith("DIM_TEMPO"):
+            return f"e.{fk['coluna']}", fk["coluna"].upper(), f"Chave da dimensão de tempo ({fk['coluna']})"
+    return None
+
+
 def construir_views_eventos(
     tabelas: list[dict], schema: str, projeto: str, edicoes_sem: dict | None = None
 ) -> str:
@@ -315,19 +371,23 @@ def construir_views_eventos(
                 sufixo_fk = re.sub(r"^(SK_|DIM_|ID_)", "", col_fk.upper())
                 for atr in atributos_dim:
                     aname = atr["nome_dw"]
-                    alias_col = aname if aname.endswith(f"_{sufixo_dim}") else f"{aname}_{sufixo_dim}"
-                    alias_col = alias_col[:30].upper()
-                    if alias_col in cols_select_usadas:
-                        alias_col = f"{aname}_{sufixo_fk}"[:30].upper()
-                    cols_select_usadas.add(alias_col)
+                    alias_base = aname if aname.endswith(f"_{sufixo_dim}") else f"{aname}_{sufixo_dim}"
+                    if alias_base[:LIMITE_IDENTIFICADOR_ORACLE].rstrip("_").upper() in cols_select_usadas:
+                        alias_base = f"{aname}_{sufixo_fk}"
+                    alias_col = alias_oracle_seguro(alias_base, cols_select_usadas)
                     if aname.startswith(("DES_", "NOM_", "DSC_", "SGL_", "SIG_")):
                         select_exprs.append(f"    NVL({alias}.{aname}, 'Não Informado') AS {alias_col}")
                     else:
                         select_exprs.append(f"    {alias}.{aname} AS {alias_col}")
                     comentarios_vw.append((alias_col, f"Atributo {aname} oriundo da dimensão {dim_tab} ({col_fk})."))
 
-        select_exprs.append("    CASE WHEN 1 = 1 THEN 'REGULAR' ELSE 'PENDENTE' END AS IND_SITUACAO_EVENTO")
-        comentarios_vw.append(("IND_SITUACAO_EVENTO", "Indicador semântico padronizado da situação do evento para consumo de BI e IA."))
+        situacao = situacao_evento_fato(f)
+        if situacao and "IND_SITUACAO_EVENTO" not in cols_select_usadas:
+            select_exprs.append(f"    {situacao[0]} AS IND_SITUACAO_EVENTO")
+            comentarios_vw.append((
+                "IND_SITUACAO_EVENTO",
+                "Situação do evento derivada da coluna de status da Fato (ATIVO/INATIVO ou valor da origem).",
+            ))
 
         for i, expr in enumerate(select_exprs):
             virg = "," if i < len(select_exprs) - 1 else ""
@@ -377,8 +437,13 @@ def construir_views_kpis(
         )
         vw_kpi_default = f"VW_{projeto}_KPI_{entidade}"
         fks = identificar_fks_fato(f, nomes_dims)
-        col_grupo = fks[0]["coluna"] if fks else f["colunas"][0]["nome_dw"]
-        grao_default = f"Uma linha representa o consolidado de indicadores de {entidade} agrupado por {col_grupo}."
+        fks_negocio = [fk for fk in fks if not fk["tabela_ref"].upper().startswith("DIM_TEMPO")]
+        col_grupo = (fks_negocio or fks)[0]["coluna"] if fks else f["colunas"][0]["nome_dw"]
+        eixo_tempo = eixo_temporal_fato(f, fks)
+        if eixo_tempo and eixo_tempo[1] == col_grupo.upper():
+            eixo_tempo = None
+        sufixo_tempo = f" e por {eixo_tempo[1]}" if eixo_tempo else ""
+        grao_default = f"Uma linha representa o consolidado de indicadores de {entidade} agrupado por {col_grupo}{sufixo_tempo}."
         ativo, vw_kpi, grao_kpi = _obter_cfg_view_semantica(
             edicoes_sem, "KPI", fname, vw_kpi_default, grao_default, entidade
         )
@@ -397,16 +462,20 @@ def construir_views_kpis(
         linhas.append(f"CREATE OR REPLACE FORCE VIEW {schema}.{vw_kpi} AS")
         linhas.append("SELECT")
 
-        exprs_kpi = [
-            f"    e.{col_grupo} AS {col_grupo}",
-            "    COUNT(1) AS QTD_TOTAL_REGISTROS",
-        ]
+        exprs_kpi = [f"    e.{col_grupo} AS {col_grupo}"]
+        comentarios_kpi = [(col_grupo, f"Eixo dimensional de agrupamento ({col_grupo}).")]
+        group_by = [f"e.{col_grupo}"]
+        if eixo_tempo:
+            expr_tempo, alias_tempo, desc_tempo = eixo_tempo
+            exprs_kpi.append(f"    {expr_tempo} AS {alias_tempo}")
+            comentarios_kpi.append((alias_tempo, f"Eixo temporal do KPI: {desc_tempo}."))
+            group_by.append(expr_tempo)
+        exprs_kpi.append("    COUNT(1) AS QTD_TOTAL_REGISTROS")
+        comentarios_kpi.append(("QTD_TOTAL_REGISTROS", f"Volume total de eventos contabilizados em {fname}."))
         cols_ja_incluidas = {col_grupo.upper(), "QTD_TOTAL_REGISTROS", f"QTD_TOTAL_{entidade}".upper()}
-
-        comentarios_kpi = [
-            (col_grupo, f"Eixo dimensional de agrupamento ({col_grupo})."),
-            ("QTD_TOTAL_REGISTROS", f"Volume total de eventos contabilizados em {fname}."),
-        ]
+        if eixo_tempo:
+            cols_ja_incluidas.add(eixo_tempo[1])
+        particao_pct = f"PARTITION BY {eixo_tempo[0]}" if eixo_tempo else ""
 
         if edicoes_sem and edicoes_sem.get("metricas_definidas_bp"):
             todas_metricas_bp = list(edicoes_sem.get("metricas_ativas", [])) + list(edicoes_sem.get("radar_kpis", []))
@@ -414,35 +483,37 @@ def construir_views_kpis(
                 vw_rec = (m_bp.get("view_recomendada") or "").upper()
                 if vw_rec and vw_rec not in (vw_kpi.upper(), vw_kpi_default.upper()):
                     continue
-                cod_m = m_bp["cod_metrica"].upper()[:30]
-                if cod_m in cols_ja_incluidas:
+                if m_bp["cod_metrica"].upper() in cols_ja_incluidas:
                     continue
+                cod_m = alias_oracle_seguro(m_bp["cod_metrica"], cols_ja_incluidas)
                 formula_m = m_bp["formula_sql"].strip()
                 exprs_kpi.append(f"    {formula_m} AS {cod_m}")
-                cols_ja_incluidas.add(cod_m)
                 comentarios_kpi.append((cod_m, f"{m_bp['nom_metrica']} (Fórmula: {formula_m})."))
         else:
             for m in metricas[:4]:
-                col_sum = f"SUM_{m[:24]}".upper()
-                col_avg = f"AVG_{m[:24]}".upper()
+                col_sum = alias_oracle_seguro(f"SUM_{m}", cols_ja_incluidas)
+                col_avg = alias_oracle_seguro(f"AVG_{m}", cols_ja_incluidas)
                 exprs_kpi.append(f"    SUM(NVL(e.{m}, 0)) AS {col_sum}")
                 exprs_kpi.append(f"    ROUND(AVG(NVL(e.{m}, 0)), 2) AS {col_avg}")
-                cols_ja_incluidas.add(col_sum)
-                cols_ja_incluidas.add(f"SUM_{m}".upper())
-                cols_ja_incluidas.add(col_avg)
                 comentarios_kpi.append((col_sum, f"Somatório da métrica {m} no agrupamento."))
                 comentarios_kpi.append((col_avg, f"Média aritmética da métrica {m} no agrupamento."))
 
-            exprs_kpi.append("    ROUND((COUNT(1) * 100.0) / NULLIF(SUM(COUNT(1)) OVER (), 0), 2) AS PCT_PARTICIPACAO_TOTAL")
+            exprs_kpi.append(
+                f"    ROUND((COUNT(1) * 100.0) / NULLIF(SUM(COUNT(1)) OVER ({particao_pct}), 0), 2) AS PCT_PARTICIPACAO_TOTAL"
+            )
             cols_ja_incluidas.add("PCT_PARTICIPACAO_TOTAL")
-            comentarios_kpi.append(("PCT_PARTICIPACAO_TOTAL", "Percentual de participação do grupo sobre o volume total geral (divisão segura com NULLIF)."))
+            escopo_pct = "do período" if eixo_tempo else "geral"
+            comentarios_kpi.append((
+                "PCT_PARTICIPACAO_TOTAL",
+                f"Percentual de participação do grupo sobre o volume total {escopo_pct} (divisão segura com NULLIF).",
+            ))
 
         for idx_e, ex in enumerate(exprs_kpi):
             virg = "," if idx_e < len(exprs_kpi) - 1 else ""
             linhas.append(f"{ex}{virg}")
 
         linhas.append(f"FROM {schema}.{vw_evento} e")
-        linhas.append(f"GROUP BY e.{col_grupo};")
+        linhas.append(f"GROUP BY {', '.join(group_by)};")
         linhas.append("")
 
         grao_esc = grao_kpi.replace("'", "''")
@@ -453,6 +524,109 @@ def construir_views_kpis(
         linhas.append("")
 
     return "\n".join(linhas)
+
+
+PREFIXOS_METRICA_KPI = ("QTD_", "VLR_", "VAL_", "NUM_DIAS", "TMP_", "QT_")
+
+
+def montar_contexto_perguntas(tabelas: list[dict], projeto: str, edicoes_sem: dict | None = None) -> list:
+    """Traduz o modelo DW (Fatos, dimensões, métricas, datas, situação) para o gerador de perguntas."""
+    from ninho_core.dw_modelo import humanizar_identificador
+    from ninho_core.perguntas_semanticas import DimensaoPergunta, FatoPergunta
+
+    dims_map = {t["nome_tabela"].upper(): t for t in tabelas if classificar_tabela_dw(t) == "DIM"}
+    contexto = []
+    for f in (t for t in tabelas if classificar_tabela_dw(t) == "FATO"):
+        fname = f["nome_tabela"]
+        ent = _nome_entidade_curto(fname)
+        ativo_ev, vw_ev, _ = _obter_cfg_view_semantica(edicoes_sem, "EVENTO", fname, f"VW_{projeto}_EVENTO_{ent}", "", ent)
+        if not ativo_ev:
+            continue
+        _, vw_kpi, _ = _obter_cfg_view_semantica(edicoes_sem, "KPI", fname, f"VW_{projeto}_KPI_{ent}", "", ent)
+        fks = identificar_fks_fato(f, set(dims_map))
+        dims = []
+        for fk in fks:
+            d = dims_map.get(fk["tabela_ref"].upper())
+            if d is None:
+                continue
+            ent_d = _nome_entidade_curto(d["nome_tabela"])
+            ativo_d, vw_dim, _ = _obter_cfg_view_semantica(edicoes_sem, "DIM", d["nome_tabela"], f"VW_{projeto}_DIM_{ent_d}_ATUAL", "", ent_d)
+            if not ativo_d:
+                continue
+            sk = _obter_sk_dim(d)
+            atributo = next(
+                (c["nome_dw"] for c in d["colunas"]
+                 if c["nome_dw"].upper().startswith(("NOM_", "DES_", "DSC_", "SIG_", "SGL_"))
+                 and c["nome_dw"].upper() not in ("DES_ATUALIZAR", "DES_HASH_SCD2")),
+                _obter_nk_dim(d) or sk,
+            )
+            dims.append(DimensaoPergunta(fk=fk["coluna"], vw_dim=vw_dim, sk=sk, atributo=atributo, nome=humanizar_identificador(ent_d)))
+        nomes_fk = {fk["coluna"].upper() for fk in fks}
+
+        def nome_metrica(col: str) -> str:
+            for prefixo, base in (("QTD_", "quantidade de"), ("QT_", "quantidade de"), ("VAL_", "valor"),
+                                  ("VLR_", "valor"), ("NUM_DIAS", "número de dias"), ("TMP_", "tempo de")):
+                if col.upper().startswith(prefixo):
+                    resto = col.upper()[len(prefixo):].lstrip("_")
+                    return f"{base} {humanizar_identificador(resto).lower()}".strip() if resto else base
+            return humanizar_identificador(col).lower()
+
+        metricas = [(c["nome_dw"], nome_metrica(c["nome_dw"])) for c in f["colunas"]
+                    if c["nome_dw"].upper().startswith(PREFIXOS_METRICA_KPI)]
+        eixo = eixo_temporal_fato(f, fks)
+        data = None
+        if eixo:
+            m_data = re.search(r"e\.(\w+)", eixo[0])
+            col_data = m_data.group(1) if m_data else eixo[1]
+            data = (col_data, humanizar_identificador(col_data))
+        situacao = situacao_evento_fato(f)
+        chave = next(
+            (c["nome_dw"] for c in f["colunas"]
+             if c["nome_dw"].upper().startswith(("ID_", "NUM_", "COD_")) and c["nome_dw"].upper() not in nomes_fk
+             and not c["nome_dw"].upper().startswith(PREFIXOS_METRICA_KPI)),
+            None,
+        )
+        contexto.append(FatoPergunta(
+            entidade=humanizar_identificador(ent), vw_evento=vw_ev, vw_kpi=vw_kpi, dims=dims, metricas=metricas,
+            data=data, situacao=situacao[1] if situacao else None, chave_degenerada=chave,
+        ))
+    return contexto
+
+
+def construir_perguntas_negocio(
+    tabelas: list[dict], schema: str, projeto: str, edicoes_sem: dict | None = None, fontes_cliente: list | None = None
+) -> tuple[list, list]:
+    """(perguntas da IA, perguntas do cliente) para META_CONSULTA_NEGOCIO."""
+    from ninho_core.paths import BASE_DIR
+    from ninho_core.perguntas_semanticas import gerar_perguntas_ia, ler_perguntas_cliente, montar_perguntas_cliente
+
+    perguntas_ia = gerar_perguntas_ia(montar_contexto_perguntas(tabelas, projeto, edicoes_sem), schema, projeto)
+    if fontes_cliente is None:
+        fontes_cliente = [
+            BASE_DIR / "modulos" / "camada_semantica" / "INTAKE_SEMANTICA.md",
+            BASE_DIR / "entrega" / "camada_semantica" / "perguntas_cliente.md",
+        ]
+    perguntas_cliente = montar_perguntas_cliente(ler_perguntas_cliente(*fontes_cliente), perguntas_ia, projeto)
+    return perguntas_ia, perguntas_cliente
+
+
+def _merge_consulta_negocio(schema: str, projeto: str, id_consulta: str, pergunta: str, painel: str,
+                            observacao: str, sql: str, objetos: str) -> str:
+    def q(valor: str) -> str:
+        return "NULL" if not valor else "'" + valor.replace("'", "''") + "'"
+
+    return (
+        f"MERGE INTO {schema}.META_CONSULTA_NEGOCIO dst\n"
+        f"USING (SELECT '{projeto}' AS PROJETO, {q(id_consulta[:50])} AS ID_CONSULTA, "
+        f"{q(pergunta)} AS PERGUNTA_LINGUAGEM_NATURAL, {q(painel)} AS PAINEL_RELACIONADO, {q(observacao)} AS OBSERVACOES, "
+        f"{q(sql)} AS SQL_VALIDADO_INTERPRETACAO, {q(objetos)} AS OBJETOS_CHAVE FROM DUAL) src\n"
+        f"ON (dst.PROJETO = src.PROJETO AND dst.ID_CONSULTA = src.ID_CONSULTA)\n"
+        f"WHEN MATCHED THEN UPDATE SET dst.PERGUNTA_LINGUAGEM_NATURAL = src.PERGUNTA_LINGUAGEM_NATURAL, "
+        f"dst.OBSERVACOES = src.OBSERVACOES, dst.SQL_VALIDADO_INTERPRETACAO = src.SQL_VALIDADO_INTERPRETACAO, "
+        f"dst.OBJETOS_CHAVE = src.OBJETOS_CHAVE, dst.DT_ATUALIZACAO = SYSDATE\n"
+        f"WHEN NOT MATCHED THEN INSERT (PROJETO, ID_CONSULTA, PERGUNTA_LINGUAGEM_NATURAL, PAINEL_RELACIONADO, OBSERVACOES, SQL_VALIDADO_INTERPRETACAO, OBJETOS_CHAVE)\n"
+        f"VALUES (src.PROJETO, src.ID_CONSULTA, src.PERGUNTA_LINGUAGEM_NATURAL, src.PAINEL_RELACIONADO, src.OBSERVACOES, src.SQL_VALIDADO_INTERPRETACAO, src.OBJETOS_CHAVE);\n"
+    )
 
 
 def construir_catalogo_meta(
@@ -725,9 +899,9 @@ def construir_catalogo_meta(
         linhas_05.append(
             f"MERGE INTO {schema}.META_REGRA_NEGOCIO dst\n"
             f"USING (SELECT '{projeto}' AS PROJETO, "
-            f"'RN_{projeto}_004: Sessões sem contexto inicializado em SYS_CONTEXT recebem predicado 1=0 (Fail-Closed).' AS REGRA, "
+            f"'RN_{projeto}_004: Usuário efetivo sem vínculo em USUARIO_SEGMENTOS (ou erro no predicado) recebe 1=0 (Fail-Closed).' AS REGRA, "
             f"'ALTA' AS SEVERIDADE, 'ATIVA' AS STATUS_REGRA, 'SEGURANCA_RLS' AS CONTEXTO, "
-            f"'Expressão SQL padrão: SYS_CONTEXT(''CTX_{projeto}_RLS'', ''VALOR_FILTRO'') IS NOT NULL' AS OBSERVACAO FROM DUAL) src\n"
+            f"'Identidade: PKG_SECURITY_{projeto}.FN_USUARIO_EFETIVO (CLIENT_IDENTIFIER só para contas em RLS_CONTAS_SERVICO).' AS OBSERVACAO FROM DUAL) src\n"
             f"ON (dst.PROJETO = src.PROJETO AND dst.REGRA = src.REGRA)\n"
             f"WHEN MATCHED THEN UPDATE SET dst.SEVERIDADE = src.SEVERIDADE, dst.STATUS_REGRA = src.STATUS_REGRA, dst.OBSERVACAO = src.OBSERVACAO\n"
             f"WHEN NOT MATCHED THEN INSERT (PROJETO, REGRA, SEVERIDADE, STATUS_REGRA, CONTEXTO, OBSERVACAO)\n"
@@ -743,41 +917,23 @@ def construir_catalogo_meta(
         "-- =============================================================================",
         "",
     ]
-    for idx_f, f in enumerate(fatos, start=1):
-        ent = _nome_entidade_curto(f["nome_tabela"])
-        vw_kpi_default = f"VW_{projeto}_KPI_{ent}"
-        _, vw_kpi, _ = _obter_cfg_view_semantica(edicoes_sem, "KPI", f["nome_tabela"], vw_kpi_default, "Uma linha representa um grupo.")
-        id_cons = f"PN_{projeto}_{idx_f:03d}"[:50]
-        linhas_06.append(
-            f"MERGE INTO {schema}.META_CONSULTA_NEGOCIO dst\n"
-            f"USING (SELECT '{projeto}' AS PROJETO, '{id_cons}' AS ID_CONSULTA, "
-            f"'Qual é o volume total e a participação percentual de {ent.title()} por categoria?' AS PERGUNTA_LINGUAGEM_NATURAL, "
-            f"'PAINEL_{projeto}' AS PAINEL_RELACIONADO, 'Golden Query oficial da camada KPI' AS OBSERVACOES, "
-            f"'SELECT * FROM {schema}.{vw_kpi} ORDER BY QTD_TOTAL_REGISTROS DESC' AS SQL_VALIDADO_INTERPRETACAO, "
-            f"'{vw_kpi}' AS OBJETOS_CHAVE FROM DUAL) src\n"
-            f"ON (dst.PROJETO = src.PROJETO AND dst.ID_CONSULTA = src.ID_CONSULTA)\n"
-            f"WHEN MATCHED THEN UPDATE SET dst.PERGUNTA_LINGUAGEM_NATURAL = src.PERGUNTA_LINGUAGEM_NATURAL, dst.SQL_VALIDADO_INTERPRETACAO = src.SQL_VALIDADO_INTERPRETACAO, dst.OBJETOS_CHAVE = src.OBJETOS_CHAVE\n"
-            f"WHEN NOT MATCHED THEN INSERT (PROJETO, ID_CONSULTA, PERGUNTA_LINGUAGEM_NATURAL, PAINEL_RELACIONADO, OBSERVACOES, SQL_VALIDADO_INTERPRETACAO, OBJETOS_CHAVE)\n"
-            f"VALUES (src.PROJETO, src.ID_CONSULTA, src.PERGUNTA_LINGUAGEM_NATURAL, src.PAINEL_RELACIONADO, src.OBSERVACOES, src.SQL_VALIDADO_INTERPRETACAO, src.OBJETOS_CHAVE);\n"
-        )
-    if edicoes_sem:
-        for pn_rad in edicoes_sem.get("perguntas_radar", []):
-            cod_pn = pn_rad["cod_pergunta"].replace("'", "''")[:50]
-            des_pn = pn_rad["des_pergunta"].replace("'", "''")
-            sql_pn = pn_rad["sql_referencia"].replace("'", "''")
-            vw_pn = pn_rad["view_recomendada"].replace("'", "''")
-            linhas_06.append(
-                f"MERGE INTO {schema}.META_CONSULTA_NEGOCIO dst\n"
-                f"USING (SELECT '{projeto}' AS PROJETO, '{cod_pn}' AS ID_CONSULTA, "
-                f"'{des_pn}' AS PERGUNTA_LINGUAGEM_NATURAL, "
-                f"'PAINEL_{projeto}' AS PAINEL_RELACIONADO, 'Consulta analítica sugerida pelo Radar Consultivo' AS OBSERVACOES, "
-                f"'{sql_pn}' AS SQL_VALIDADO_INTERPRETACAO, "
-                f"'{vw_pn}' AS OBJETOS_CHAVE FROM DUAL) src\n"
-                f"ON (dst.PROJETO = src.PROJETO AND dst.ID_CONSULTA = src.ID_CONSULTA)\n"
-                f"WHEN MATCHED THEN UPDATE SET dst.PERGUNTA_LINGUAGEM_NATURAL = src.PERGUNTA_LINGUAGEM_NATURAL, dst.SQL_VALIDADO_INTERPRETACAO = src.SQL_VALIDADO_INTERPRETACAO, dst.OBJETOS_CHAVE = src.OBJETOS_CHAVE\n"
-                f"WHEN NOT MATCHED THEN INSERT (PROJETO, ID_CONSULTA, PERGUNTA_LINGUAGEM_NATURAL, PAINEL_RELACIONADO, OBSERVACOES, SQL_VALIDADO_INTERPRETACAO, OBJETOS_CHAVE)\n"
-                f"VALUES (src.PROJETO, src.ID_CONSULTA, src.PERGUNTA_LINGUAGEM_NATURAL, src.PAINEL_RELACIONADO, src.OBSERVACOES, src.SQL_VALIDADO_INTERPRETACAO, src.OBJETOS_CHAVE);\n"
-            )
+    perguntas_ia, perguntas_cliente = construir_perguntas_negocio(tabelas, schema, projeto, edicoes_sem)
+    if edicoes_sem and edicoes_sem.get("perguntas_definidas_bp"):
+        # A Blueprint (Seção 6.2) já trouxe o catálogo revisado pelo engenheiro: só as marcadas [x] entram.
+        perguntas_ia_finais = [
+            (p["cod_pergunta"], p["des_pergunta"], p["sql_referencia"], p["view_recomendada"], "Sugerida pela IA e aprovada na Blueprint.")
+            for p in edicoes_sem.get("perguntas_radar", [])
+        ]
+    else:
+        perguntas_ia_finais = [(p.id_consulta, p.pergunta, p.sql, p.objetos, p.observacao) for p in perguntas_ia]
+    linhas_06.append(
+        f"-- Perguntas da IA (não solicitadas pelo cliente): {len(perguntas_ia_finais)} "
+        f"(mínimo recomendado: 30) | Perguntas do cliente (requisitos): {len(perguntas_cliente)}\n"
+    )
+    for id_c, pergunta, sql_c, objs, obs in perguntas_ia_finais:
+        linhas_06.append(_merge_consulta_negocio(schema, projeto, id_c, pergunta, f"PAINEL_{projeto}", obs, sql_c, objs))
+    for p in perguntas_cliente:
+        linhas_06.append(_merge_consulta_negocio(schema, projeto, p.id_consulta, p.pergunta, f"PAINEL_{projeto}", p.observacao, p.sql, p.objetos))
     linhas_06.append("COMMIT;\n")
     arquivos["06_meta_consulta_negocio.sql"] = "\n".join(linhas_06)
 
@@ -866,41 +1022,89 @@ def construir_script_rls(
         "-- =============================================================================",
         f"-- NINHO — SEGURANÇA RLS / ORACLE VPD: 02_rls.sql (PROJETO: {projeto})",
         f"-- Coluna de Segregação : {col_segregacao}",
+        "--",
+        "-- Identidade efetiva do usuário (resolvida SEMPRE pelo banco, nunca por parâmetro):",
+        "--   * Sessão de conta de serviço confiável (pool do Power BI / IA, cadastrada em",
+        "--     RLS_CONTAS_SERVICO) com CLIENT_IDENTIFIER definido -> usa o CLIENT_IDENTIFIER",
+        "--     (a aplicação chama DBMS_SESSION.SET_IDENTIFIER('<login do usuário final>')).",
+        "--   * Qualquer outra sessão -> SESSION_USER. Um usuário comum não consegue se passar",
+        "--     por outro definindo o próprio CLIENT_IDENTIFIER.",
+        "-- Fail-closed: sem vínculo em USUARIO_SEGMENTOS ou com erro, nenhuma linha é retornada.",
+        "-- Conceda SELECT em USUARIO_SEGMENTOS ao papel de consumo (o predicado o consulta).",
         "-- =============================================================================",
         "",
-        f"CREATE OR REPLACE CONTEXT CTX_{projeto}_RLS USING {schema}.PKG_SECURITY_{projeto};",
+        "DECLARE",
+        "    PROCEDURE criar_se_nao_existir(p_ddl IN VARCHAR2) IS",
+        "    BEGIN",
+        "        EXECUTE IMMEDIATE p_ddl;",
+        "    EXCEPTION",
+        "        WHEN OTHERS THEN",
+        "            IF SQLCODE != -955 THEN RAISE; END IF;  -- ORA-00955: objeto já existe",
+        "    END;",
+        "BEGIN",
+        f"    criar_se_nao_existir('CREATE TABLE {schema}.USUARIO_SEGMENTOS (",
+        "        PROJETO          VARCHAR2(50)  DEFAULT ''GLOBAL'' NOT NULL,",
+        "        USUARIO_ORACLE   VARCHAR2(128) NOT NULL,",
+        "        SEGMENTO         VARCHAR2(128) NOT NULL,",
+        "        IND_ACESSO_TOTAL CHAR(1)       DEFAULT ''N'' NOT NULL,",
+        "        DT_CRIACAO       DATE          DEFAULT SYSDATE NOT NULL,",
+        "        CONSTRAINT PK_USUARIO_SEGMENTOS PRIMARY KEY (PROJETO, USUARIO_ORACLE, SEGMENTO),",
+        "        CONSTRAINT CHK_USR_SEG_TOTAL CHECK (IND_ACESSO_TOTAL IN (''S'', ''N'')))');",
+        f"    criar_se_nao_existir('CREATE TABLE {schema}.RLS_CONTAS_SERVICO (",
+        "        USUARIO_ORACLE   VARCHAR2(128) NOT NULL,",
+        "        DES_FINALIDADE   VARCHAR2(200) NOT NULL,",
+        "        DT_CRIACAO       DATE          DEFAULT SYSDATE NOT NULL,",
+        "        CONSTRAINT PK_RLS_CONTAS_SERVICO PRIMARY KEY (USUARIO_ORACLE))');",
+        "END;",
         "/",
         "",
+        f"COMMENT ON TABLE {schema}.USUARIO_SEGMENTOS IS 'Usuário efetivo (login do usuário final ou SESSION_USER) x segmento permitido nas views com RLS.';",
+        f"COMMENT ON TABLE {schema}.RLS_CONTAS_SERVICO IS 'Contas de serviço confiáveis (pool BI/IA) autorizadas a repassar a identidade via CLIENT_IDENTIFIER.';",
+        "",
         f"CREATE OR REPLACE PACKAGE {schema}.PKG_SECURITY_{projeto} AS",
-        "    PROCEDURE PRC_SET_CONTEXTO(p_valor_filtro IN VARCHAR2, p_acesso_total IN VARCHAR2 DEFAULT 'N');",
+        "    FUNCTION FN_USUARIO_EFETIVO RETURN VARCHAR2;",
         "    FUNCTION FN_PREDICADO_RLS(p_schema IN VARCHAR2, p_object IN VARCHAR2) RETURN VARCHAR2;",
         f"END PKG_SECURITY_{projeto};",
         "/",
         "",
         f"CREATE OR REPLACE PACKAGE BODY {schema}.PKG_SECURITY_{projeto} AS",
-        "    PROCEDURE PRC_SET_CONTEXTO(p_valor_filtro IN VARCHAR2, p_acesso_total IN VARCHAR2 DEFAULT 'N') IS",
+        "    FUNCTION FN_USUARIO_EFETIVO RETURN VARCHAR2 IS",
+        "        v_sessao  VARCHAR2(128) := SYS_CONTEXT('USERENV', 'SESSION_USER');",
+        "        v_cliente VARCHAR2(128) := SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER');",
+        "        v_qtd     NUMBER;",
         "    BEGIN",
-        f"        DBMS_SESSION.SET_CONTEXT('CTX_{projeto}_RLS', 'VALOR_FILTRO', p_valor_filtro);",
-        f"        DBMS_SESSION.SET_CONTEXT('CTX_{projeto}_RLS', 'ACESSO_TOTAL', UPPER(NVL(p_acesso_total, 'N')));",
-        "    END PRC_SET_CONTEXTO;",
+        "        IF v_cliente IS NOT NULL THEN",
+        f"            SELECT COUNT(1) INTO v_qtd FROM {schema}.RLS_CONTAS_SERVICO WHERE USUARIO_ORACLE = v_sessao;",
+        "            IF v_qtd > 0 THEN",
+        "                RETURN UPPER(v_cliente);",
+        "            END IF;",
+        "        END IF;",
+        "        RETURN v_sessao;",
+        "    END FN_USUARIO_EFETIVO;",
         "",
         "    FUNCTION FN_PREDICADO_RLS(p_schema IN VARCHAR2, p_object IN VARCHAR2) RETURN VARCHAR2 IS",
-        "        v_acesso_total VARCHAR2(10);",
-        "        v_valor_filtro VARCHAR2(4000);",
+        "        v_usuario      VARCHAR2(128) := FN_USUARIO_EFETIVO;",
+        "        v_acesso_total CHAR(1);",
         "    BEGIN",
-        f"        v_acesso_total := SYS_CONTEXT('CTX_{projeto}_RLS', 'ACESSO_TOTAL');",
-        f"        v_valor_filtro := SYS_CONTEXT('CTX_{projeto}_RLS', 'VALOR_FILTRO');",
+        "        SELECT NVL(MAX(IND_ACESSO_TOTAL), 'N') INTO v_acesso_total",
+        f"          FROM {schema}.USUARIO_SEGMENTOS",
+        f"         WHERE USUARIO_ORACLE = v_usuario AND PROJETO IN ('GLOBAL', '{projeto}');",
         "        IF v_acesso_total = 'S' THEN",
         "            RETURN '1 = 1';",
-        "        ELSIF v_valor_filtro IS NOT NULL THEN",
-        f"            RETURN '{col_segregacao} IN (' || v_valor_filtro || ', -1)';",
-        "        ELSE",
-        "            -- Fail-Closed: sem contexto inicializado, bloqueia retorno de linhas sensíveis",
-        "            RETURN '1 = 0';",
         "        END IF;",
+        "        -- Subconsulta em vez de lista concatenada: sem limite de 4000 bytes e sem injeção.",
+        f"        RETURN '{col_segregacao} = -1 OR TO_CHAR({col_segregacao}) IN (SELECT u.SEGMENTO FROM {schema}.USUARIO_SEGMENTOS u'",
+        f"            || ' WHERE u.PROJETO IN (''GLOBAL'', ''{projeto}'') AND u.USUARIO_ORACLE = '",
+        "            || DBMS_ASSERT.ENQUOTE_LITERAL(v_usuario) || ')';",
+        "    EXCEPTION",
+        "        WHEN OTHERS THEN",
+        "            RETURN '1 = 0';  -- Fail-closed",
         "    END FN_PREDICADO_RLS;",
         f"END PKG_SECURITY_{projeto};",
         "/",
+        "",
+        "-- Cadastro das contas de serviço do BI/IA (ajuste antes de executar):",
+        f"-- INSERT INTO {schema}.RLS_CONTAS_SERVICO (USUARIO_ORACLE, DES_FINALIDADE) VALUES ('SVC_POWERBI', 'Pool do gateway Power BI');",
         "",
     ]
 
@@ -927,6 +1131,7 @@ def construir_script_rls(
                 f"        function_schema => '{schema}',",
                 f"        policy_function => 'PKG_SECURITY_{projeto}.FN_PREDICADO_RLS',",
                 "        statement_types => 'SELECT',",
+                "        policy_type     => DBMS_RLS.DYNAMIC,  -- reavalia a cada execução (pool troca de usuário)",
                 "        enable          => TRUE",
                 "    );",
                 "END;",

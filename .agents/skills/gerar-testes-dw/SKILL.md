@@ -9,7 +9,7 @@ Gera a suíte SQL de auditoria de integridade pós-carga adaptada às tabelas do
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-testes-dw (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-testes-dw (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-testes-dw

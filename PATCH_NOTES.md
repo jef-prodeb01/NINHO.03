@@ -1,13 +1,13 @@
 # 📰 Histórico de Versões e Novidades (Patch Notes) — Plataforma NINHO
 
-> **Versão Atual:** `v0.11.1` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `27/10/2026` | **Status da Suíte de Testes:** `✅ 17/17 Aprovados (E2E)`
+> **Versão Atual:** `v0.13.1` *(Pré-Lançamento / Release Candidate)* | **Última Atualização:** `28/10/2026` | **Status da Suíte de Testes:** `✅ E2E (18/18 em sandbox) + pytest (14/14) + ruff no CI`
 
 Bem-vindo à página oficial de **Patch Notes** do **NINHO**!
-Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.11.1`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
+Esta página foi escrita para ser **simples, direta e amigável para pessoas lerem** — seja você Engenheiro de Dados, DBA, Analista de BI ou Gestor. Aqui você acompanha tudo o que evoluiu na plataforma desde os primeiros testes (`v0.1.0`) até o estágio atual (`v0.13.1`), quais ferramentas novas entraram e quais dores de cabeça do dia a dia (erros de banco, travamentos no ODI/Hop ou retrabalho no Power BI) já foram resolvidas.
 
 ---
 
-## 🗺️ Resumo Rápido das Versões (`v0.1.0` $\rightarrow$ `v0.11.1`)
+## 🗺️ Resumo Rápido das Versões (`v0.1.0` → `v0.13.1`)
 
 > 🎯 **Quando chegaremos na Versão `1.0.0`?**
 > Os módulos de **Planejamento de Data Warehouse (Oracle + ODI 12c + Hop + BI)** e **Camada Semântica (`VW_*` + `META_*`)** já foram colocados à prova e aprimorados com projetos reais de ponta a ponta. A versão **`v1.0.0`** será oficializada quando o **Módulo de Governança de Dados (MongoDB PRODEB + AWS SageMaker Catalog)** passar pelo teste prático completo e for formalmente aprovado.
@@ -15,8 +15,11 @@ Esta página foi escrita para ser **simples, direta e amigável para pessoas ler
 | Versão | Data | Destaque Principal (Em uma frase) |
 | :---: | :---: | :--- |
 | 🎯 **`v1.0.0`** *(Planejada)* | *Em breve* | **Marco Oficial 1.0:** Homologação prática e aprovação final do Módulo de Governança de Dados (MongoDB + AWS SageMaker Catalog) em projeto real. |
-| **[`v0.11.1`](#-versão-0111--27102026-versão-atual)** | `27/10/2026` | **Correção de Convenções no Simulador e Validador:** Adequação 100% do modo Simulador às convenções `CONVENCOES_DW.md` (`DIMENSION_KEY`, `SIN_ATIVO`, `DIM_TEMPO` 24 colunas, FKs `DIM_<ENTIDADE>`, `<PROJETO>_DATA`, `DES_STATUS_REGISTRO` em `ODI_DIM_*`) e remoção do bypass em `validar_entrega.py`. |
-| **[`v0.11.0`](#-versão-0110--27102026)** | `27/10/2026` | **Comandos de Execução Direta & Governança Modular:** Inclusão dos comandos `/executar-dw`, `/executar-semantica`, `/executar-projeto` e `/executar-governanca` (geração direta sem exigir simulação) e arquitetura modular de Governança em 5 etapas com script orquestrador. |
+| **[`v0.13.1`](#-versão-0131--28102026-versão-atual)** | `28/10/2026` | **Pureza Estrita das Tabelas Fato (`FATO_*`):** Adequação das tabelas Fato para conterem estritamente chaves de dimensão (`DIM_*`, `SK_*`, `DIMENSION_KEY`) e métricas numéricas (`VAL_*`, `QTD_*` etc.), proibindo colunas de texto (`VARCHAR2`) ou datas brutas (`DATE`) nas Fatos na Demonstração (`/demo`), no Simulador (`/simular-dw`) e na Execução Direta (`/executar-dw`). |
+| **[`v0.13.0`](#-versão-0130--27102026)** | `27/10/2026` | **Fase 3 — Perguntas de Negócio, MCP e Ferramentas DBA:** catálogo com no mínimo 30 perguntas da IA (com SQL) + perguntas do cliente, servidor MCP, `/comparar-modelo`, `/estimar-volumetria`, `/inspecionar-banco` e `/simular-governanca`. |
+| **[`v0.12.0`](#-versão-0120--27102026)** | `27/10/2026` | **Esteira de Governança Real, Testes Seguros & Fundação de Engenharia:** `/executar-governanca` passa a gerar de fato a matriz LGPD (4 níveis), os scripts MongoDB PRODEB (01 a 08) e o catálogo AWS Glue/SageMaker; `/testar-ninho` roda em sandbox sem apagar seus arquivos; `pytest`, `ruff` e CI. |
+| **[`v0.11.1`](#-versão-0111--27102026)** | `27/10/2026` | **Correção de Convenções no Simulador e Validador:** Adequação 100% do modo Simulador às convenções `CONVENCOES_DW.md` (`DIMENSION_KEY`, `SIN_ATIVO`, `DIM_TEMPO` 24 colunas, FKs `DIM_<ENTIDADE>`, `<PROJETO>_DATA`, `DES_STATUS_REGISTRO` em `ODI_DIM_*`) e remoção do bypass em `validar_entrega.py`. |
+| **[`v0.11.0`](#-versão-0110--27102026)** | `27/10/2026` | **Comandos de Execução Direta & Governança Modular:** Inclusão dos comandos `/executar-dw`, `/executar-semantica`, `/executar-projeto` e `/executar-governanca` (geração direta sem exigir simulação) e protótipo de Governança em 5 etapas validado fora do repositório (incorporado à plataforma na `v0.12.0`). |
 | **[`v0.10.0`](#-versão-0100--26102026)** | `26/10/2026` | **Suíte Visual, Documentos Office/PDF Nativos, Scanner PII (`*Craft`), 5 Motores Apache Hop & Prova Real Pós-Carga:** Mockup BI (`SVG` + *Dev Mode Redlines* + `PNG 2x`), diagramas Star Schema/ODI/Hop Canvas, gerador `.xlsx`/`.pptx`/`.docx`/`.pdf`, leitura `.ods`/`.pdf`/`.docx`/`.odt`, scanner LGPD em linhas, `hop-lint`, migrador Kettle, `THREAT_MODEL.md`, `OraBulkLoader` e `/validar-medidas-bi`. |
 | **[`v0.9.0`](#-versão-090--23102026)** | `23/10/2026` | **Padrão Ouro de Produção (ODI 12c, DBA Oracle & BI):** Guias do ODI no padrão *Dimension Pattern* passo a passo, Guia do Analista de BI completo (com medidas SCD2 e wireframe de 4 páginas), controle `ETA_ETAPAS_CARGA` e trava contra erros de nomes longos e índices no Oracle. |
 | **[`v0.8.0`](#-versão-080--22102026)** | `22/10/2026` | **Integrações Reais de Campo:** Leitura de DDLs exportados em `.csv` (DBeaver/SQL Developer), suporte a Materialized Views (`MVW_*`), múltiplas datas na mesma Fato (*Role-Playing*) e leitura de planilhas `.xlsx` de indicadores para o Power BI. |
@@ -29,7 +32,96 @@ Esta página foi escrita para ser **simples, direta e amigável para pessoas ler
 
 ---
 
-## 🛠️ Versão `0.11.1` — `27/10/2026` *(Versão Atual)*
+## 🔧 Versão `0.13.1` — `28/10/2026` *(Versão Atual)*
+
+### 🎯 Em poucas palavras
+As tabelas Fato (`FATO_*`) passam a obedecer à **Regra de Pureza Estrita**: toda `FATO_*` contém **exclusivamente** as chaves das dimensões (`DIM_<ENTIDADE>`, `DIM_TEMPO`, `SK_*`, `DIMENSION_KEY`) e as **métricas numéricas** (`VAL_*`, `QTD_*` etc.), sem colunas de texto (`VARCHAR2`/`CHAR`) nem datas brutas (`DATE`) na Fato.
+
+### 🐛 Correções e Ajustes de Processo
+* **Pureza Estrita das Tabelas Fato (`FATO_*`):**
+  * **Motor de Conversão OLTP $\rightarrow$ Star Schema (`simular_projeto.py`):** Colunas textuais (`VARCHAR2`, `CHAR`, `CLOB`), datas brutas (`DATE`) e códigos não-métricos deixam de entrar na `FATO_*` (permanecendo apenas na `STG_*` para join de carga e nas respectivas `DIM_*`).
+  * **Staging (`02_create_stg_tables.sql`) & Carga ODI (`04_select_odi_fato.sql`):** A `STG_*` preserva a coluna de data da origem (ex: `DTC_ASSINATURA DATE`) para resolver `TRUNC(S.DTC_ASSINATURA) = D3.DTC_COMPLETA` e gravar apenas `DIM_TEMPO NUMBER(38,0) NOT NULL` na Fato.
+  * **Particionamento e Eixo Temporal Semântico (`DIM_TEMPO`):** O recomendador de particionamento (`PARTITION BY RANGE (DIM_TEMPO) INTERVAL (100)`) e o gerador de perguntas de negócio da IA (`META_CONSULTA_NEGOCIO`) operam nativamente sobre a chave `DIM_TEMPO` (`YYYYMMDD`).
+  * **Validador de Qualidade (`validar_entrega.py`):** Bloqueia qualquer `CREATE TABLE FATO_*` que contenha colunas `VARCHAR2`, `CHAR` ou `CLOB`.
+
+---
+
+## 🚀 Versão `0.13.0` — `27/10/2026`
+
+### 🎯 Em poucas palavras
+A Camada Semântica passa a entregar um catálogo de perguntas de negócio de verdade (mínimo de 30 propostas pela IA, todas com SQL, mais as perguntas do cliente), a Governança ganha simulação e teste ponta a ponta, e chegam as primeiras funcionalidades da Fase 3: servidor MCP e ferramentas de DBA.
+
+### ✨ Novidades
+* **Catálogo de perguntas de negócio (`META_CONSULTA_NEGOCIO`):**
+  * No mínimo **30 perguntas propostas pela IA** (não solicitadas pelo cliente), geradas do modelo real: Fatos, dimensões, métricas, data de negócio, situação e chave degenerada.
+  * 3 horizontes: **Executiva** (volume, tendência, MoM, YoY, totais, YTD, top 10, curva ABC), **Tática** (médias por dimensão, cruzamentos, cobertura sem eventos, sazonalidade, dia da semana, outliers, média móvel) e **Auditoria** (chave `-1`, métricas inválidas, data futura, frescor, duplicidade, conciliação KPI x Evento).
+  * Todo SQL usa só as views semânticas (`VW_EVENTO`, `VW_KPI`, `VW_DIM`), sem `SELECT *`.
+  * **Perguntas do cliente** da Seção 5.1 do `INTAKE_SEMANTICA.md` (e de `entrega/camada_semantica/perguntas_cliente.md`) entram sempre, com a pergunta da IA mais parecida indicada como ponto de partida do SQL.
+  * A Blueprint Semântica (Seção 6.2) lista o catálogo completo para o engenheiro desmarcar ou ajustar; a Seção 6.3 mostra as perguntas do cliente.
+* **`/simular-governanca`:** prévia do Gate 0.5 e da classificação LGPD sem gravar scripts MongoDB/AWS.
+* **Servidor MCP (`ninho_mcp_server.py` + `.mcp.json`):** todos os comandos do NINHO como ferramentas para Claude Code, Cursor, Antigravity e agentes internos.
+* **`/comparar-modelo`:** DW em produção x modelo novo, com ALTERs incrementais seguros (alargamentos ativos; estreitamentos, remoções e `NOT NULL` com backfill comentados).
+* **`/estimar-volumetria`:** tamanho de tabelas e índices, crescimento em 5 anos, recomendação de particionamento e script de tablespaces.
+* **`/inspecionar-banco`:** extrai o DDL real de um schema Oracle via `DBMS_METADATA` (com `oracledb`) ou gera o script de extração para o DBA.
+* **Suíte E2E T18:** esteira de Governança de ponta a ponta (simulação, MongoDB 01..08, AWS, pendências e devolução ao cliente).
+
+---
+
+## 🚀 Versão `0.12.0` — `27/10/2026`
+
+### 🎯 Em poucas palavras
+O módulo de Governança deixou de ser só auditoria: `/executar-governanca` agora entrega os artefatos que a documentação prometia. Ao mesmo tempo, a plataforma ganhou uma base de engenharia para crescer sem quebrar: testes que não apagam seus arquivos, testes unitários, lint e CI.
+
+### ✨ Novidades
+* **Esteira determinística de Governança (`gerar_artefatos_governanca.py`):**
+  * Reprovado no Gate 0.5 → grava `relatorio_devolucao_cliente_<ORGAO>.md` e para.
+  * Aprovado → `matriz_de_para_lgpd_<DATASET>.csv`, `relatorio_governanca_<DATASET>.md` e, conforme o Intake, `schemas_mongo/01..08` (coleções centrais extraídas das referências oficiais, documento do `tb_dataset`, coleção `trusted_*` com `$jsonSchema` estrito, barreira de quarentena e evento de auditoria) e `aws_sagemaker_catalog/` (Metadata Form, payload do ativo, tabela Glue e publicação `boto3` em dry-run).
+  * Nada é inventado: o que falta sai como `<INFORMAR: ...>`, aparece no relatório e é reprovado por `/validar-entrega saida`.
+* **Classificação LGPD em 4 níveis** (`PUBLICO`, `INTERNO`, `CONFIDENCIAL`, `RESTRITO`) com base legal e técnica de anonimização; o cliente nunca rebaixa um campo pessoal detectado.
+* **Cruzamento Dicionário x Amostras no Gate 0.5:** coluna não catalogada e PII encontrada em coluna declarada não sensível passam a bloquear e voltar ao cliente.
+* **`--json`** no `/inspecionar-governanca` e no `/executar-governanca`, para agentes e pipelines.
+* **`ninho_core`**: utilitários compartilhados (`console`, `paths`, `xml_seguro`).
+* **`/doctor`** checa Python, pacotes opcionais, skills instaladas e a proteção LGPD do `.gitignore`.
+* **Comando digitado errado** agora recebe sugestão (`Você quis dizer: /simular-dw?`).
+* **Testes unitários (`pytest`)**, **lint (`ruff`)**, `pyproject.toml`, `requirements*.txt`, `CONTRIBUTING.md` e CI para GitHub Actions e GitLab.
+
+### 🐛 Erros e Problemas Resolvidos
+* **`/testar-ninho` apagava os arquivos reais de `entrega/` e `saida/`.** Agora roda numa cópia temporária do projeto (`--sem-sandbox` mantém o modo antigo).
+* **Sem `openpyxl`, a planilha do cliente era reprovada** como se fosse culpa do órgão. Agora há leitor `.xlsx` nativo.
+* **Nomenclatura MongoDB fora da norma PRODEB:** documentos (CPF, CNPJ, matrícula, telefone…) saem com `num_` (antes `cod_`), identificadores com `ide_`, inteiros de 10+ dígitos como `long` e prefixos legados por extenso (`data_`, `valor_`…) não se repetem (`dtc_nascimento`, não `dtc_data_nascimento`).
+* **Dados de cliente podiam ir para o Git:** `entrega/` e `saida/` agora estão no `.gitignore`.
+* **Credenciais:** template do extrator API sem senha padrão; script FTPS usa `--netrc-file` em vez de senha na linha de comando.
+* **XML de terceiros** (ODI, Hop, PBIX, Office) lido com proteção contra expansão de entidades.
+* **Cores ANSI** (`[93m`) não poluem mais a saída no chat da IDE.
+* **Skills de comando** com instrução neutra de IDE (antes presas ao `run_command`).
+* **RLS/VPD gerado (`/gerar-rls`) reescrito por segurança:**
+  * antes, quem tinha `EXECUTE` no pacote podia se conceder acesso total (`PRC_SET_CONTEXTO(..., 'S')`) e o predicado concatenava o valor do contexto (injeção de SQL);
+  * agora a identidade é resolvida pelo banco: `CLIENT_IDENTIFIER` (pool do Power BI/IA) só vale para contas cadastradas em `RLS_CONTAS_SERVICO`; qualquer outra sessão usa `SESSION_USER`;
+  * predicado com subconsulta e `DBMS_ASSERT.ENQUOTE_LITERAL` (sem `LISTAGG`, sem limite de 4000 bytes / ORA-01489), política `DYNAMIC` e fail-closed em qualquer erro.
+* **Fatos do DW eram criadas sem nenhuma FK:** o patch considerava "já existentes" as FKs do DDL de origem, que o `CREATE TABLE` não declara. Agora todas saem como `ENABLE NOVALIDATE`, inclusive a de `DIM_TEMPO`.
+* **`VW_EVENTO`:** `IND_SITUACAO_EVENTO` era sempre `'REGULAR'` (`CASE WHEN 1 = 1`), e a pergunta-gabarito do Radar filtrava `'ATIVO'`, retornando sempre zero. Agora vem da coluna real de status da Fato (ou não é gerada).
+* **`VW_KPI`:** ganhou eixo temporal (mês da data de negócio ou `DIM_TEMPO`) e participação percentual por período; antes somava todos os anos numa linha só.
+* **Aliases de colunas** não são mais cortados às cegas em 30 caracteres (sem `_` no final e sem colisão).
+* **Parser da Blueprint** tolera edições manuais (crases opcionais, `||` em fórmulas SQL, `|` em comentários) e avisa quando ignora uma linha; antes a coluna sumia do DDL em silêncio.
+* **`--resetar` e `/limpar-demo` apagavam arquivos versionados** (`PROJETO_RESUMO.md`/`PROJETO_VERSION.md`); agora restauram o modelo em branco.
+* **Zip bomb:** leitura de `.xlsx`, `.ods`, `.docx`, `.odt` e `.pbix` com limite de descompactação.
+* **Templates duplicados unificados** (RLS, extrator API e `09_validacoes`), com teste que impede nova divergência. O extrator API passa a cumprir o contrato da skill (escrita atômica `.tmp`, `_REJEITADOS.csv`, linha `STATUS:SUCCESS`/`STATUS:ERROR` para o Hop).
+* **DDL de Fato** traz recomendação comentada de particionamento mensal por intervalo e compressão (com as exigências de licença).
+
+### 🧱 Engenharia
+* **Golden files** (`tests/golden/`): 22 scripts SQL de referência congelados; qualquer mudança no SQL gerado aparece como diff.
+* **Desmembramento dos arquivos gigantes (Fase 2), sem alterar nenhum SQL gerado (golden files idênticos):**
+  * `gerador_artefatos_visuais.py`: 4.777 → ~290 linhas. Novos módulos `ninho_core/`: `leitores`, `lgpd`, `visual_comum`, `pdf`, `prova_dax`, `mockup_bi`, `diagramas`, `office`.
+  * `melhorar_dw_existente.py`: 3.871 → ~600 linhas. Novos módulos: `dw_modelo`, `dw_patches`, `odi`, `guia_bi` (e o Fast-Track deixou de carregar o gerador visual inteiro).
+  * `auditar_esteira_hop.py`: 1.867 → ~1.050 linhas. Gerador de pacote e migrador Kettle em `ninho_core/hop_gerador.py`.
+  * Fachadas mantêm todos os imports antigos funcionando; `tests/test_arquitetura.py` impede que `ninho_core` dependa dos scripts e que os arquivos desmembrados voltem a crescer.
+* **35 blocos `except: pass` silenciosos** passaram a registrar a exceção em log de depuração (`NINHO_LOG_LEVEL=DEBUG`), sem mudar o comportamento padrão.
+* **`/testar-ninho`** roda todas as baterias e mostra o placar completo (`--parar-no-erro` para o modo antigo).
+* **Radar da Governança** sugere conceitos canônicos `CNC_*`/`DOM_*` para `tb_sem_conceitos`.
+
+---
+
+## 🛠️ Versão `0.11.1` — `27/10/2026`
 
 ### 🎯 Em poucas palavras
 Esta atualização resolve os desvios de convenção identificados durante testes de validação no **Modo Simulador (`simular_projeto.py`)** e remove a trava de exceção que existia no validador (`validar_entrega.py`), garantindo que 100% dos artefatos gerados (seja por simulação ou por execução direta) sigam rigorosamente o padrão corporativo de [`CONVENCOES_DW.md`](core/convencoes/CONVENCOES_DW.md).
@@ -64,8 +156,9 @@ Esta atualização adiciona os **comandos de Execução Direta / Normal** (para 
   * **`/executar-semantica`** *(aliases: `/gerar-semantica`, `/iniciar-semantica`)*: Gera diretamente as 3 camadas de Views (`VW_DIM`, `VW_EVENTO`, `VW_KPI`), as 8 tabelas `META_*` e RLS em `saida/camada_semantica/` (`--modulo semantica --acao direto`).
   * **`/executar-projeto`** *(aliases: `/gerar-projeto`, `/construir-projeto`)*: Constrói **DW + Camada Semântica** de ponta a ponta em 1 único comando (`--modulo ambos --acao direto`).
   * **`/executar-governanca`** *(aliases: `/gerar-governanca`, `/iniciar-governanca`)*: Executa diretamente o Gate 0.5 e a esteira de Governança Corporativa.
-* **Arquitetura Modular de Governança de Dados em 5 Etapas (`Ideias/bagov_identidade/`):**
-  * Divisão do pipeline de extração, higienização LGPD, geração das 5 coleções MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`, `tb_quarentena`) e carga condicional (`OFFLINE_JSON` vs `MONGO_DIRETO`) em 5 módulos independentes coordenados por um único `orquestrador_governanca_bagov.py` (com suporte a `--apenas-etapa`).
+* **Protótipo de Governança de Dados em 5 Etapas (piloto de identidade, fora do repositório):**
+  * Validou em projeto piloto a divisão em extração, higienização LGPD, geração das coleções MongoDB padrão PRODEB (`tb_dataset`, `tb_sem_dominios`, `tb_sem_conceitos`, `tb_auditoria_eventos`, `tb_quarentena`) e carga condicional (`OFFLINE_JSON` vs `MONGO_DIRETO`).
+  * > **Nota de correção (v0.12.0):** esse protótipo ficava na pasta local `ideias/` (não versionada) e nunca fez parte do repositório. A esteira oficial e versionada é `core/scripts_comuns/gerar_artefatos_governanca.py` (`/executar-governanca`), entregue na `v0.12.0`.
 
 ---
 

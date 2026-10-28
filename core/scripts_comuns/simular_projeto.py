@@ -20,6 +20,10 @@ Fluxo de Trabalho:
   4. `status`   : Exibe o estado atual das Blueprints de Simulação (Pendente/Aprovada).
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.simular_projeto")
+
 import argparse
 import re
 import shutil
@@ -30,13 +34,14 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (simular_projeto.py:33): %r", _exc)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from ninho_core.console import print_warn  # noqa: E402
 from melhorar_dw_existente import (
     _fato_possui_sk_propria,
     _obter_nk_dim,
@@ -60,7 +65,6 @@ from melhorar_dw_existente import (
     gerar_comentario_tabela,
     identificar_fks_fato,
     parse_ddl_text,
-    validar_tamanho_identificador_odi,
 )
 
 try:
@@ -75,6 +79,7 @@ from modular_semantica import (
     construir_script_validacoes_semantica,
     construir_views_dim_atuais,
     construir_views_eventos,
+    construir_perguntas_negocio,
     construir_views_kpis,
     localizar_ddls_para_semantica,
 )
@@ -384,6 +389,9 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
         })
 
     # 2ª Passada: Converte todas as Tabelas Fato OLTP (FATO_*) com FKs no padrão DIM_<ENTIDADE> + DIM_TEMPO
+    # REGRA DE OURO 3 (Pureza Estrita das Fatos): FATO_* deve conter APENAS
+    # chaves de dimensão (DIM_*, SK_*, DIMENSION_KEY) e métricas numéricas (VAL_*, QTD_*, etc.).
+    # É proibido incluir colunas de texto (VARCHAR2, CHAR, CLOB) ou datas brutas (DATE) na Fato.
     for t in tabelas_oltp:
         t_nome = t["nome_tabela"].upper()
         papel = classif.get(t_nome, "DIM")
@@ -393,6 +401,8 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
         fato_name = abreviar_identificador_odi("FATO", raw_name, max_len=26)
         fks_orig_por_col = {fk["coluna"].upper(): fk for fk in t.get("fks", [])}
         pks_fato_orig = {p.upper() for p in t.get("pks", [])}
+        _, cols_metricas_fato = _avaliar_metricas_tabela(t["colunas"])
+        metricas_set = set(cols_metricas_fato)
 
         cols_fato = []
         fks_novas = []
@@ -427,8 +437,25 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
                     "tabela_ref": dim_ref,
                     "coluna_ref": "DIMENSION_KEY",
                 })
-            else:
+            elif c_up.startswith(("DIM_", "SK_")) or c_up == "DIMENSION_KEY":
                 cols_fato.append(dict(c))
+            else:
+                tipo_c = (c.get("tipo_oracle") or c.get("tipo_origem") or "").upper()
+                eh_texto_ou_data = any(
+                    tp in tipo_c for tp in ("VARCHAR", "CHAR", "CLOB", "TEXT", "NVARCHAR", "NCHAR", "DATE", "TIMESTAMP")
+                )
+                eh_metrica = (
+                    not eh_texto_ou_data
+                    and (
+                        c_up in metricas_set
+                        or c_up.startswith((
+                            "VAL_", "VLR_", "QTD_", "QT_", "PCT_", "PER_", "MED_",
+                            "TOT_", "SOM_", "IND_", "DUR_", "DIAS_", "NUM_DIAS_", "TMP_", "DURACAO_",
+                        ))
+                    )
+                )
+                if eh_metrica:
+                    cols_fato.append(dict(c))
 
         if not any(x["nome_dw"].upper() in ("DIM_TEMPO", "SK_TEMPO") for x in cols_fato):
             col_data_orig = next(
@@ -455,10 +482,14 @@ def _converter_oltp_para_dw_se_necessario(tabelas_brutas: list[dict]) -> list[di
                 "coluna_ref": "DIMENSION_KEY",
             })
 
+        nomes_cols_fato = {c["nome_dw"].upper() for c in cols_fato}
         pks_fato_finais = [
-            mapa_nk_para_dim.get(p.upper(), p) if (p.upper() in dims_ja_fk) else p
+            mapa_nk_para_dim.get(p.upper(), p)
             for p in t.get("pks", [])
+            if mapa_nk_para_dim.get(p.upper(), p).upper() in nomes_cols_fato
         ]
+        if not pks_fato_finais:
+            pks_fato_finais = [fk["coluna"] for fk in fks_novas]
 
         resultado_dw.append({
             "arquivo": t.get("arquivo", "simulacao.sql"),
@@ -575,7 +606,7 @@ def gerar_blueprint_simulacao_dw(
             "",
             f"- **Tabela Origem:** `{torig}`",
             f"- **Tabela Destino:** `{tname}`",
-            f"- **Papel Dimensional:** `DIMENSAO`",
+            "- **Papel Dimensional:** `DIMENSAO`",
             f"- **Chave Surrogate (SK):** `{sk}` | **Chave Natural (NK):** `{nk}`",
             f"- **Descrição da Tabela:** `{desc_tab}`",
             "",
@@ -624,7 +655,7 @@ def gerar_blueprint_simulacao_dw(
             "",
             f"- **Tabela Origem:** `{forig}`",
             f"- **Tabela Destino:** `{fname}`",
-            f"- **Papel Dimensional:** `FATO`",
+            "- **Papel Dimensional:** `FATO`",
             f"- **Grão Declarado:** `Uma linha por evento/registro individual de {fname} associado às chaves {', '.join(sorted(fks_cols)) or 'de negócio'}.`",
             f"- **Descrição da Tabela:** `{desc_tab}`",
             "",
@@ -814,7 +845,7 @@ def gerar_blueprint_simulacao_semantica(
         vw_ev = f"VW_{projeto}_EVENTO_{ent}"
         vw_kpi = f"VW_{projeto}_KPI_{ent}"
         linhas.append(
-            f"| [x] | `CAMADA_2_EVENTO` | `{vw_ev}` | `{f['nome_tabela']}` | Uma linha representa um evento individual de {ent} enriquecido | `LEFT JOIN` Dimensões + `NVL` + `IND_SITUACAO_EVENTO` |"
+            f"| [x] | `CAMADA_2_EVENTO` | `{vw_ev}` | `{f['nome_tabela']}` | Uma linha representa um evento individual de {ent} enriquecido | `LEFT JOIN` Dimensões + `NVL` + `IND_SITUACAO_EVENTO` (se a Fato tiver coluna de status) |"
         )
         linhas.append(
             f"| [x] | `CAMADA_3_KPI` | `{vw_kpi}` | `{vw_ev}` | Uma linha representa o consolidado de KPIs de {ent} por eixo | `COUNT(1)`, `SUM`, `AVG` e `NULLIF(..., 0)` |"
@@ -855,7 +886,7 @@ def gerar_blueprint_simulacao_semantica(
         "- [x] **RADAR_SEM_01 (Proteção Anti-Explosão Cartesiana SCD2):** Forçar nas orientações de IA (`META_ORIENTACAO_IA`) que agentes LLM utilizem exclusivamente `VW_*_DIM_*_ATUAL` quando o usuário não pedir evolução histórica.",
         "- [x] **RADAR_SEM_02 (Blindagem contra `ORA-01476` Divisão por Zero):** Envolver todos os denominadores de taxas e percentuais em `NULLIF(denominador, 0)`.",
         "- [x] **RADAR_SEM_03 (Isolamento Multi-Projeto via `MERGE INTO`):** Utilizar `MERGE INTO` com chave composta `(SGL_PROJETO, ...)` nas 8 tabelas `META_*`, garantindo convivência segura com outros projetos no mesmo schema.",
-        "- [x] **RADAR_SEM_04 (Política VPD Fail-Closed):** Configurar `PKG_SECURITY_*` para retornar predicado `'1 = 0'` caso o `SYS_CONTEXT` não tenha sido inicializado na sessão.",
+        "- [x] **RADAR_SEM_04 (Política VPD Fail-Closed):** Configurar `PKG_SECURITY_*` para retornar predicado `'1 = 0'` quando o usuário efetivo não tiver vínculo em `USUARIO_SEGMENTOS` (identidade do pool BI/IA via `CLIENT_IDENTIFIER` só para contas em `RLS_CONTAS_SERVICO`).",
         "",
         "### 6.1. Novos KPIs Executivos Sugeridos pelo Radar da IA",
         "",
@@ -889,22 +920,35 @@ def gerar_blueprint_simulacao_semantica(
         "",
         "### 6.2. Novas Perguntas de Negócio (Golden Queries) Sugeridas pelo Radar da IA",
         "",
-        "Marque `[x]` nas perguntas executivas abaixo para cadastrá-las em `06_meta_consulta_negocio.sql`:",
+        "Catálogo proposto pela IA a partir do modelo real (mínimo de 30 perguntas não solicitadas pelo cliente), "
+        "ordenado por horizonte: Executivas/Estratégicas, Táticas/Operacionais e Auditoria/Qualidade. "
+        "Desmarque `[ ]` o que não fizer sentido e ajuste o SQL livremente; só as marcadas `[x]` vão para `06_meta_consulta_negocio.sql`.",
         "",
-        "| Ativo | Código da Pergunta | Pergunta Executiva de Negócio | SQL de Referência (Golden Query) | View Recomendada |",
+        "| Ativo | Código da Pergunta | Pergunta de Negócio | SQL de Referência (Golden Query) | Objetos |",
         "| :---: | :--- | :--- | :--- | :--- |",
     ])
 
-    for idx_f, f in enumerate(fatos, start=1):
-        ent = _nome_entidade_curto(f["nome_tabela"])
-        vw_ev = f"VW_{projeto}_EVENTO_{ent}"
-        vw_kpi = f"VW_{projeto}_KPI_{ent}"
+    perguntas_ia, perguntas_cliente = construir_perguntas_negocio(tabelas, schema, projeto)
+    for p in perguntas_ia:
+        linhas.append(f"| [x] | `{p.id_consulta}` | {p.pergunta} | `{p.sql}` | `{p.objetos}` |")
+    if len(perguntas_ia) < 30:
+        linhas.append("")
         linhas.append(
-            f"| [x] | `PN_{projeto}_RAD_{idx_f:02d}A` | Quais grupos lideram o Top 5 de volume em {ent.title()} (Curva de Pareto)? | `SELECT * FROM {schema}.{vw_kpi} ORDER BY QTD_TOTAL_REGISTROS DESC FETCH FIRST 5 ROWS ONLY` | `{vw_kpi}` |"
+            f"> ⚠️ O modelo atual só permitiu {len(perguntas_ia)} perguntas automáticas (mínimo recomendado: 30). "
+            "Fatos sem data de negócio, métricas ou dimensões limitam o catálogo: revise o modelo ou complemente manualmente."
         )
-        linhas.append(
-            f"| [x] | `PN_{projeto}_RAD_{idx_f:02d}B` | Quantos eventos ativos existem detalhados em {ent.title()}? | `SELECT COUNT(1) AS QTD_ATIVOS FROM {schema}.{vw_ev} WHERE IND_SITUACAO_EVENTO = 'ATIVO'` | `{vw_ev}` |"
-        )
+
+    linhas.extend([
+        "",
+        "### 6.3. Perguntas do Cliente (requisitos — INTAKE_SEMANTICA.md Seção 5.1 e `entrega/camada_semantica/perguntas_cliente.md`)",
+        "",
+    ])
+    if perguntas_cliente:
+        linhas.append("Entram sempre em `06_meta_consulta_negocio.sql`; o SQL fica para validação do engenheiro (ponto de partida indicado).")
+        linhas.append("")
+        linhas.extend(f"- `{p.id_consulta}` — {p.pergunta} _({p.observacao})_" for p in perguntas_cliente)
+    else:
+        linhas.append("- Nenhuma pergunta do cliente encontrada nos requisitos.")
 
     linhas.extend([
         "",
@@ -945,8 +989,11 @@ def verificar_aprovacao_blueprint(caminho_bp: Path) -> tuple[bool, dict[str, str
     aprovado = bool(re.search(r"-\s*\[[xX]\]\s*\*\*SIMULAÇÃO 100% FECHADA E APROVADA", txt))
 
     parametros: dict[str, str] = {}
-    for m in re.finditer(r"^\|\s*`([^`]+)`\s*\|\s*`([^`]*)`\s*\|", txt, flags=re.MULTILINE):
-        parametros[m.group(1).strip()] = m.group(2).strip()
+    for linha in txt.splitlines():
+        celulas = celulas_linha_tabela(linha)
+        # Linha de parâmetro: `NOME_EM_MAIUSCULAS` | valor | ... (crases opcionais)
+        if celulas and len(celulas) >= 2 and re.fullmatch(r"[A-Z][A-Z0-9_]*", celulas[0]):
+            parametros[celulas[0]] = celulas[1]
 
     entregaveis_ativos: set[str] = set()
     for m in re.finditer(r"^-\s*\[([xX ])\]\s*`([^`]+)`\s*:", txt, flags=re.MULTILINE):
@@ -954,6 +1001,63 @@ def verificar_aprovacao_blueprint(caminho_bp: Path) -> tuple[bool, dict[str, str
             entregaveis_ativos.add(m.group(2).strip())
 
     return aprovado, parametros, entregaveis_ativos
+
+
+def celulas_linha_tabela(linha: str) -> list[str] | None:
+    """
+    Divide uma linha de tabela Markdown em células, tolerante a edições manuais:
+    crases opcionais, `|` dentro de `código` preservado (ex.: `A || B` em SQL) e `\\|` escapado.
+    Retorna None se a linha não for uma linha de tabela.
+    """
+    s = linha.strip()
+    if len(s) < 2 or not (s.startswith("|") and s.endswith("|")):
+        return None
+    celulas, atual, em_codigo, i = [], [], False, 0
+    corpo = s[1:-1]
+    while i < len(corpo):
+        ch = corpo[i]
+        if ch == "\\" and i + 1 < len(corpo) and corpo[i + 1] == "|":
+            atual.append("|")
+            i += 2
+            continue
+        if ch == "`":
+            em_codigo = not em_codigo
+        if ch == "|" and not em_codigo:
+            celulas.append("".join(atual))
+            atual = []
+        else:
+            atual.append(ch)
+        i += 1
+    celulas.append("".join(atual))
+    limpas = []
+    for c in celulas:
+        c = c.strip()
+        if len(c) >= 2 and c.startswith("`") and c.endswith("`") and c.count("`") == 2:
+            c = c[1:-1].strip()
+        limpas.append(c)
+    return limpas
+
+
+def linha_marcada_blueprint(linha: str, qtd_celulas: int, contexto: str) -> tuple[bool, list[str]] | None:
+    """
+    Lê uma linha `| [x] | ... |` da Blueprint. Retorna (ativo, demais_células) ou None se não for
+    linha de dados. Linhas marcadas com quantidade errada de células geram AVISO (nunca somem em silêncio).
+    """
+    celulas = celulas_linha_tabela(linha)
+    if not celulas:
+        return None
+    m_chk = re.fullmatch(r"\[([xX ])\]", celulas[0])
+    if not m_chk:
+        return None
+    if len(celulas) > qtd_celulas:
+        # A última coluna é texto livre (comentário/regra): um `|` digitado nela não descarta a linha.
+        celulas = celulas[: qtd_celulas - 1] + [" | ".join(celulas[qtd_celulas - 1:])]
+    if len(celulas) < qtd_celulas:
+        print_warn(
+            f"Blueprint ({contexto}): linha ignorada por ter {len(celulas)} coluna(s) em vez de {qtd_celulas}: {linha.strip()[:120]}"
+        )
+        return None
+    return m_chk.group(1).upper() == "X", celulas[1:]
 
 
 def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
@@ -972,6 +1076,7 @@ def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
         "radar_ativos": {},
         "radar_kpis": [],
         "perguntas_radar": [],
+        "perguntas_definidas_bp": False,
     }
     if not caminho_bp.exists():
         return resultado
@@ -1000,22 +1105,18 @@ def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
         elif line.startswith("### 6.2"):
             secao = "6.2"
             continue
+        elif line.startswith("### 6.3"):
+            secao = "6.3"
+            continue
         elif line.startswith("## 7."):
             secao = "7"
             continue
 
         if secao == "4":
-            m_vw = re.match(
-                r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|$",
-                line,
-            )
-            if m_vw:
-                ativo = m_vw.group(1).upper() == "X"
-                camada_raw = m_vw.group(2).strip().upper()
-                nome_view = m_vw.group(3).strip().upper()
-                tabela_base = m_vw.group(4).strip().upper()
-                grao = m_vw.group(5).strip()
-                regra = m_vw.group(6).strip()
+            lida = linha_marcada_blueprint(line, 6, "Seção 4 — Views")
+            if lida:
+                ativo, (camada_raw, nome_view, tabela_base, grao, regra) = lida
+                camada_raw, nome_view, tabela_base = camada_raw.upper(), nome_view.upper(), tabela_base.upper()
 
                 if "DIM" in camada_raw:
                     camada_key = "DIM"
@@ -1044,19 +1145,17 @@ def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
                     resultado["views"][("KPI", evento_to_fato[tabela_base])] = cfg
 
         elif secao == "5":
-            m_met = re.match(
-                r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
-                line,
-            )
-            if m_met:
+            lida = linha_marcada_blueprint(line, 6, "Seção 5 — Métricas")
+            if lida:
                 resultado["metricas_definidas_bp"] = True
-                if m_met.group(1).upper() == "X":
+                ativo, (cod, nome, formula, view_rec, formato) = lida
+                if ativo:
                     resultado["metricas_ativas"].append({
-                        "cod_metrica": m_met.group(2).strip(),
-                        "nom_metrica": m_met.group(3).strip(),
-                        "formula_sql": m_met.group(4).strip(),
-                        "view_recomendada": m_met.group(5).strip().upper(),
-                        "tip_formato": m_met.group(6).strip().upper(),
+                        "cod_metrica": cod,
+                        "nom_metrica": nome,
+                        "formula_sql": formula,
+                        "view_recomendada": view_rec.upper(),
+                        "tip_formato": formato.upper(),
                     })
 
         elif secao in ("6", "6.1", "6.2"):
@@ -1066,29 +1165,27 @@ def parse_edicoes_blueprint_semantica(caminho_bp: Path) -> dict:
                 continue
 
             if secao == "6.1":
-                m_rkpi = re.match(
-                    r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
-                    line,
-                )
-                if m_rkpi and m_rkpi.group(1).upper() == "X":
+                lida = linha_marcada_blueprint(line, 6, "Seção 6.1 — KPIs do Radar")
+                if lida and lida[0]:
+                    cod, nome, formula, view_rec, formato = lida[1]
                     resultado["radar_kpis"].append({
-                        "cod_metrica": m_rkpi.group(2).strip(),
-                        "nom_metrica": m_rkpi.group(3).strip(),
-                        "formula_sql": m_rkpi.group(4).strip(),
-                        "view_recomendada": m_rkpi.group(5).strip().upper(),
-                        "tip_formato": m_rkpi.group(6).strip().upper(),
+                        "cod_metrica": cod,
+                        "nom_metrica": nome,
+                        "formula_sql": formula,
+                        "view_recomendada": view_rec.upper(),
+                        "tip_formato": formato.upper(),
                     })
             elif secao == "6.2":
-                m_rpn = re.match(
-                    r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|$",
-                    line,
-                )
-                if m_rpn and m_rpn.group(1).upper() == "X":
+                lida = linha_marcada_blueprint(line, 5, "Seção 6.2 — Perguntas do Radar")
+                if lida:
+                    resultado["perguntas_definidas_bp"] = True
+                if lida and lida[0]:
+                    cod, pergunta, sql_ref, view_rec = lida[1]
                     resultado["perguntas_radar"].append({
-                        "cod_pergunta": m_rpn.group(2).strip(),
-                        "des_pergunta": m_rpn.group(3).strip(),
-                        "sql_referencia": m_rpn.group(4).strip(),
-                        "view_recomendada": m_rpn.group(5).strip().upper(),
+                        "cod_pergunta": cod,
+                        "des_pergunta": pergunta,
+                        "sql_referencia": sql_ref,
+                        "view_recomendada": view_rec.upper(),
                     })
 
     return resultado
@@ -1119,32 +1216,28 @@ def parse_tabelas_editadas_blueprint_dw(caminho_bp: Path, tabelas_base: list[dic
 
         cols_editadas = []
         for line in corpo.splitlines():
-            line_s = line.strip()
-            m_row = re.match(
-                r"^\|\s*\[([xX ])\]\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*`([^`]+)`\s*\|\s*(.+?)\s*\|$",
-                line_s,
-            )
-            if m_row:
-                ativo = m_row.group(1).upper() == "X"
+            lida = linha_marcada_blueprint(line, 7, f"Seção 4 — Colunas de {tname}")
+            if lida:
+                ativo, (nome_original, nome_col_dw, tipo_col_ora, papel_s, transformacao, comentario) = lida
                 if not ativo:
                     continue
-                papel_s = m_row.group(5).strip().upper()
-                nome_col_dw = m_row.group(3).strip().upper()
-                tipo_col_ora = m_row.group(4).strip().upper()
+                papel_s = papel_s.upper()
+                nome_col_dw = nome_col_dw.upper()
+                tipo_col_ora = tipo_col_ora.upper()
                 is_not_null = papel_s in ("SK", "NK", "PK_DEGENERADA", "FK_DIMENSAO") or (
                     papel_s == "AUDITORIA_SCD2"
                     and nome_col_dw in ("SIN_ATIVO", "FLG_ATIVO", "DTC_EFETIVACAO", "DTC_INICIO", "DES_ATUALIZAR")
                 )
                 cols_editadas.append({
-                    "nome_original": m_row.group(2).strip(),
+                    "nome_original": nome_original,
                     "nome": nome_col_dw,
                     "nome_dw": nome_col_dw,
                     "tipo_origem": tipo_col_ora,
                     "tipo_sql": tipo_col_ora,
                     "tipo_oracle": tipo_col_ora,
                     "papel_scd": papel_s,
-                    "transformacao": m_row.group(6).strip(),
-                    "comentario": m_row.group(7).strip(),
+                    "transformacao": transformacao,
+                    "comentario": comentario,
                     "nullable": not is_not_null,
                     "obrigatorio": "NOT NULL" if is_not_null else "NULL",
                 })
@@ -1195,6 +1288,58 @@ def parse_tabelas_editadas_blueprint_dw(caminho_bp: Path, tabelas_base: list[dic
             })
 
     return tabelas_finais
+
+
+COLUNAS_DATA_TECNICAS_FATO = {"DTC_CARGA", "DTC_CARGA_DW", "DTC_EXTRACAO", "DTC_ATUALIZACAO", "DTC_INSERCAO"}
+
+
+def _recomendacao_particionamento_fato(fato: dict, schema_dw: str) -> list[str]:
+    """
+    Bloco comentado (não executa nada) com o particionamento mensal recomendado para a Fato,
+    usando a principal data de negócio NOT NULL ou a chave DIM_TEMPO (YYYYMMDD).
+    Fica como orientação para o DBA avaliar pelo volume.
+    """
+    datas = [
+        c for c in fato["colunas"]
+        if c["nome_dw"].upper().startswith(("DTC_", "DT_", "DAT_"))
+        and c["nome_dw"].upper() not in COLUNAS_DATA_TECNICAS_FATO
+        and str(c.get("tipo_oracle", "")).upper().startswith(("DATE", "TIMESTAMP"))
+    ]
+    tabela = f"{schema_dw}.{fato['nome_tabela']}"
+    if not datas:
+        col_tempo = next(
+            (c["nome_dw"] for c in fato["colunas"] if c["nome_dw"].upper() in ("DIM_TEMPO", "SK_TEMPO")),
+            None,
+        )
+        if not col_tempo:
+            return []
+        return [
+            "-- RECOMENDAÇÃO DBA (opcional, avaliar pelo volume — sugerido acima de ~20 milhões de linhas):",
+            f"-- particionamento por faixa numérica (YYYYMMDD) em {col_tempo} habilita partition pruning nas consultas por",
+            "-- período e troca de partição (Partition Exchange) na carga. Requer a opção Oracle Partitioning",
+            "-- (Enterprise Edition) e Oracle 12.2+ para a conversão ONLINE.",
+            f"-- ALTER TABLE {tabela} MODIFY",
+            f"--     PARTITION BY RANGE ({col_tempo}) INTERVAL (100)",
+            "--     (PARTITION P_INICIAL VALUES LESS THAN (20000101)) ONLINE;",
+            "-- Compressão: COMPRESS BASIC (cargas direct-path) ou ROW STORE COMPRESS ADVANCED (licença",
+            "-- Advanced Compression). COMPRESS FOR QUERY HIGH (HCC) só existe em Exadata/ZFS.",
+            "",
+        ]
+    obrigatorias = [c for c in datas if c.get("obrigatorio") in (True, "NOT NULL")]
+    coluna = (obrigatorias or datas)[0]["nome_dw"]
+    return [
+        "-- RECOMENDAÇÃO DBA (opcional, avaliar pelo volume — sugerido acima de ~20 milhões de linhas):",
+        f"-- particionamento mensal por intervalo em {coluna} habilita partition pruning nas consultas por",
+        "-- período e troca de partição (Partition Exchange) na carga. Requer a opção Oracle Partitioning",
+        "-- (Enterprise Edition) e Oracle 12.2+ para a conversão ONLINE. Partição inicial vazia evita erro de",
+        "-- inserção em datas antigas; ajuste a data-limite à menor data real da origem.",
+        f"-- ALTER TABLE {tabela} MODIFY",
+        f"--     PARTITION BY RANGE ({coluna}) INTERVAL (NUMTOYMINTERVAL(1, 'MONTH'))",
+        "--     (PARTITION P_INICIAL VALUES LESS THAN (DATE '2000-01-01')) ONLINE;",
+        "-- Compressão: COMPRESS BASIC (cargas direct-path) ou ROW STORE COMPRESS ADVANCED (licença",
+        "-- Advanced Compression). COMPRESS FOR QUERY HIGH (HCC) só existe em Exadata/ZFS.",
+        "",
+    ]
 
 
 def _gerar_scripts_ddl_completos_dw(
@@ -1269,12 +1414,13 @@ def _gerar_scripts_ddl_completos_dw(
             vistas_stg: set[str] = set()
             for c in t["colunas"]:
                 cn_dw = c["nome_dw"].upper()
+                corig = (c.get("nome_original") or cn_dw).strip().upper()
                 if (
-                    cn_dw in ("DIMENSION_KEY", "DIM_TEMPO", "SK_TEMPO", "DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO", "SIN_ATIVO", "DES_ATUALIZAR")
+                    cn_dw in ("DIMENSION_KEY", "DTC_INICIO", "DTC_EFETIVACAO", "DTC_EXPIRACAO", "FLG_ATIVO", "SIN_ATIVO", "DES_ATUALIZAR")
+                    or (cn_dw in ("DIM_TEMPO", "SK_TEMPO") and corig in ("", "DIM_TEMPO", "SK_TEMPO", "SEQUENCE", "SYSDATE", "SYSDATE/SCD2"))
                     or cn_dw.startswith("SK_")
                 ):
                     continue
-                corig = (c.get("nome_original") or cn_dw).strip().upper()
                 if cn_dw.startswith("DIM_") and corig and corig not in ("SEQUENCE", "SYSDATE", "SYSDATE/SCD2") and not corig.startswith("DIM_"):
                     col_stg_nome = corig
                     tipo_stg = re.sub(r"\s+DEFAULT\s+.+$", "", c.get("tipo_origem", "NUMBER(10)"), flags=re.IGNORECASE).strip()
@@ -1353,44 +1499,44 @@ def _gerar_scripts_ddl_completos_dw(
         if not any(d["nome_tabela"].upper() in ("DIM_TEMPO", "DIM_CALENDARIO", "DIM_DATA") for d in dims):
             if reusar_dim_tempo:
                 linhas_dim.extend([
-                    f"-- =============================================================================",
-                    f"-- REUSO CORPORATIVO DE DIM_TEMPO (REUSAR_DIM_TEMPO = SIM)",
+                    "-- =============================================================================",
+                    "-- REUSO CORPORATIVO DE DIM_TEMPO (REUSAR_DIM_TEMPO = SIM)",
                     f"-- A dimensão conformada {schema_dw}.DIM_TEMPO (DIMENSION_KEY / SK_TEMPO) já existe",
                     f"-- no schema corporativo {schema_dw} e é compartilhada por todos os projetos.",
-                    f"-- O DDL de CREATE TABLE DIM_TEMPO foi omitido intencionalmente para evitar ORA-00955.",
-                    f"-- =============================================================================",
+                    "-- O DDL de CREATE TABLE DIM_TEMPO foi omitido intencionalmente para evitar ORA-00955.",
+                    "-- =============================================================================",
                     "",
                 ])
             else:
                 linhas_dim.extend([
-                    f"-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO (CONVENCOES_DW.md Seção 3.4 - 24 colunas)",
-                    f"-- Surrogate Key Padrão: DIMENSION_KEY (compatível com SK_TEMPO no formato YYYYMMDD ou -1)",
+                    "-- Dimensão Conformada Padrão Corporativa: DIM_TEMPO (CONVENCOES_DW.md Seção 3.4 - 24 colunas)",
+                    "-- Surrogate Key Padrão: DIMENSION_KEY (compatível com SK_TEMPO no formato YYYYMMDD ou -1)",
                     f"CREATE TABLE {schema_dw}.DIM_TEMPO (",
-                    f"    DIMENSION_KEY          NUMBER(38,0)       NOT NULL,",
-                    f"    DTC_COMPLETA           DATE               NOT NULL,",
-                    f"    DES_DATA_DIA           VARCHAR2(10 CHAR)  NOT NULL,",
-                    f"    NUM_ANO                NUMBER(4,0)        NOT NULL,",
-                    f"    NUM_MES                NUMBER(2,0)        NOT NULL,",
-                    f"    NOM_MES                VARCHAR2(20 CHAR)  NOT NULL,",
-                    f"    SIG_MES                CHAR(3 CHAR)       NOT NULL,",
-                    f"    DES_ANO_MES            VARCHAR2(7 CHAR)   NOT NULL,",
-                    f"    NUM_ANO_MES            NUMBER(6,0)        NOT NULL,",
-                    f"    NUM_DIA                NUMBER(2,0)        NOT NULL,",
-                    f"    NUM_DIA_ANO            NUMBER(3,0)        NOT NULL,",
-                    f"    NUM_DIA_SEMANA         NUMBER(1,0)        NOT NULL,",
-                    f"    NOM_DIA_SEMANA         VARCHAR2(20 CHAR)  NOT NULL,",
-                    f"    SIG_DIA_SEMANA         CHAR(3 CHAR)       NOT NULL,",
-                    f"    NUM_SEMANA_ANO         NUMBER(2,0)        NOT NULL,",
-                    f"    NUM_SEMANA_MES         NUMBER(1,0)        NOT NULL,",
-                    f"    NUM_BIMESTRE           NUMBER(1,0)        NOT NULL,",
-                    f"    DES_BIMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
-                    f"    NUM_TRIMESTRE          NUMBER(1,0)        NOT NULL,",
-                    f"    DES_TRIMESTRE          VARCHAR2(15 CHAR)  NOT NULL,",
-                    f"    DES_ANO_TRIMESTRE      VARCHAR2(7 CHAR)   NOT NULL,",
-                    f"    NUM_SEMESTRE           NUMBER(1,0)        NOT NULL,",
-                    f"    DES_SEMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
-                    f"    FLG_FINAL_SEMANA       CHAR(1 CHAR)       DEFAULT 'N' NOT NULL,",
-                    f"    FLG_DIA_UTIL           CHAR(1 CHAR)       DEFAULT 'S' NOT NULL,",
+                    "    DIMENSION_KEY          NUMBER(38,0)       NOT NULL,",
+                    "    DTC_COMPLETA           DATE               NOT NULL,",
+                    "    DES_DATA_DIA           VARCHAR2(10 CHAR)  NOT NULL,",
+                    "    NUM_ANO                NUMBER(4,0)        NOT NULL,",
+                    "    NUM_MES                NUMBER(2,0)        NOT NULL,",
+                    "    NOM_MES                VARCHAR2(20 CHAR)  NOT NULL,",
+                    "    SIG_MES                CHAR(3 CHAR)       NOT NULL,",
+                    "    DES_ANO_MES            VARCHAR2(7 CHAR)   NOT NULL,",
+                    "    NUM_ANO_MES            NUMBER(6,0)        NOT NULL,",
+                    "    NUM_DIA                NUMBER(2,0)        NOT NULL,",
+                    "    NUM_DIA_ANO            NUMBER(3,0)        NOT NULL,",
+                    "    NUM_DIA_SEMANA         NUMBER(1,0)        NOT NULL,",
+                    "    NOM_DIA_SEMANA         VARCHAR2(20 CHAR)  NOT NULL,",
+                    "    SIG_DIA_SEMANA         CHAR(3 CHAR)       NOT NULL,",
+                    "    NUM_SEMANA_ANO         NUMBER(2,0)        NOT NULL,",
+                    "    NUM_SEMANA_MES         NUMBER(1,0)        NOT NULL,",
+                    "    NUM_BIMESTRE           NUMBER(1,0)        NOT NULL,",
+                    "    DES_BIMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
+                    "    NUM_TRIMESTRE          NUMBER(1,0)        NOT NULL,",
+                    "    DES_TRIMESTRE          VARCHAR2(15 CHAR)  NOT NULL,",
+                    "    DES_ANO_TRIMESTRE      VARCHAR2(7 CHAR)   NOT NULL,",
+                    "    NUM_SEMESTRE           NUMBER(1,0)        NOT NULL,",
+                    "    DES_SEMESTRE           VARCHAR2(15 CHAR)  NOT NULL,",
+                    "    FLG_FINAL_SEMANA       CHAR(1 CHAR)       DEFAULT 'N' NOT NULL,",
+                    "    FLG_DIA_UTIL           CHAR(1 CHAR)       DEFAULT 'S' NOT NULL,",
                     f"    CONSTRAINT PK_DIM_TEMPO PRIMARY KEY (DIMENSION_KEY) USING INDEX TABLESPACE {ts_idx}",
                     f") TABLESPACE {ts_dat};",
                     f"COMMENT ON TABLE {schema_dw}.DIM_TEMPO IS 'Dimensão conformada corporativa de calendário civil e fiscal. Uma linha representa um dia civil único no calendário (DIMENSION_KEY no formato YYYYMMDD ou -1).';",
@@ -1421,7 +1567,15 @@ def _gerar_scripts_ddl_completos_dw(
                 linhas_fato.append(f"    {c['nome_dw']} {c['tipo_oracle']}{nn}{virg}")
             linhas_fato.append(f") TABLESPACE {ts_dat};")
             linhas_fato.append("")
-        _, sql_aj_fato = construir_patches_ajustes_nao_destrutivos(dims, fatos, schema_dw)
+            linhas_fato.extend(_recomendacao_particionamento_fato(f, schema_dw))
+        # O CREATE TABLE acima não declara FKs: todas as inferidas devem sair no patch (ENABLE NOVALIDATE).
+        # Sem isso, FKs herdadas do DDL de origem eram tidas como "já existentes" e a Fato ficava sem integridade.
+        fatos_sem_fk_declarada = [{**f, "fks": []} for f in fatos]
+        dims_alvo_fk = list(dims)
+        if not any(d["nome_tabela"].upper() == "DIM_TEMPO" for d in dims):
+            # DIM_TEMPO é gerada em 03_create_dim_tables.sql (ou reutilizada do schema): a FK deve ser ativa.
+            dims_alvo_fk.append({"nome_tabela": "DIM_TEMPO", "pks": ["DIMENSION_KEY"], "colunas": [], "fks": []})
+        _, sql_aj_fato = construir_patches_ajustes_nao_destrutivos(dims_alvo_fk, fatos_sem_fk_declarada, schema_dw)
         sql_comm_fato, _, _ = construir_script_comentarios([(f, "FATO") for f in fatos], schema_dw, "TABELAS FATO (FATO_*)")
         linhas_fato.append(sql_aj_fato)
         linhas_fato.append("")

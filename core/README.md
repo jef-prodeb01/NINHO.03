@@ -23,5 +23,5 @@ Este diretório contém os padrões, convenções corporativas e componentes reu
   - `transicionar_dw_para_semantica.py`: Handoff automatizado do Planejador DW para a Camada Semântica.
   - `gerar_mock_dados.py`: Gerador dinâmico de dados sintéticos CSV para testes no Power BI (lê DDLs/Blueprints reais e injeta ~3% de chaves `-1`).
   - `gerenciar_projeto.py`: Exportação de pacotes `.zip` e limpeza segura do workspace (`--status`, `--exportar`, `--resetar`).
-  - `testar_ninho.py`: Suíte automatizada de testes End-to-End (E2E) com 9 baterias que validam todos os motores do NINHO e limpam o workspace (`/testar-ninho`).
+  - `testar_ninho.py`: Suíte automatizada de testes End-to-End (E2E) que valida todos os motores do NINHO numa cópia temporária do projeto, sem tocar nos seus arquivos de `entrega/` e `saida/` (`/testar-ninho`). Testes unitários rápidos ficam em `tests/` (`pytest`).
 

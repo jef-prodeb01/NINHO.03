@@ -9,7 +9,7 @@ Gera apenas índices de tuning (Bitmap/B-Tree) + procedures PRC_PRE_CARGA_FATO e
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-indices (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-indices (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-indices

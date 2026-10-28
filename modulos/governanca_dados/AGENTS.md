@@ -13,6 +13,7 @@ Você é o **Arquiteto de Governança de Dados, MongoDB Lakehouse e Catálogo Co
 
 - **`governanca-dados-corporativa`** (`.agents/skills/governanca-dados-corporativa/SKILL.md`): Skill principal contendo todas as referências oficiais de nomenclatura PRODEB, tipagem BSON, arquitetura das 5 coleções MongoDB, camada semântica (`tb_sem_dominios` / `tb_sem_conceitos`), matriz LGPD/LAI e integração com **Amazon SageMaker Catalog & AWS Glue**.
 - **`inspecionar_insumos_governanca.py`** (`core/scripts_comuns/inspecionar_insumos_governanca.py`): Auditor determinístico de planilhas Excel (`Dados - Insumos` e `Dicionário de Dados`) e arquivos `.csv` depositados em `entrega/governanca_dados/`. Detecta campos vazios, registros quebrados e omissões de LGPD, gerando a **Matriz DE/PARA MongoDB** e o **Relatório de Devolução ao Cliente** quando necessário.
+- **`gerar_artefatos_governanca.py`** (`/executar-governanca`): Esteira determinística completa — Gate 0.5 com cruzamento Dicionário x Amostras (colunas não catalogadas e PII em coluna declarada não sensível bloqueiam), classificação LGPD em 4 níveis, matriz DE/PARA `.csv`, scripts MongoDB (01 a 08) e artefatos AWS Glue/SageMaker, sempre condicionados ao Intake. Valores ausentes saem como `<INFORMAR: ...>` e são listados no relatório.
 - **`validador-qualidade-entrega`** (`core/scripts_comuns/validar_entrega.py`): Executa a verificação pré-voo (`validar_entrega.py governanca`) e auditoria pós-geração (`validar_entrega.py saida`).
 
 ---

@@ -14,6 +14,10 @@ Uso:
     python core/scripts_comuns/inspecionar_ddl_origem.py --saida saida/planejador_dw/09_relatorio_estrategias/MATRIZ_DE_PARA_ORIGEM.md
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.inspecionar_ddl_origem")
+
 import sys
 import re
 import argparse
@@ -23,19 +27,11 @@ from datetime import datetime
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (inspecionar_ddl_origem.py:26): %r", _exc)
 
-VERDE = "\033[92m"
-AMARELO = "\033[93m"
-VERMELHO = "\033[91m"
-CIANO = "\033[96m"
-NEGRITO = "\033[1m"
-RESET = "\033[0m"
-
-
-def get_base_dir() -> Path:
-    return Path(__file__).resolve().parent.parent.parent
+from ninho_core.console import VERDE, AMARELO, VERMELHO, CIANO, NEGRITO, RESET  # noqa: E402
+from ninho_core.paths import get_base_dir  # noqa: E402
 
 
 def mapear_tipo_oracle(tipo_origem: str) -> str:
@@ -86,14 +82,14 @@ def ler_texto_sql(caminho: Path) -> str:
     suf = p.suffix.lower()
     if suf == ".pdf":
         try:
-            from gerador_artefatos_visuais import extrair_texto_pdf_nativo
+            from ninho_core.leitores import extrair_texto_pdf_nativo
             res_pdf = extrair_texto_pdf_nativo(str(p))
             return res_pdf if isinstance(res_pdf, str) else ""
         except Exception:
             return ""
     if suf == ".ods":
         try:
-            from gerador_artefatos_visuais import ler_planilha_ods
+            from ninho_core.leitores import ler_planilha_ods
             rows_ods = ler_planilha_ods(str(p))
             linhas = []
             for row in rows_ods:
@@ -103,14 +99,14 @@ def ler_texto_sql(caminho: Path) -> str:
             return ""
     if suf == ".docx":
         try:
-            from gerador_artefatos_visuais import ler_documento_docx
+            from ninho_core.leitores import ler_documento_docx
             info = ler_documento_docx(str(p))
             return str(info.get("texto", ""))
         except Exception:
             return ""
     if suf == ".odt":
         try:
-            from gerador_artefatos_visuais import ler_documento_odt
+            from ninho_core.leitores import ler_documento_odt
             info = ler_documento_odt(str(p))
             return str(info.get("texto", ""))
         except Exception:
@@ -902,7 +898,7 @@ def main():
 
     if not alvos:
         print(f"  {AMARELO}[AVISO]{RESET} Nenhum arquivo DDL (.sql/.txt) encontrado em 'entrega/planejador_dw/ddl/' ou 'entrega/camada_semantica/ddl/'.")
-        print(f"  Deposite o DDL de origem ou informe '--caminho <arquivo.sql>'.\n")
+        print("  Deposite o DDL de origem ou informe '--caminho <arquivo.sql>'.\n")
         sys.exit(0)
 
     todas_tabelas = []

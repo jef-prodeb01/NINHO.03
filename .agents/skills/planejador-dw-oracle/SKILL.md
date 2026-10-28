@@ -62,7 +62,11 @@ Ao projetar a Fato, selecione a estratégia conforme o preenchimento do `INTAKE_
 ### Estratégia B: Incremental Idempotente via MERGE (Micro-lotes / Near Real-Time)
 - **Quando usar:** Cargas intra-dia, frequentes ou quando não é permitido truncar o histórico.
 - **Indexação:** **B-TREE INDEX EXCLUSIVO** nas FKs.
-- 🛑 **PROIBIÇÃO ABSOLUTA:** NUNCA crie Bitmap Index em tabelas carregadas via `MERGE` ou com concorrência DML — causa deadlocks `ORA-00060`.
+- **PROIBIÇÃO ABSOLUTA:** NUNCA crie Bitmap Index em tabelas carregadas via `MERGE` ou com concorrência DML — causa deadlocks `ORA-00060`.
+
+### Pureza Estrita das Tabelas Fato (`FATO_*` = Apenas Chaves de Dimensão + Métricas)
+- **Composição Obrigatória:** Toda tabela `FATO_*` deve conter **EXCLUSIVAMENTE** as chaves das dimensões (`DIM_<ENTIDADE> NUMBER(38,0) NOT NULL`, `DIM_TEMPO NUMBER(38,0) NOT NULL`, `SK_*`, `DIMENSION_KEY`) e as **métricas numéricas** (`VAL_*`, `VLR_*`, `QTD_*`, `QT_*`, `PCT_*`, `PER_*`, `MED_*`, `TOT_*`, `SOM_*`, `IND_*`, `DUR_*`, `DIAS_*`).
+- **Proibição de Texto nas Fatos:** É **estritamente proibido** incluir colunas de texto (`VARCHAR2`, `CHAR`, `CLOB`) ou datas brutas (`DATE`) nas tabelas `FATO_*`. Qualquer atributo descritivo, textual ou classificatório pertence às Dimensões (`DIM_*`), e datas de negócio na Fato devem ser convertidas em chave `DIM_TEMPO NUMBER(38,0) NOT NULL`. Essa regra se aplica obrigatoriamente ao `/demo`, ao `/simular-dw` e ao `/executar-dw`.
 
 ---
 

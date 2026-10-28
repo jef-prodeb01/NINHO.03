@@ -9,7 +9,7 @@ Consulta o Oráculo Arquitetural sobre conceitos do NINHO (estrategia-carga, scd
 
 ## Execução Determinística
 
-Ao receber o comando /duvida (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /duvida (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py duvida

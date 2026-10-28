@@ -1,15 +1,15 @@
 ---
 name: executar-governanca
-description: Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB padrão PRODEB + AWS SageMaker Catalog) em saida/governanca_dados/.
+description: Executa a esteira de Governança: Gate 0.5 (devolução ao cliente), matriz DE/PARA + LGPD em 4 níveis, scripts MongoDB PRODEB e catálogo AWS Glue/SageMaker em saida/governanca_dados/.
 ---
 
 # /executar-governanca
 
-Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB padrão PRODEB + AWS SageMaker Catalog) em saida/governanca_dados/.
+Executa a esteira de Governança: Gate 0.5 (devolução ao cliente), matriz DE/PARA + LGPD em 4 níveis, scripts MongoDB PRODEB e catálogo AWS Glue/SageMaker em saida/governanca_dados/.
 
 ## Execução Determinística
 
-Ao receber o comando /executar-governanca (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /executar-governanca (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py executar-governanca

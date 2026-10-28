@@ -9,7 +9,7 @@ Executa diretamente a geração completa do Data Warehouse (pastas 01 a 11 em sa
 
 ## Execução Determinística
 
-Ao receber o comando /executar-dw (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /executar-dw (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py executar-dw

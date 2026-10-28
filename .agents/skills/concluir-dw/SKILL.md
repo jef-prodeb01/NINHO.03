@@ -9,7 +9,7 @@ Faz o handoff automático dos DDLs e relatórios do Planejador de DW para entreg
 
 ## Execução Determinística
 
-Ao receber o comando /concluir-dw (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /concluir-dw (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py concluir-dw

@@ -9,7 +9,7 @@ Gera as tabelas auxiliares ODI_DIM_* e as consultas analíticas SQL (SCD2 e Fato
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-selects-odi (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-selects-odi (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-selects-odi

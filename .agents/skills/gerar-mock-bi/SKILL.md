@@ -9,7 +9,7 @@ Gera massa CSV sintética relacionalmente íntegra (~3% de chaves -1) para homol
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-mock-bi (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-mock-bi (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-mock-bi

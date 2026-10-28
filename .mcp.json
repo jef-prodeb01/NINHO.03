@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "ninho": {
+      "command": "python",
+      "args": ["ninho_mcp_server.py"]
+    }
+  }
+}

@@ -22,8 +22,11 @@ Uso:
     python core/scripts_comuns/transicionar_dw_para_semantica.py --projeto SEI_BAHIA --schema SEIMUNICIPIO_OLAP --forcar
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.transicionar_dw_para_semantica")
+
 import sys
-import os
 import re
 import shutil
 import argparse
@@ -34,40 +37,18 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (transicionar_dw_para_semantica.py:36): %r", _exc)
 
 # Cores ANSI para terminal
-VERDE = "\033[92m"
-AMARELO = "\033[93m"
-VERMELHO = "\033[91m"
-AZUL = "\033[94m"
-CIANO = "\033[96m"
-NEGRITO = "\033[1m"
-RESET = "\033[0m"
-
-
-def get_base_dir() -> Path:
-    """Retorna o diretório raiz do projeto."""
-    return Path(__file__).resolve().parent.parent.parent
+from ninho_core.console import VERDE, AZUL, CIANO, NEGRITO, RESET, print_ok, print_warn  # noqa: E402
+from ninho_core.paths import get_base_dir  # noqa: E402
 
 
 def print_banner(title: str):
     print(f"\n{CIANO}{NEGRITO}{'=' * 75}{RESET}")
     print(f"{CIANO}{NEGRITO}  🚀 NINHO PIPELINE — {title}{RESET}")
     print(f"{CIANO}{NEGRITO}{'=' * 75}{RESET}\n")
-
-
-def print_ok(msg: str):
-    print(f"  {VERDE}[OK]{RESET} {msg}")
-
-
-def print_warn(msg: str):
-    print(f"  {AMARELO}[AVISO]{RESET} {msg}")
-
-
-def print_err(msg: str):
-    print(f"  {VERMELHO}[ERRO]{RESET} {msg}")
 
 
 def extrair_metadados_intake_dw(base_dir: Path) -> dict:
@@ -209,8 +190,8 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
                     try:
                         sql_text = f.read_text(encoding="utf-8", errors="ignore")
                         conteudos_sql.append((f.name, sql_text))
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        _LOG.debug("Exceção tratada (transicionar_dw_para_semantica.py:189): %r", _exc)
 
     # Se nenhum arquivo específico foi encontrado nas subpastas, busca apenas DIM/FATO recursivamente
     if not arquivos_copiados and pasta_saida_dw.exists():
@@ -224,8 +205,8 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
                 try:
                     sql_text = f.read_text(encoding="utf-8", errors="ignore")
                     conteudos_sql.append((f.name, sql_text))
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    _LOG.debug("Exceção tratada (transicionar_dw_para_semantica.py:204): %r", _exc)
 
     # Se os arquivos de saida/planejador_dw/ forem apenas patches Fast-Track (sem CREATE TABLE),
     # inclui também os DDLs originais de entrega/planejador_dw/ddl/ (incluindo CSVs com DDL)
@@ -261,20 +242,20 @@ def copiar_ddls(base_dir: Path, projeto: str, pasta_saida_dw: Path) -> list:
     ddl_completo_path = dest_ddl / ddl_completo_nome
 
     with open(ddl_completo_path, "w", encoding="utf-8") as f_out:
-        f_out.write(f"-- =============================================================================\n")
-        f_out.write(f"-- NINHO DATA PLATFORM — DDL CONSOLIDADO DO DATA WAREHOUSE\n")
+        f_out.write("-- =============================================================================\n")
+        f_out.write("-- NINHO DATA PLATFORM — DDL CONSOLIDADO DO DATA WAREHOUSE\n")
         f_out.write(f"-- PROJETO: {projeto}\n")
         f_out.write(f"-- GERADO EM: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f_out.write(f"-- FINALIDADE: Insumo Oficial para Construção da Camada Semântica\n")
-        f_out.write(f"-- =============================================================================\n\n")
+        f_out.write("-- FINALIDADE: Insumo Oficial para Construção da Camada Semântica\n")
+        f_out.write("-- =============================================================================\n\n")
 
         vistos = set()
         for nome_arq, sql_txt in conteudos_sql:
             if nome_arq not in vistos:
                 vistos.add(nome_arq)
-                f_out.write(f"-- -----------------------------------------------------------------------------\n")
+                f_out.write("-- -----------------------------------------------------------------------------\n")
                 f_out.write(f"-- ARQUIVO DE ORIGEM: {nome_arq}\n")
-                f_out.write(f"-- -----------------------------------------------------------------------------\n\n")
+                f_out.write("-- -----------------------------------------------------------------------------\n\n")
                 f_out.write(sql_txt.strip())
                 f_out.write("\n\n")
 
@@ -587,7 +568,7 @@ def atualizar_documentacao_central(base_dir: Path, projeto: str, schema: str, en
     if not fatos:
         fatos = [f"FATO_{projeto}"]
     if not dimensoes:
-        dimensoes = [f"DIM_TEMPO", f"DIM_{projeto}"]
+        dimensoes = ["DIM_TEMPO", f"DIM_{projeto}"]
 
     # 1. Atualiza PROJETO_RESUMO.md
     linhas_fatos = "\n".join([f"| `{f}` | {meta_dw.get('grao_fato', 'Uma linha por evento')} | {meta_dw.get('estrategia_carga', 'Padrão DW')} | `saida/planejador_dw/04_fatos/` |" for f in fatos])
@@ -789,12 +770,12 @@ def main():
     print(f"{VERDE}{NEGRITO}{'=' * 75}{RESET}")
     print(f"\n{NEGRITO}Insumos Entregues à Camada Semântica:{RESET}")
     print(f"  • DDL Consolidado:       entrega/camada_semantica/ddl/DDL_COMPLETO_DW_{projeto}.sql")
-    print(f"  • Amostras de Dados:     entrega/camada_semantica/amostras/")
-    print(f"  • Relatórios ETL & BI:   entrega/camada_semantica/relatorios_etl/")
-    print(f"  • Formulário Pré-pago:   modulos/camada_semantica/INTAKE_SEMANTICA.md")
-    print(f"  • Catálogo Atualizado:   documentacao/catalogo_projetos/PROJETO_RESUMO.md")
+    print("  • Amostras de Dados:     entrega/camada_semantica/amostras/")
+    print("  • Relatórios ETL & BI:   entrega/camada_semantica/relatorios_etl/")
+    print("  • Formulário Pré-pago:   modulos/camada_semantica/INTAKE_SEMANTICA.md")
+    print("  • Catálogo Atualizado:   documentacao/catalogo_projetos/PROJETO_RESUMO.md")
     print(f"\n{CIANO}{NEGRITO}👉 PRÓXIMO PASSO NO CHAT:{RESET}")
-    print(f"   Envie para o agente a seguinte mensagem:")
+    print("   Envie para o agente a seguinte mensagem:")
     print(f"   {AZUL}{NEGRITO}/iniciar-semantica{RESET}  (ou 'Os insumos do DW estão prontos em entrega/camada_semantica/, inicie a Camada Semântica')")
     print(f"{CIANO}{NEGRITO}{'=' * 75}{RESET}\n")
 

@@ -1,15 +1,15 @@
 ---
 name: inspecionar-governanca
-description: Executa a auditoria do Gate 0.5 sobre planilhas .xlsx e amostras .csv de governança de dados.
+description: Audita (sem gerar nada) planilhas e amostras de governança: Gate 0.5, cruzamento dicionário x amostra e classificação LGPD. Aceita --json.
 ---
 
 # /inspecionar-governanca
 
-Executa a auditoria do Gate 0.5 sobre planilhas .xlsx e amostras .csv de governança de dados.
+Audita (sem gerar nada) planilhas e amostras de governança: Gate 0.5, cruzamento dicionário x amostra e classificação LGPD. Aceita --json.
 
 ## Execução Determinística
 
-Ao receber o comando /inspecionar-governanca (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /inspecionar-governanca (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py inspecionar-governanca

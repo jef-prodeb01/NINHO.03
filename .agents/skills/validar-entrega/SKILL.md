@@ -9,7 +9,7 @@ Executa a bateria de auditoria pré-voo dos insumos e validação pós-geração
 
 ## Execução Determinística
 
-Ao receber o comando /validar-entrega (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /validar-entrega (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py validar-entrega

@@ -9,7 +9,7 @@ Gera o Mockup Visual Full HD do Painel Power BI (mockup_painel_bi.svg, mockup_pa
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-mockup-bi (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-mockup-bi (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-mockup-bi

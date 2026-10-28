@@ -33,6 +33,7 @@ Exemplos de uso:
 ================================================================================
 """
 
+import difflib
 import subprocess
 import sys
 from pathlib import Path
@@ -83,7 +84,7 @@ DESCRICOES_SKILLS_SLASH: Dict[str, str] = {
     "gerar-dw": "Alias para /executar-dw: executa diretamente a construção completa do Data Warehouse em saida/planejador_dw/.",
     "executar-semantica": "Executa diretamente a geração completa da Camada Semântica (Views em 3 camadas, 8 tabelas META_* e RLS) em saida/camada_semantica/ sem exigir simulação.",
     "executar-projeto": "Executa diretamente a geração completa do Data Warehouse e da Camada Semântica de ponta a ponta em saida/ sem exigir simulação prévia.",
-    "executar-governanca": "Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB padrão PRODEB + AWS SageMaker Catalog) em saida/governanca_dados/.",
+    "executar-governanca": "Executa a esteira de Governança: Gate 0.5 (devolução ao cliente), matriz DE/PARA + LGPD em 4 níveis, scripts MongoDB PRODEB e catálogo AWS Glue/SageMaker em saida/governanca_dados/.",
     "melhorar-dw-existente": "Executa o Raio-X não-destrutivo de um DW já construído e gera patches de comentários, dicionário HTML, índices, linha -1 e constraints.",
     "gerar-guia-bi": "Gera o Guia Completo de Implementação no Power BI (Star Schema, DAX, Indicadores/Metas de planilhas .xlsx/.ods, Sync Slicers, Mockup SVG/HTML/PNG 2x, Apresentação .pptx e Word .docx).",
     "gerar-mockup-bi": "Gera o Mockup Visual Full HD do Painel Power BI (mockup_painel_bi.svg, mockup_painel_bi_devmode.svg com Redlines DAX ①..⑦ e preview_painel_bi.html com exportação PNG 2x).",
@@ -111,9 +112,13 @@ DESCRICOES_SKILLS_SLASH: Dict[str, str] = {
     "auditar-hop": "Audita projetos Apache Hop 2.x (.hpl, .hwf, .json) e extratores Python/FTPS aplicando as heurísticas HOP-H1..H8, hop-lint oficial e THREAT_MODEL.md (HOP-SEC-01/02).",
     "migrar-kettle-hop": "Migra projetos legados do Pentaho Kettle (.ktr, .kjb, shared.xml) para Apache Hop 2.x (.hpl, .hwf, metadata/rdbms/*.json e diagrama SVG).",
     "gerar-pacote-hop": "Gera um pacote completo Apache Hop 2.x (wf_*.hwf, ppl_*.hpl com TableOutput ou OraBulkLoader, hop-lint.yml, hop-pwd.json, diagrama_esteira_hop.svg e DOCUMENTACAO_HOP.md).",
-    "inspecionar-governanca": "Executa a auditoria do Gate 0.5 sobre planilhas .xlsx e amostras .csv de governança de dados.",
+    "comparar-modelo": "Compara o DW em produção (entrega/planejador_dw/ddl) com o modelo novo (saida/) e gera ALTERs incrementais seguros (remoções e estreitamentos comentados).",
+    "estimar-volumetria": "Calculadora DBA: tamanho de tabelas e índices, crescimento em 5 anos, recomendação de particionamento e dimensionamento de tablespaces.",
+    "inspecionar-banco": "Extrai o DDL real de um schema Oracle (DBMS_METADATA) para entrega/planejador_dw/ddl/; sem conexão, gera o script de extração para o DBA.",
+    "simular-governanca": "Prévia da esteira de Governança: Gate 0.5, classificação LGPD em 4 níveis, matriz DE/PARA e relatório, sem gravar scripts MongoDB/AWS.",
+    "inspecionar-governanca": "Audita (sem gerar nada) planilhas e amostras de governança: Gate 0.5, cruzamento dicionário x amostra e classificação LGPD. Aceita --json.",
     "validar-entrega": "Executa a bateria de auditoria pré-voo dos insumos e validação pós-geração da pasta saida/.",
-    "testar-ninho": "Executa a suíte automatizada de testes End-to-End (E2E) em todos os motores do NINHO e limpa o workspace ao final.",
+    "testar-ninho": "Executa a suíte E2E de todos os motores do NINHO numa sandbox temporária (seus arquivos de entrega/ e saida/ não são tocados).",
     "empacotar-projeto": "Verifica o status do projeto, exporta a entrega completa em .zip ou limpa o workspace para um novo projeto.",
 }
 
@@ -228,12 +233,20 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
         "Alias para 'executar-projeto' (execução direta de DW + Camada Semântica)",
     ),
     "executar-governanca": (
-        "inspecionar_insumos_governanca.py",
+        "gerar_artefatos_governanca.py",
         [],
-        "Executa diretamente a esteira de Governança Corporativa (Gate 0.5 + 5 coleções MongoDB PRODEB + AWS Catalog)",
+        "Esteira de Governança: Gate 0.5 + matriz LGPD + scripts MongoDB PRODEB + catálogo AWS Glue/SageMaker",
+    ),
+    "comparar-modelo": ("ferramentas_dba.py", ["comparar-modelo"], "Diff DW em produção x modelo novo com ALTERs incrementais"),
+    "estimar-volumetria": ("ferramentas_dba.py", ["estimar-volumetria"], "Volumetria, crescimento, particionamento e tablespaces"),
+    "inspecionar-banco": ("ferramentas_dba.py", ["inspecionar-banco"], "Extração do DDL real do Oracle (DBMS_METADATA)"),
+    "simular-governanca": (
+        "gerar_artefatos_governanca.py",
+        ["--simular"],
+        "Prévia da esteira de Governança (sem scripts MongoDB/AWS)",
     ),
     "iniciar-governanca": (
-        "inspecionar_insumos_governanca.py",
+        "gerar_artefatos_governanca.py",
         [],
         "Alias para 'executar-governanca'",
     ),
@@ -426,9 +439,9 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
         "Compara Estratégia A (Truncate & Load + Bitmap) vs Estratégia B (MERGE + B-Tree)",
     ),
     "gerar-governanca": (
-        "inspecionar_insumos_governanca.py",
+        "gerar_artefatos_governanca.py",
         [],
-        "Executa Gate 0.5 e gera artefatos MongoDB PRODEB e matriz LGPD/LAI",
+        "Alias para 'executar-governanca' (Gate 0.5 + MongoDB PRODEB + matriz LGPD + AWS)",
     ),
     "diagnosticar-erro-carga": (
         "ajuda_ninho.py",
@@ -448,7 +461,7 @@ ROTAS_COMANDOS: Dict[str, Tuple[str, List[str], str]] = {
     "testar-ninho": (
         "testar_ninho.py",
         [],
-        "Executa a suíte oficial automatizada de testes E2E (T01 a T11)",
+        "Executa a suíte E2E oficial em sandbox isolada (não toca entrega/ e saida/)",
     ),
     "empacotar-projeto": (
         "gerenciar_projeto.py",
@@ -467,7 +480,8 @@ def _gerar_conteudo_skill_comando(cmd: str, descricao: str) -> str:
         f"# /{cmd}\n\n"
         f"{descricao}\n\n"
         f"## Execução Determinística\n\n"
-        f"Ao receber o comando /{cmd} (ou pedido equivalente), execute imediatamente no terminal via `run_command`:\n\n"
+        f"Ao receber o comando /{cmd} (ou pedido equivalente), execute imediatamente na raiz do projeto, "
+        f"usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):\n\n"
         f"```bash\n"
         f"python ninho.py {cmd}\n"
         f"```\n\n"
@@ -547,6 +561,9 @@ def main() -> int:
 
     if raw_cmd not in ROTAS_COMANDOS:
         print(f"[ERRO] Comando desconhecido: '{args[0]}'")
+        parecidos = difflib.get_close_matches(raw_cmd, ROTAS_COMANDOS.keys(), n=3, cutoff=0.6)
+        if parecidos:
+            print("Você quis dizer: " + ", ".join(f"/{c}" for c in parecidos) + "?")
         print("Execute 'python ninho.py ajuda' para listar todos os comandos disponíveis.")
         return 1
 

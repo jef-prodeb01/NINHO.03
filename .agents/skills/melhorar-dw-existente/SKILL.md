@@ -9,7 +9,7 @@ Executa o Raio-X não-destrutivo de um DW já construído e gera patches de come
 
 ## Execução Determinística
 
-Ao receber o comando /melhorar-dw-existente (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /melhorar-dw-existente (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py melhorar-dw-existente

@@ -9,7 +9,7 @@ Inspeciona DDLs SQL/CSV depositados em entrega/planejador_dw/ddl/, extrai metada
 
 ## Execução Determinística
 
-Ao receber o comando /inspecionar-fontes (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /inspecionar-fontes (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py inspecionar-fontes

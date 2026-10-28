@@ -16,6 +16,10 @@ Uso:
     python core/scripts_comuns/inspecionar_pbix.py <caminho_arquivo_ou_pasta> [--output <caminho_relatorio.md>]
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.inspecionar_pbix")
+
 import re
 import sys
 import json
@@ -24,20 +28,17 @@ import argparse
 from pathlib import Path
 from collections import defaultdict
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ninho_core.zip_seguro import ler_membro  # noqa: E402
+
 # Configura encoding UTF-8 no stdout do Windows
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (inspecionar_pbix.py:34): %r", _exc)
 
-VERDE = "\033[92m"
-AMARELO = "\033[93m"
-VERMELHO = "\033[91m"
-AZUL = "\033[94m"
-CIANO = "\033[96m"
-NEGRITO = "\033[1m"
-RESET = "\033[0m"
+from ninho_core.console import VERDE, AMARELO, VERMELHO, AZUL, CIANO, NEGRITO, RESET, print_ok, print_err  # noqa: E402
 
 COMPARISON_OPS = {
     0: "=",
@@ -78,18 +79,6 @@ def print_banner():
     print(f"\n{AZUL}{NEGRITO}{'=' * 85}{RESET}")
     print(f"{CIANO}{NEGRITO}  📊 PLATAFORMA NINHO — MOTOR DE ENGENHARIA REVERSA & AUDITORIA POWER BI (.pbix){RESET}")
     print(f"{AZUL}{NEGRITO}{'=' * 85}{RESET}\n")
-
-
-def print_ok(msg: str):
-    print(f"  {VERDE}[OK]{RESET} {msg}")
-
-
-def print_warn(msg: str):
-    print(f"  {AMARELO}[AVISO]{RESET} {msg}")
-
-
-def print_err(msg: str):
-    print(f"  {VERMELHO}[ERRO]{RESET} {msg}")
 
 
 def parse_pbi_filter_ast(where_list: list, alias_map: dict) -> str:
@@ -248,28 +237,28 @@ class PBIXInspector:
                 # 1. Connections
                 if "Connections" in names:
                     try:
-                        conn_data = json.loads(zf.read("Connections").decode("utf-8", errors="replace"))
+                        conn_data = json.loads(ler_membro(zf, "Connections").decode("utf-8", errors="replace"))
                         if conn_data.get("RemoteArtifacts"):
                             ds_id = conn_data["RemoteArtifacts"][0].get("DatasetId", "")
                             info["connection_mode"] = f"Live Connection / Power BI Service Dataset ({ds_id})"
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        _LOG.debug("Exceção tratada (inspecionar_pbix.py:240): %r", _exc)
 
                 # 2. DiagramLayout (Tabelas do Modelo)
                 if "DiagramLayout" in names:
                     try:
-                        diag = json.loads(zf.read("DiagramLayout").decode("utf-16-le", errors="replace"))
+                        diag = json.loads(ler_membro(zf, "DiagramLayout").decode("utf-16-le", errors="replace"))
                         for d in diag.get("diagrams", []):
                             for node in d.get("nodes", []):
                                 t_name = node.get("nodeIndex")
                                 if t_name:
                                     info["tables"].add(t_name)
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        _LOG.debug("Exceção tratada (inspecionar_pbix.py:252): %r", _exc)
 
                 # 3. Report/Layout
                 if "Report/Layout" in names:
-                    raw_layout = zf.read("Report/Layout").decode("utf-16-le", errors="replace")
+                    raw_layout = ler_membro(zf, "Report/Layout").decode("utf-16-le", errors="replace")
                     layout = json.loads(raw_layout)
                     info["report_filters"] = extract_filter_list(layout.get("filters", "[]"))
 

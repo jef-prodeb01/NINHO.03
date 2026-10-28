@@ -24,6 +24,10 @@ Exemplos de uso:
 ================================================================================
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.ajuda_ninho")
+
 import argparse
 import os
 import re
@@ -522,13 +526,18 @@ BASE_CONHECIMENTO_ORACULO: Dict[str, Dict] = {
         "aliases": ["vpd", "seguranca", "sys_context", "dbms_rls", "multi-tenant", "orgao"],
         "resumo": "Garante isolamento multi-tenant nativo no banco Oracle para que cada usuário/órgão enxergue apenas as linhas autorizadas.",
         "conteudo": [
+            "- **Identidade efetiva resolvida pelo banco:**",
+            "  - Power BI e agentes de IA conectam com uma conta de serviço única (pool). A aplicação informa o usuário final com `DBMS_SESSION.SET_IDENTIFIER`.",
+            "  - O `CLIENT_IDENTIFIER` só é aceito se `SESSION_USER` estiver em `RLS_CONTAS_SERVICO`; qualquer outra sessão usa `SESSION_USER` (ninguém se passa por outro usuário).",
             "- **Arquitetura Fail-Closed (`1 = 0`):**",
-            "  - Se uma sessão conectar no banco sem inicializar o contexto `SYS_CONTEXT('CTX_<PROJETO>_RLS', 'VALOR_FILTRO')`, a função de predicado retorna `'1 = 0'` (bloqueia tudo por padrão).",
+            "  - Usuário efetivo sem vínculo em `USUARIO_SEGMENTOS`, ou qualquer erro na função de predicado, retorna `'1 = 0'` (bloqueia tudo por padrão).",
+            "- **Sem limite de 4000 bytes:** o predicado usa subconsulta em `USUARIO_SEGMENTOS` (nada de `LISTAGG`), suportando centenas de unidades/municípios por usuário.",
             "- **Preservação do Sentinela `-1`:**",
-            "  - Quando o filtro está ativo, o predicado aplica `COLUNA_SEGREGACAO IN (<lista>, -1)`, permitindo que o usuário veja os registros do seu órgão e também identifique eventuais fatos não classificados (`-1`).",
+            "  - O predicado sempre inclui `COLUNA_SEGREGACAO = -1`, permitindo identificar fatos não classificados.",
+            "- **Política `DYNAMIC`:** reavaliada a cada execução, necessária quando o pool troca de usuário na mesma sessão.",
         ],
         "proximos": [
-            ("`/gerar-rls`", "Gera o script `02_rls.sql` com `CONTEXT`, `PACKAGE` e `DBMS_RLS.ADD_POLICY`."),
+            ("`/gerar-rls`", "Gera o script `02_rls.sql` com tabelas de apoio, `PKG_SECURITY_<PROJETO>` e `DBMS_RLS.ADD_POLICY`."),
         ],
     },
 }
@@ -719,8 +728,8 @@ def detectar_arquivos_fora_do_lugar() -> List[Dict[str, Path]]:
                     amostra_csv = item.read_text(encoding="utf-8", errors="ignore")[:8192].upper()
                     if "CREATE TABLE" in amostra_csv:
                         eh_ddl_csv = True
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    _LOG.debug("Exceção tratada (ajuda_ninho.py:727): %r", _exc)
                 if eh_ddl_csv:
                     if pasta == ENTREGA_DIR / "camada_semantica":
                         destino = ENTREGA_DIR / "camada_semantica" / "sql_fontes" / item.name
@@ -878,6 +887,58 @@ def renderizar_onde_estou() -> str:
     return "\n".join(linhas)
 
 
+def _checagens_ambiente() -> List[str]:
+    """Checa versão do Python, dependências opcionais, skills sincronizadas e proteção LGPD do Git."""
+    import importlib.util
+
+    linhas = []
+    versao = sys.version_info
+    if versao >= (3, 10):
+        linhas.append(f"- ✅ **Versão do Python:** `{sys.version.split()[0]}` (mínimo 3.10)")
+    else:
+        linhas.append(f"- ❌ **Versão do Python:** `{sys.version.split()[0]}` — o NINHO exige 3.10 ou superior.")
+
+    opcionais = {
+        "openpyxl": "leitura nativa de planilhas .xlsx na Governança",
+        "defusedxml": "parsing seguro de XMLs de terceiros (ODI, Hop, PBIX)",
+    }
+    for pacote, uso in opcionais.items():
+        if importlib.util.find_spec(pacote):
+            linhas.append(f"- ✅ **Pacote opcional `{pacote}`:** instalado ({uso}).")
+        else:
+            linhas.append(f"- 🟡 **Pacote opcional `{pacote}`:** ausente ({uso}). Instale com `pip install -r requirements.txt`.")
+
+    try:
+        spec = importlib.util.spec_from_file_location("ninho_cli", ROOT_DIR / "ninho.py")
+        ninho_cli = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ninho_cli)
+        faltando = [
+            c
+            for c in ninho_cli.DESCRICOES_SKILLS_SLASH
+            if c not in ninho_cli.COMANDOS_RESERVADOS_IDE and not (ninho_cli.SKILLS_DIR / c / "SKILL.md").exists()
+        ]
+        if faltando:
+            linhas.append(
+                f"- ⚠️ **Skills de comando (`/`):** {len(faltando)} ausente(s) no menu da IDE "
+                f"({', '.join('/' + c for c in faltando[:5])}). Rode `python ninho.py instalar-comandos`."
+            )
+        else:
+            linhas.append("- ✅ **Skills de comando (`/`):** todas instaladas no menu da IDE.")
+    except Exception as exc:  # o doctor nunca deve quebrar por causa de uma checagem
+        linhas.append(f"- 🟡 **Skills de comando (`/`):** não foi possível verificar ({exc}).")
+
+    gitignore = ROOT_DIR / ".gitignore"
+    regras = gitignore.read_text(encoding="utf-8", errors="replace") if gitignore.exists() else ""
+    if "/entrega/**" in regras and "/saida/**" in regras:
+        linhas.append("- ✅ **Proteção LGPD no Git:** `entrega/` e `saida/` não são versionadas.")
+    else:
+        linhas.append(
+            "- ❌ **Proteção LGPD no Git:** `.gitignore` não protege `entrega/` e `saida/`; "
+            "dados de cliente podem ir para o repositório."
+        )
+    return linhas
+
+
 def executar_doctor(corrigir: bool = False) -> str:
     """Executa o diagnóstico de saúde do workspace e organiza arquivos fora do lugar se --corrigir."""
     linhas = [
@@ -898,8 +959,8 @@ def executar_doctor(corrigir: bool = False) -> str:
 
     fora_do_lugar = detectar_arquivos_fora_do_lugar()
 
-    linhas.append(f"- ✅ ** Versão do Python:** `{sys.version.split()[0]}`")
-    linhas.append(f"- ✅ **Estrutura Canônica de Pastas (`entrega/` e `saida/`):** Verificada e íntegra.")
+    linhas.extend(_checagens_ambiente())
+    linhas.append("- ✅ **Estrutura Canônica de Pastas (`entrega/` e `saida/`):** Verificada e íntegra.")
 
     if not fora_do_lugar:
         linhas.append("- ✅ **Organização de Insumos:** Nenhum arquivo órfão ou fora da pasta correta foi detectado.")
@@ -985,17 +1046,11 @@ def limpar_demo() -> str:
                 try:
                     arq.unlink()
                     removidos += 1
-                except OSError:
-                    pass
-    cat_dir = ROOT_DIR / "documentacao" / "catalogo_projetos"
-    for arq_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
-        p_cat = cat_dir / arq_cat
-        if p_cat.exists():
-            try:
-                p_cat.unlink()
-                removidos += 1
-            except OSError:
-                pass
+                except OSError as _exc:
+                    _LOG.debug("Exceção tratada (ajuda_ninho.py:1045): %r", _exc)
+    from ninho_core.catalogo import restaurar_fichas_projeto
+
+    removidos += restaurar_fichas_projeto()
     return (
         "# 🧹 Modo Playground Encerrado (`/limpar-demo`)\n\n"
         f"- Foram removidos **`{removidos}` arquivos de demonstração** de `entrega/` e `saida/`.\n"

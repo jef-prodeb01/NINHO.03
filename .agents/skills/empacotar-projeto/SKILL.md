@@ -9,7 +9,7 @@ Verifica o status do projeto, exporta a entrega completa em .zip ou limpa o work
 
 ## Execução Determinística
 
-Ao receber o comando /empacotar-projeto (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /empacotar-projeto (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py empacotar-projeto

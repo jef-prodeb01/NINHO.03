@@ -9,7 +9,7 @@ Executa a Prova Real Pós-Carga das medidas DAX do Guia do Analista de BI contra
 
 ## Execução Determinística
 
-Ao receber o comando /validar-medidas-bi (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /validar-medidas-bi (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py validar-medidas-bi

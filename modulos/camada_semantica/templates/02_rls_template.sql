@@ -1,133 +1,127 @@
 -- =============================================================
 -- TEMPLATE — RLS (Row Level Security) opcional (Oracle 12c+)
+-- Fonte única: modulos/camada_semantica/templates/02_rls_template.sql
+-- (a cópia em .agents/skills/seguranca-rls-oracle/templates/ é sincronizada
+--  e verificada por tests/test_templates_sincronizados.py)
 -- =============================================================
 -- Só use este script se o INTAKE (Seção 4.1) indicou "acesso restrito".
--- Se a resposta foi "acesso total", ignore este arquivo.
+-- O gerador /gerar-rls produz uma versão já parametrizada (02_rls.sql).
 --
--- Três estratégias possíveis — escolha UMA (não misture):
+-- IDENTIDADE EFETIVA (vale para todas as estratégias):
+--   Power BI, gateways e agentes de IA conectam com UMA conta de serviço
+--   (pool). Filtrar só por SESSION_USER daria a todos a visão da conta de
+--   serviço. A aplicação informa o usuário final com
+--   DBMS_SESSION.SET_IDENTIFIER('<login>'), e o banco só aceita esse
+--   CLIENT_IDENTIFIER se SESSION_USER estiver em RLS_CONTAS_SERVICO.
+--   Um usuário comum que defina o próprio CLIENT_IDENTIFIER continua
+--   sendo filtrado pelo SESSION_USER (não consegue se passar por outro).
 --
--- ESTRATÉGIA A — Filtro por subquery direto na view final (mais
---   simples). Não precisa deste arquivo: basta adicionar o WHERE com
---   subquery contra usuario_segmentos na view de EVENTO/KPI, como no
---   exemplo do AGENTS.md/README.md.
---
--- ESTRATÉGIA B — Contexto de sessão (DBMS_SESSION) + views. Fácil de
---   depurar, funciona com qualquer client (BI, IA, SQL Developer).
---
--- ESTRATÉGIA C — VPD (DBMS_RLS) — política aplicada automaticamente
---   pelo banco a QUALQUER SQL sobre a tabela/view, mesmo consultas
---   ad-hoc. Mais forte, porém mais "invisível" — quem não conhece a
---   policy pode ler contagens filtradas sem perceber que há um filtro.
---
--- Rode como o dono do schema do DW. Estratégias B e C exigem o
--- privilégio EXECUTE em DBMS_SESSION/DBMS_RLS (normalmente concedido
--- via CREATE SESSION + privilégios de schema owner).
+-- Estratégias (escolha UMA):
+--   A — Filtro EXISTS direto na view final (mais simples e transparente).
+--   C — VPD (DBMS_RLS): política aplicada pelo banco a qualquer SQL.
+--   D — RLS por projeto nas tabelas META_*.
+--   (A antiga estratégia B — LISTAGG em contexto no logon — foi removida:
+--    estourava 4000 bytes (ORA-01489) com muitos segmentos e não funciona
+--    com pool, pois o logon acontece antes do SET_IDENTIFIER.)
 -- =============================================================
 
 -- -------------------------------------------------------------
--- Tabela de apoio: mapeamento usuário -> segmento(s) permitido(s)
+-- Tabelas de apoio (necessárias em qualquer estratégia)
 -- -------------------------------------------------------------
--- Necessária em QUALQUER estratégia. Ajuste o nome/domínio da coluna
--- "SEGMENTO" ao caso real (cidade, secretaria, órgão, projeto etc.).
 CREATE TABLE USUARIO_SEGMENTOS (
+    PROJETO           VARCHAR2(50)  DEFAULT 'GLOBAL' NOT NULL,
     USUARIO_ORACLE    VARCHAR2(128) NOT NULL,
     SEGMENTO          VARCHAR2(128) NOT NULL,
-    IND_ACESSO_TOTAL  CHAR(1) DEFAULT 'N' NOT NULL,  -- 'S' ignora o filtro de segmento
-    DT_CRIACAO        DATE DEFAULT SYSDATE NOT NULL,
-    CONSTRAINT PK_USUARIO_SEGMENTOS PRIMARY KEY (USUARIO_ORACLE, SEGMENTO)
+    IND_ACESSO_TOTAL  CHAR(1)       DEFAULT 'N' NOT NULL,  -- 'S' ignora o filtro de segmento
+    DT_CRIACAO        DATE          DEFAULT SYSDATE NOT NULL,
+    CONSTRAINT PK_USUARIO_SEGMENTOS PRIMARY KEY (PROJETO, USUARIO_ORACLE, SEGMENTO),
+    CONSTRAINT CHK_USR_SEG_TOTAL CHECK (IND_ACESSO_TOTAL IN ('S', 'N'))
 );
 
 COMMENT ON TABLE USUARIO_SEGMENTOS IS
-'Mapeamento entre usuário Oracle (SESSION_USER) e o(s) segmento(s) que ele pode enxergar nas views com RLS. Um usuário pode ter múltiplas linhas (múltiplos segmentos permitidos).';
-COMMENT ON COLUMN USUARIO_SEGMENTOS.USUARIO_ORACLE IS 'Usuário de sessão (SYS_CONTEXT(''USERENV'',''SESSION_USER'')).';
+'Usuário efetivo (login do usuário final via pool confiável, ou SESSION_USER) x segmento permitido nas views com RLS.';
+COMMENT ON COLUMN USUARIO_SEGMENTOS.PROJETO IS 'Projeto (ex.: SEI) ou ''GLOBAL'' para permissão compartilhada.';
+COMMENT ON COLUMN USUARIO_SEGMENTOS.USUARIO_ORACLE IS 'Usuário efetivo retornado por FN_<PROJETO>_USUARIO_EFETIVO.';
 COMMENT ON COLUMN USUARIO_SEGMENTOS.SEGMENTO IS 'Valor do segmento permitido (ex.: código de cidade, secretaria, órgão).';
-COMMENT ON COLUMN USUARIO_SEGMENTOS.IND_ACESSO_TOTAL IS 'S = ignora o filtro de segmento (acesso total, ex.: gestor). N = respeita o filtro.';
-COMMENT ON COLUMN USUARIO_SEGMENTOS.DT_CRIACAO IS 'Data de criação do vínculo usuário/segmento.';
+COMMENT ON COLUMN USUARIO_SEGMENTOS.IND_ACESSO_TOTAL IS 'S = ignora o filtro de segmento (gestor/auditor). N = respeita o filtro.';
 
--- =============================================================
--- ESTRATÉGIA B — Contexto de sessão (DBMS_SESSION)
--- =============================================================
+CREATE TABLE RLS_CONTAS_SERVICO (
+    USUARIO_ORACLE    VARCHAR2(128) NOT NULL,
+    DES_FINALIDADE    VARCHAR2(200) NOT NULL,
+    DT_CRIACAO        DATE          DEFAULT SYSDATE NOT NULL,
+    CONSTRAINT PK_RLS_CONTAS_SERVICO PRIMARY KEY (USUARIO_ORACLE)
+);
 
--- 1. Package que popula o contexto no logon
-CREATE OR REPLACE PACKAGE PKG_<PROJETO>_SEGURANCA AS
-    PROCEDURE DEFINIR_CONTEXTO;
-END PKG_<PROJETO>_SEGURANCA;
-/
+COMMENT ON TABLE RLS_CONTAS_SERVICO IS
+'Contas de serviço confiáveis (pool Power BI / IA) autorizadas a repassar a identidade do usuário final via CLIENT_IDENTIFIER.';
 
-CREATE OR REPLACE PACKAGE BODY PKG_<PROJETO>_SEGURANCA AS
-    PROCEDURE DEFINIR_CONTEXTO IS
-        V_SEGMENTOS    VARCHAR2(4000);
-        V_ACESSO_TOTAL CHAR(1);
-    BEGIN
-        SELECT MAX(IND_ACESSO_TOTAL)
-          INTO V_ACESSO_TOTAL
-          FROM USUARIO_SEGMENTOS
-         WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER');
+-- Exemplo: INSERT INTO RLS_CONTAS_SERVICO VALUES ('SVC_POWERBI', 'Pool do gateway Power BI', SYSDATE);
 
-        DBMS_SESSION.SET_CONTEXT('CTX_<PROJETO>', 'ACESSO_TOTAL', NVL(V_ACESSO_TOTAL, 'N'));
-
-        SELECT LISTAGG(SEGMENTO, ',') WITHIN GROUP (ORDER BY SEGMENTO)
-          INTO V_SEGMENTOS
-          FROM USUARIO_SEGMENTOS
-         WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER');
-
-        DBMS_SESSION.SET_CONTEXT('CTX_<PROJETO>', 'SEGMENTOS', V_SEGMENTOS);
-    END DEFINIR_CONTEXTO;
-END PKG_<PROJETO>_SEGURANCA;
-/
-
--- 2. Contexto de aplicação (depende do package acima já existir)
-CREATE OR REPLACE CONTEXT CTX_<PROJETO> USING PKG_<PROJETO>_SEGURANCA;
-
--- Nota: SELECT MAX(...)/LISTAGG(...) sem GROUP BY sempre retornam uma
--- linha (com NULL se não houver match) — não há necessidade de tratar
--- NO_DATA_FOUND aqui; usuário sem vínculo cai naturalmente em
--- ACESSO_TOTAL='N' e SEGMENTOS=NULL (nega acesso por padrão).
-CREATE OR REPLACE TRIGGER TRG_<PROJETO>_LOGON
-AFTER LOGON ON DATABASE
+-- -------------------------------------------------------------
+-- Função de identidade efetiva (usada por todas as estratégias)
+-- -------------------------------------------------------------
+CREATE OR REPLACE FUNCTION FN_<PROJETO>_USUARIO_EFETIVO RETURN VARCHAR2 AS
+    V_SESSAO  VARCHAR2(128) := SYS_CONTEXT('USERENV', 'SESSION_USER');
+    V_CLIENTE VARCHAR2(128) := SYS_CONTEXT('USERENV', 'CLIENT_IDENTIFIER');
+    V_QTD     NUMBER;
 BEGIN
-    PKG_<PROJETO>_SEGURANCA.DEFINIR_CONTEXTO;
-END;
+    IF V_CLIENTE IS NOT NULL THEN
+        SELECT COUNT(1) INTO V_QTD FROM RLS_CONTAS_SERVICO WHERE USUARIO_ORACLE = V_SESSAO;
+        IF V_QTD > 0 THEN
+            RETURN UPPER(V_CLIENTE);
+        END IF;
+    END IF;
+    RETURN V_SESSAO;
+END FN_<PROJETO>_USUARIO_EFETIVO;
 /
 
--- 4. Uso nas views — adicione este WHERE às views de EVENTO/KPI que
---    precisam de RLS:
+-- =============================================================
+-- ESTRATÉGIA A — Filtro EXISTS direto na view final
+-- =============================================================
+-- Sem lista concatenada (sem limite de 4000 bytes). Adicione às views
+-- de EVENTO/KPI que precisam de RLS:
 --
--- WHERE SYS_CONTEXT('CTX_<PROJETO>', 'ACESSO_TOTAL') = 'S'
---    OR <COLUNA_SEGMENTO> IN (
---         SELECT REGEXP_SUBSTR(SYS_CONTEXT('CTX_<PROJETO>', 'SEGMENTOS'), '[^,]+', 1, LEVEL)
---         FROM DUAL
---         CONNECT BY REGEXP_SUBSTR(SYS_CONTEXT('CTX_<PROJETO>', 'SEGMENTOS'), '[^,]+', 1, LEVEL) IS NOT NULL
+-- WHERE EXISTS (
+--         SELECT 1 FROM USUARIO_SEGMENTOS u
+--          WHERE u.USUARIO_ORACLE = FN_<PROJETO>_USUARIO_EFETIVO
+--            AND u.PROJETO IN ('GLOBAL', '<PROJETO>')
+--            AND (u.IND_ACESSO_TOTAL = 'S' OR u.SEGMENTO = TO_CHAR(<COLUNA_SEGMENTO>))
 --       )
+--    OR <COLUNA_SEGMENTO> = -1   -- linha sentinela "Não Informado"
 
 -- =============================================================
 -- ESTRATÉGIA C — VPD (DBMS_RLS) — política aplicada pelo banco
 -- =============================================================
-
--- 1. Função que retorna o predicado (WHERE) dinamicamente
 CREATE OR REPLACE FUNCTION FN_<PROJETO>_RLS_PREDICADO (
     P_SCHEMA IN VARCHAR2,
     P_OBJETO IN VARCHAR2
 ) RETURN VARCHAR2 AS
+    V_USUARIO      VARCHAR2(128) := FN_<PROJETO>_USUARIO_EFETIVO;
     V_ACESSO_TOTAL CHAR(1);
 BEGIN
-    SELECT MAX(IND_ACESSO_TOTAL)
+    SELECT NVL(MAX(IND_ACESSO_TOTAL), 'N')
       INTO V_ACESSO_TOTAL
       FROM USUARIO_SEGMENTOS
-     WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER');
+     WHERE USUARIO_ORACLE = V_USUARIO
+       AND PROJETO IN ('GLOBAL', '<PROJETO>');
 
-    IF NVL(V_ACESSO_TOTAL, 'N') = 'S' THEN
-        RETURN '1=1';  -- sem filtro
+    IF V_ACESSO_TOTAL = 'S' THEN
+        RETURN '1 = 1';  -- sem filtro
     END IF;
 
-    RETURN q'[<COLUNA_SEGMENTO> IN (
-        SELECT SEGMENTO FROM USUARIO_SEGMENTOS
-        WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER')
-    )]';
+    -- O usuário entra como literal protegido (DBMS_ASSERT): sem injeção de SQL.
+    RETURN '<COLUNA_SEGMENTO> = -1 OR TO_CHAR(<COLUNA_SEGMENTO>) IN ('
+        || 'SELECT u.SEGMENTO FROM USUARIO_SEGMENTOS u '
+        || 'WHERE u.PROJETO IN (''GLOBAL'', ''<PROJETO>'') AND u.USUARIO_ORACLE = '
+        || DBMS_ASSERT.ENQUOTE_LITERAL(V_USUARIO) || ')';
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN '1 = 0';  -- fail-closed: erro na política nunca libera dados
 END FN_<PROJETO>_RLS_PREDICADO;
 /
 
--- 2. Aplica a política em cada view/tabela que precisa de RLS
+-- Aplica a política em cada view/tabela que precisa de RLS.
+-- POLICY_TYPE DYNAMIC: reavalia a cada execução (o pool troca de usuário na mesma sessão).
 BEGIN
     DBMS_RLS.ADD_POLICY(
         OBJECT_SCHEMA   => USER,
@@ -135,90 +129,60 @@ BEGIN
         POLICY_NAME     => 'POL_<PROJETO>_EVENTO',
         FUNCTION_SCHEMA => USER,
         POLICY_FUNCTION => 'FN_<PROJETO>_RLS_PREDICADO',
-        STATEMENT_TYPES => 'SELECT'
+        STATEMENT_TYPES => 'SELECT',
+        POLICY_TYPE     => DBMS_RLS.DYNAMIC
     );
 END;
 /
 
--- Repita DBMS_RLS.ADD_POLICY para cada view/tabela que precisa do filtro.
-
 -- Para remover uma política:
 -- BEGIN
---     DBMS_RLS.DROP_POLICY(
---         OBJECT_SCHEMA => USER,
---         OBJECT_NAME   => 'VW_<PROJETO>_EVENTO',
---         POLICY_NAME   => 'POL_<PROJETO>_EVENTO'
---     );
+--     DBMS_RLS.DROP_POLICY(OBJECT_SCHEMA => USER, OBJECT_NAME => 'VW_<PROJETO>_EVENTO', POLICY_NAME => 'POL_<PROJETO>_EVENTO');
 -- END;
 -- /
 
 -- =============================================================
 -- ESTRATÉGIA D — RLS POR PROJETO NAS TABELAS META_
--- (Herança de Regras 'GLOBAL' + Regras do Projeto Permitido)
+-- (Regras 'GLOBAL' sempre visíveis + regras do projeto permitido)
 -- =============================================================
--- Utilize esta estratégia quando múltiplos projetos compartilharem o mesmo
--- schema Oracle e for necessário isolar os metadados (glossário, métricas,
--- regras, orientações de IA) por projeto, garantindo que diretrizes
--- universais ('GLOBAL') continuem visíveis para todos.
---
--- D.1 — Via Views de Metadados por Projeto (Abordagem Declarativa):
+-- D.1 — Views de metadados por projeto (declarativa):
 -- CREATE OR REPLACE VIEW VW_<PROJETO>_META_GLOSSARIO AS
 -- SELECT * FROM META_GLOSSARIO WHERE PROJETO IN ('GLOBAL', '<PROJETO>');
 --
--- CREATE OR REPLACE VIEW VW_<PROJETO>_META_METRICA AS
--- SELECT * FROM META_METRICA WHERE PROJETO IN ('GLOBAL', '<PROJETO>');
---
--- CREATE OR REPLACE VIEW VW_<PROJETO>_META_CONSULTA_NEGOCIO AS
--- SELECT * FROM META_CONSULTA_NEGOCIO WHERE PROJETO IN ('GLOBAL', '<PROJETO>');
---
--- CREATE OR REPLACE VIEW VW_<PROJETO>_META_ORIENTACAO_IA AS
--- SELECT * FROM META_ORIENTACAO_IA WHERE PROJETO IN ('GLOBAL', '<PROJETO>');
---
--- D.2 — Via VPD (DBMS_RLS) nas próprias tabelas META_*:
+-- D.2 — VPD nas próprias tabelas META_*:
 CREATE OR REPLACE FUNCTION FN_META_RLS_PREDICADO (
     P_SCHEMA IN VARCHAR2,
     P_OBJETO IN VARCHAR2
 ) RETURN VARCHAR2 AS
+    V_USUARIO      VARCHAR2(128) := FN_<PROJETO>_USUARIO_EFETIVO;
     V_ACESSO_TOTAL CHAR(1);
 BEGIN
-    SELECT MAX(IND_ACESSO_TOTAL)
+    SELECT NVL(MAX(IND_ACESSO_TOTAL), 'N')
       INTO V_ACESSO_TOTAL
       FROM USUARIO_SEGMENTOS
-     WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER');
+     WHERE USUARIO_ORACLE = V_USUARIO;
 
-    IF NVL(V_ACESSO_TOTAL, 'N') = 'S' THEN
-        RETURN '1=1';  -- visualiza todos os projetos
+    IF V_ACESSO_TOTAL = 'S' THEN
+        RETURN '1 = 1';  -- visualiza todos os projetos
     END IF;
 
-    -- Regras 'GLOBAL' são sempre visíveis + apenas o(s) projeto(s) associado(s) ao usuário
-    RETURN q'[PROJETO = 'GLOBAL' OR PROJETO IN (
-        SELECT SEGMENTO FROM USUARIO_SEGMENTOS
-        WHERE USUARIO_ORACLE = SYS_CONTEXT('USERENV', 'SESSION_USER')
-    )]';
+    RETURN 'PROJETO = ''GLOBAL'' OR PROJETO IN (SELECT u.SEGMENTO FROM USUARIO_SEGMENTOS u WHERE u.USUARIO_ORACLE = '
+        || DBMS_ASSERT.ENQUOTE_LITERAL(V_USUARIO) || ')';
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN 'PROJETO = ''GLOBAL''';  -- fail-closed: só regras universais
 END FN_META_RLS_PREDICADO;
 /
-
--- Aplicar a política nas tabelas META_ desejadas (exemplo para META_METRICA e META_ORIENTACAO_IA):
--- BEGIN
---     DBMS_RLS.ADD_POLICY(
---         OBJECT_SCHEMA   => USER,
---         OBJECT_NAME     => 'META_METRICA',
---         POLICY_NAME     => 'POL_META_METRICA_PROJETO',
---         FUNCTION_SCHEMA => USER,
---         POLICY_FUNCTION => 'FN_META_RLS_PREDICADO',
---         STATEMENT_TYPES => 'SELECT'
---     );
--- END;
--- /
 
 -- =============================================================
 -- NOTAS
 -- =============================================================
--- 1. Escolha a estratégia de RLS e documente a escolha em
+-- 1. Documente a estratégia escolhida em
 --    documentacao/catalogo_projetos/PROJETO_RESUMO.md, seção 6 (Regras de Acesso).
--- 2. Estratégia C/D (VPD) é a mais robusta contra acesso ad-hoc, mas
---    exige mais cuidado: erros na função de predicado afetam TODAS as
---    consultas ao objeto, inclusive as da própria IA/BI.
--- 3. Teste sempre com usuários de diferentes segmentos antes de
---    liberar em produção (ver saida/camada_semantica/meta_projeto/09_validacoes.sql, seção de RLS).
+-- 2. Conceda SELECT em USUARIO_SEGMENTOS ao papel de consumo: o predicado
+--    da VPD é executado com os privilégios de quem consulta.
+-- 3. A aplicação/gateway deve chamar DBMS_SESSION.SET_IDENTIFIER antes de
+--    cada consulta e DBMS_SESSION.CLEAR_IDENTIFIER ao devolver a conexão ao pool.
+-- 4. Teste com usuários de diferentes segmentos e com a conta de serviço antes
+--    de liberar em produção (saida/camada_semantica/meta_projeto/09_validacoes.sql).
 COMMIT;

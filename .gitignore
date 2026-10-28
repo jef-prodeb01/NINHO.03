@@ -2,7 +2,12 @@
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 credenciais.md
+.netrc
 
 # Pasta de rascunhos, referências e ideias de outros projetos
 ideias/
@@ -13,4 +18,22 @@ META_ORIENTACAO_IA*.csv
 *.bak*
 *.tmp
 .carga_inicial_concluida
-documentacao/REVISAO_TECNICA_NINHO.md
+
+# ------------------------------------------------------------------------------
+# Dados de cliente (LGPD): insumos em entrega/ e artefatos gerados em saida/
+# NUNCA são versionados. Só a estrutura de pastas e os READMEs/templates ficam.
+# ------------------------------------------------------------------------------
+/entrega/**
+!/entrega/**/
+!/entrega/**/README.md
+!/entrega/**/.gitkeep
+
+/saida/**
+!/saida/**/
+!/saida/**/README.md
+!/saida/**/.gitkeep
+!/saida/camada_semantica/meta_projeto/01_create_meta_tables.sql
+
+# Pacotes exportados por /empacotar-projeto (contêm entrega/ e saida/ do cliente)
+PACOTE_*/
+*.zip

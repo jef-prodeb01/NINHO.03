@@ -40,6 +40,8 @@ O schema semântico padronizado baseia-se em 8 tabelas centrais (consulte o temp
 4. `META_RELACIONAMENTO`: Caminhos homologados de join (chave origem -> chave destino, cardinalidade).
 5. `META_REGRA_NEGOCIO`: Restrições e filtros de integridade (ex: exclusão de cancelados, status vigente).
 6. `META_CONSULTA_NEGOCIO`: Catálogo de perguntas executivas com o SQL homologado correspondente.
+   - Gerado por `ninho_core/perguntas_semanticas.py`: **no mínimo 30 perguntas propostas pela IA** a partir do modelo real (horizontes Executiva, Tática e Auditoria; SQL só sobre `VW_EVENTO`/`VW_KPI`/`VW_DIM`), **mais todas as perguntas do cliente** (Seção 5.1 do Intake e `entrega/camada_semantica/perguntas_cliente.md`), estas com o SQL pendente de validação e a pergunta da IA mais parecida indicada.
+   - Não escreva as perguntas à mão: revise a Seção 6.2 da Blueprint Semântica (desmarque/ajuste) e complemente só o que o modelo não permitir (Fatos sem data, métricas ou dimensões).
 7. `META_ORIENTACAO_IA`: Guia comportamental para LLMs e IAs consultarem o DW.
    - Consulte o catálogo completo das 36 diretrizes em [catalogo_orientacoes_ia.md](./references/catalogo_orientacoes_ia.md).
 8. `META_VALOR_DOMINIO`: Domínio de valores válidos e códigos com descrição humana e flag de ativo.

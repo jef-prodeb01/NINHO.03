@@ -102,7 +102,17 @@ INSERT INTO "<SCHEMA>"."DIM_<NOME>" (
 );
 ```
 
-### 3.4 Definição Canônica Obrigatória da `DIM_TEMPO` Corporativa
+### 3.4 Pureza Estrita das Tabelas Fato (`FATO_*` = Apenas Chaves de Dimensão + Métricas)
+As tabelas Fato (`FATO_*` / `FAT_*`) representam medições quantitativas na interseção das dimensões e **obrigatoriamente** devem conter **APENAS**:
+1. **Chaves das Dimensões (`FKs` / `SKs` / `DIMENSION_KEY`):** Colunas numéricas inteiras (`DIM_<ENTIDADE> NUMBER(38,0) NOT NULL`, `DIM_TEMPO NUMBER(38,0) NOT NULL`, `SK_*` ou `DIMENSION_KEY`) que referenciam `DIM_*.DIMENSION_KEY` (com fallback `-1` para ausências).
+2. **Métricas Numéricas:** Colunas quantitativas (`NUMBER`) com prefixos de métrica (`VAL_*`, `VLR_*`, `QTD_*`, `QT_*`, `PCT_*`, `PER_*`, `MED_*`, `TOT_*`, `SOM_*`, `IND_*`, `DUR_*`, `DIAS_*`).
+
+> 🛑 **PROIBIÇÃO DE TEXTO E ATRIBUTOS DESCRITIVOS NAS FATOS:**
+> - **NUNCA** inclua colunas de texto (`VARCHAR2`, `CHAR`, `CLOB`, `NVARCHAR2`) ou datas brutas (`DATE`, `TIMESTAMP`) nas tabelas `FATO_*`.
+> - Todo atributo textual, código descritivo (`DES_*`, `NOM_*`, `SIG_*`, `COD_*` alfanumérico, status, categoria) é responsabilidade exclusiva das **Dimensões (`DIM_*`)**, e toda data de evento deve ser convertida em chave inteira para a **`DIM_TEMPO`** (`NUMBER(38,0) NOT NULL` no formato `YYYYMMDD`).
+> - Esta regra se aplica de forma unificada à Demonstração (`/demo`), ao Modo Simulador (`/simular-dw`) e à Execução Direta (`/executar-dw`).
+
+### 3.5 Definição Canônica Obrigatória da `DIM_TEMPO` Corporativa
 Sempre haverá uma `DIM_TEMPO` no schema de trabalho, mesmo quando os dados do projeto parecerem estáticos ou anuais. Sua estrutura física padrão é:
 ```sql
 CREATE TABLE "<SCHEMA>"."DIM_TEMPO" (

@@ -17,6 +17,10 @@ Uso:
     python core/scripts_comuns/gerenciar_projeto.py --resetar --confirmar
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.gerenciar_projeto")
+
 import argparse
 import datetime
 import os
@@ -24,6 +28,9 @@ import shutil
 import sys
 import zipfile
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ninho_core.catalogo import fichas_modificadas, restaurar_fichas_projeto  # noqa: E402
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -171,14 +178,10 @@ def resetar_workspace(confirmar: bool, manter_entrega: bool = False) -> int:
     if not manter_entrega:
         alvos.extend(gerados["entrega"])
 
-    # Incluir fichas transitórias geradas em documentacao/catalogo_projetos/
-    pasta_catalogo = BASE_DIR / "documentacao" / "catalogo_projetos"
-    for nome_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
-        arq_cat = pasta_catalogo / nome_cat
-        if arq_cat.exists():
-            alvos.append(arq_cat)
+    # Fichas do projeto ativo são restauradas ao modelo em branco (nunca apagadas: são versionadas)
+    fichas = fichas_modificadas()
 
-    if not alvos:
+    if not alvos and not fichas:
         print("✅ Nenhum arquivo gerado para remover. O workspace já está limpo.")
         return 0
 
@@ -189,9 +192,12 @@ def resetar_workspace(confirmar: bool, manter_entrega: bool = False) -> int:
             print(f"     - {p.relative_to(BASE_DIR).as_posix()}")
         if len(alvos) > 30:
             print(f"     ... e mais {len(alvos) - 30} arquivo(s).")
+        for ficha in fichas:
+            print(f"   Seria restaurada ao modelo em branco: {ficha.relative_to(BASE_DIR).as_posix()}")
         print("\n👉 Para executar a limpeza de fato, adicione a flag `--confirmar`.")
         return 0
 
+    restaurar_fichas_projeto()
     removidos = 0
     for caminho in alvos:
         try:
@@ -211,8 +217,8 @@ def resetar_workspace(confirmar: bool, manter_entrega: bool = False) -> int:
             if not any(caminho_dir.iterdir()):
                 try:
                     caminho_dir.rmdir()
-                except OSError:
-                    pass
+                except OSError as _exc:
+                    _LOG.debug("Exceção tratada (gerenciar_projeto.py:216): %r", _exc)
 
     print("=" * 72)
     print(f"🧹 WORKSPACE RESETADO COM SUCESSO! ({removidos} arquivo(s) removido(s))")

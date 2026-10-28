@@ -9,7 +9,7 @@ Gera um pacote completo Apache Hop 2.x (wf_*.hwf, ppl_*.hpl com TableOutput ou O
 
 ## Execução Determinística
 
-Ao receber o comando /gerar-pacote-hop (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /gerar-pacote-hop (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py gerar-pacote-hop

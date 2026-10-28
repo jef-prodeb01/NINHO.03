@@ -9,7 +9,7 @@ Executa o auditor de tuning e qualidade dimensional (heurísticas H1 a H9) em XM
 
 ## Execução Determinística
 
-Ao receber o comando /auditar-mapa-odi (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /auditar-mapa-odi (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py auditar-mapa-odi

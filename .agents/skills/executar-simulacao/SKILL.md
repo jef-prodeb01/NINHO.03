@@ -9,7 +9,7 @@ Lê as edições feitas nas Blueprints aprovadas e executa a geração física d
 
 ## Execução Determinística
 
-Ao receber o comando /executar-simulacao (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /executar-simulacao (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py executar-simulacao

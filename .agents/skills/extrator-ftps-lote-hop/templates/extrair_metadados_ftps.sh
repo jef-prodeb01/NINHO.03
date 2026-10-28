@@ -36,12 +36,19 @@ echo "==========================================================================
 
 echo "NOME_PROJETO;NOME_ARQUIVO;DATA_MODIFICACAO;TAMANHO_BYTES;STATUS_CARGA" > "${CSV_OUTPUT}"
 
+# Credenciais em arquivo .netrc temporário (permissão 600): a senha nunca aparece
+# na linha de comando do curl (visível em `ps`) nem no log.
+NETRC_FILE="$(mktemp)"
+chmod 600 "${NETRC_FILE}"
+trap 'rm -f "${NETRC_FILE}"' EXIT
+printf 'machine %s login %s password %s\n' "${FTP_HOST}" "${FTP_USER}" "${FTP_PASS}" > "${NETRC_FILE}"
+
 # shellcheck disable=SC2086
 curl -s --ssl-reqd ${CURL_TLS_OPTS} \
-     -u "${FTP_USER}:${FTP_PASS}" \
+     --netrc-file "${NETRC_FILE}" \
      --list-only "${REMOTE_URL}" | while read -r file; do
     if [[ "${file}" =~ \.(xlsx|csv|txt)$ ]]; then
-        SIZE=$(curl -s --ssl-reqd ${CURL_TLS_OPTS} -u "${FTP_USER}:${FTP_PASS}" -sI "${REMOTE_URL}${file}" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+        SIZE=$(curl -s --ssl-reqd ${CURL_TLS_OPTS} --netrc-file "${NETRC_FILE}" -sI "${REMOTE_URL}${file}" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
         echo "${PROJETO};${file};$(date '+%Y-%m-%d %H:%M:%S');${SIZE:-0};PENDENTE" >> "${CSV_OUTPUT}"
     fi
 done

@@ -5,8 +5,8 @@
 🧪 SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E) — PLATAFORMA NINHO
 ================================================================================
 Executa uma bateria completa de testes de regressão e integração sobre todos os
-motores de `core/scripts_comuns/` em ambiente controlado, garantindo ao final
-que o workspace (`entrega/` e `saida/`) termine 100% limpo.
+motores de `core/scripts_comuns/` numa CÓPIA TEMPORÁRIA do projeto (sandbox), de
+modo que os insumos e entregas reais em `entrega/` e `saida/` nunca são tocados.
 
 O que é testado:
   1. Central de Ajuda (`ajuda_ninho.py`) e Gerenciador de Workspace (`gerenciar_projeto.py`)
@@ -28,6 +28,7 @@ O que é testado:
 Uso:
   python core/scripts_comuns/testar_ninho.py
   python core/scripts_comuns/testar_ninho.py --manter-arquivos
+  python core/scripts_comuns/testar_ninho.py --sem-sandbox   (sem sandbox; apaga entrega/ e saida/)
 ================================================================================
 """
 
@@ -133,11 +134,9 @@ def _limpar_artefatos_workspace() -> None:
                         item.rmdir()
                 except OSError:
                     pass
-    pasta_cat = BASE_DIR / "documentacao" / "catalogo_projetos"
-    for nome_cat in ("PROJETO_RESUMO.md", "PROJETO_VERSION.md"):
-        arq_cat = pasta_cat / nome_cat
-        if arq_cat.exists():
-            arq_cat.unlink(missing_ok=True)
+    from ninho_core.catalogo import restaurar_fichas_projeto
+
+    restaurar_fichas_projeto()
 
 
 def _contar_arquivos_workspace() -> Tuple[int, int]:
@@ -204,17 +203,21 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
     assert bp_sem.exists(), "SIMULACAO_BLUEPRINT_SEMANTICA.md não foi gerada"
 
     # 2. Edita a Blueprint do DW:
-    #    - Desmarca a coluna DES_OBSERVACAO_INTERNA (`| [ ] |`)
+    #    - Verifica que colunas de texto da origem (ex: DES_OBSERVACAO_INTERNA) já não entraram na Fato (Pureza da Fato)
+    #    - Desmarca a coluna DES_PORTE_EMPRESA na dimensão (`| [ ] |`)
     #    - Altera a descrição da coluna VAL_CONTRATO
     #    - Marca o checkbox de aprovação final
     txt_dw = bp_dw.read_text(encoding="utf-8")
+    assert "`DES_OBSERVACAO_INTERNA`" not in txt_dw, (
+        "Coluna textual DES_OBSERVACAO_INTERNA não deve entrar na FATO_LICITACAO_CONTRATO (Pureza da Fato)!"
+    )
     linhas_dw_editadas = []
-    desmarcou_obs = False
+    desmarcou_col = False
     editou_desc_val = False
     for ln in txt_dw.splitlines():
-        if "`DES_OBSERVACAO_INTERNA`" in ln and "| [x] |" in ln:
+        if "`DES_PORTE_EMPRESA`" in ln and "| [x] |" in ln:
             ln = ln.replace("| [x] |", "| [ ] |", 1)
-            desmarcou_obs = True
+            desmarcou_col = True
         elif "`VAL_CONTRATO`" in ln and "| [x] |" in ln:
             partes = [p.strip() for p in ln.strip().strip("|").split("|")]
             if len(partes) >= 7:
@@ -225,7 +228,7 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
             ln = ln.replace("- [ ]", "- [x]")
         linhas_dw_editadas.append(ln)
 
-    assert desmarcou_obs, "Não encontrou coluna DES_OBSERVACAO_INTERNA para desmarcar na Blueprint DW"
+    assert desmarcou_col, "Não encontrou coluna DES_PORTE_EMPRESA para desmarcar na Blueprint DW"
     assert editou_desc_val, "Não encontrou coluna VAL_CONTRATO para editar descrição na Blueprint DW"
     bp_dw.write_text("\n".join(linhas_dw_editadas) + "\n", encoding="utf-8")
 
@@ -278,10 +281,16 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
 
     # 5. Verifica se as edições da Blueprint DW refletiram fisicamente em saida/planejador_dw/
     arq_ddl_dw = BASE_DIR / "saida" / "planejador_dw" / "04_fatos" / "04_create_fato_tables.sql"
+    arq_ddl_dims = BASE_DIR / "saida" / "planejador_dw" / "03_dimensoes" / "03_create_dim_tables.sql"
     assert arq_ddl_dw.exists(), "04_create_fato_tables.sql não foi gerado"
+    assert arq_ddl_dims.exists(), "03_create_dim_tables.sql não foi gerado"
     conteudo_ddl_dw = arq_ddl_dw.read_text(encoding="utf-8")
-    assert "DES_OBSERVACAO_INTERNA" not in conteudo_ddl_dw, (
-        "Coluna desmarcada [ ] (DES_OBSERVACAO_INTERNA) não deveria estar no DDL físico!"
+    conteudo_ddl_dims = arq_ddl_dims.read_text(encoding="utf-8")
+    assert "DES_PORTE_EMPRESA" not in conteudo_ddl_dims, (
+        "Coluna desmarcada [ ] (DES_PORTE_EMPRESA) não deveria estar no DDL físico de dimensão!"
+    )
+    assert "DES_OBSERVACAO_INTERNA" not in conteudo_ddl_dw and "VARCHAR2" not in conteudo_ddl_dw, (
+        "Coluna de texto não deveria estar no DDL físico da Fato (Pureza da Fato)!"
     )
     assert "COMENTARIO_CUSTOMIZADO_TESTE_E2E_VALOR_CONTRATO" in conteudo_ddl_dw, (
         "Comentário editado na Blueprint DW não foi refletido em 04_create_fato_tables.sql!"
@@ -306,7 +315,8 @@ def teste_03_simulacao_edicao_reversa_dw_e_semantica() -> str:
     assert "TICKET_MEDIO_" in sql_kpi and "TAXA_QUALID_" in sql_kpi, "KPIs do Radar da IA (Seção 6.1) ausentes em 03_vw_kpis.sql"
     assert "QTD_TOTAL_" not in sql_meta_m, "Métrica desmarcada [ ] (QTD_TOTAL_*) não deveria estar em 02_meta_metrica.sql"
     assert "VAL_ECONOMIA_GERADA" in sql_meta_m and "TICKET_MEDIO_" in sql_meta_m, "Métricas custom/Radar ausentes em 02_meta_metrica.sql"
-    assert "_RAD_" in sql_meta_p, "Golden Queries do Radar da IA (Seção 6.2) ausentes em 06_meta_consulta_negocio.sql"
+    qtd_perguntas_ia = sql_meta_p.count("_IA_")
+    assert qtd_perguntas_ia >= 30, f"Esperava >= 30 perguntas da IA em 06_meta_consulta_negocio.sql, obteve {qtd_perguntas_ia}"
     assert "SK_ORGAO_CUSTOM_RLS" in sql_rls, "COLUNA_SEGREGACAO_RLS editada não refletiu em 02_rls.sql"
 
     return "Parser reverso DW + Semântica + KPIs do Radar da IA validados com 100% de fidelidade."
@@ -325,7 +335,8 @@ def teste_04_gerador_mock_dinamico() -> str:
     assert res["linhas"] == 40, f"Esperava 40 linhas, obteve {res['linhas']}"
     assert res["sentinelas"] >= 1, "Esperava pelo menos 1 chave sentinela -1 gerada"
     assert "VAL_CONTRATO" in res["colunas"], "Coluna real VAL_CONTRATO ausente no CSV dinâmico"
-    assert "DES_OBSERVACAO_INTERNA" not in res["colunas"], "Coluna desmarcada apareceu no CSV dinâmico"
+    assert "DES_PORTE_EMPRESA" not in res["colunas"], "Coluna desmarcada apareceu no CSV dinâmico"
+    assert "DES_OBSERVACAO_INTERNA" not in res["colunas"], "Coluna textual da origem apareceu no CSV da Fato"
 
     conteudo_csv = Path(caminho_csv).read_text(encoding="utf-8")
     assert ";-1;" in conteudo_csv or "\n-1;" in conteudo_csv, "Valor -1 não encontrado nas linhas do CSV"
@@ -1756,6 +1767,9 @@ def teste_17_execucao_direta_e_convencoes_simulacao() -> str:
     assert "DIM_ORGAO_PUBLICO" in ddl_fatos and "DIM_FORNECEDOR" in ddl_fatos and "DIM_TEMPO" in ddl_fatos, (
         "Fato gerada deve usar FKs no padrão DIM_<ENTIDADE> e incluir DIM_TEMPO"
     )
+    assert "VARCHAR2" not in ddl_fatos and "DES_MODALIDADE" not in ddl_fatos, (
+        "Fato gerada deve conter APENAS chaves de dimensão e métricas numéricas (proibido VARCHAR2 na Fato)"
+    )
     assert "_DATA" in ddl_dims, "Tablespace de dados deve seguir <PROJETO>_DATA"
     assert "DES_STATUS_REGISTRO" in ddl_odi, "ODI_DIM_* deve conter DES_STATUS_REGISTRO CHAR(1 CHAR)"
     assert "DTC_EXTRACAO" in ddl_stg and "ID_LOTE" in ddl_stg, "Staging deve conter DTC_EXTRACAO e ID_LOTE"
@@ -1783,7 +1797,106 @@ def teste_17_execucao_direta_e_convencoes_simulacao() -> str:
     return "Comandos /executar-dw, /executar-semantica, /executar-projeto e conformidade 100% com CONVENCOES_DW.md aprovados."
 
 
-def executar_suite_completa(manter_arquivos: bool = False) -> int:
+def _xlsx_minimo(caminho: Path, abas: dict) -> None:
+    """Gera um .xlsx mínimo (inlineStr) só com a biblioteca padrão — exercita o leitor sem openpyxl."""
+    from xml.sax.saxutils import escape
+
+    def col(i: int) -> str:
+        letras = ""
+        while i:
+            i, r = divmod(i - 1, 26)
+            letras = chr(65 + r) + letras
+        return letras
+
+    sheets_xml, rels, ct = [], [], []
+    for idx, (nome, linhas) in enumerate(abas.items(), start=1):
+        rows = "".join(
+            f'<row r="{r}">' + "".join(
+                f'<c r="{col(c)}{r}" t="inlineStr"><is><t>{escape(str(v))}</t></is></c>' for c, v in enumerate(linha, start=1)
+            ) + "</row>"
+            for r, linha in enumerate(linhas, start=1)
+        )
+        sheets_xml.append((f"xl/worksheets/sheet{idx}.xml",
+                           f'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>{rows}</sheetData></worksheet>'))
+        rels.append(f'<Relationship Id="rId{idx}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{idx}.xml"/>')
+        ct.append(f'<Override PartName="/xl/worksheets/sheet{idx}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>')
+    sheets = "".join(
+        f'<sheet name="{escape(n)}" sheetId="{i}" r:id="rId{i}"/>' for i, n in enumerate(abas, start=1)
+    )
+    with zipfile.ZipFile(caminho, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml",
+                    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                    '<Default Extension="xml" ContentType="application/xml"/>'
+                    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+                    + "".join(ct) + "</Types>")
+        zf.writestr("xl/workbook.xml",
+                    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                    f"<sheets>{sheets}</sheets></workbook>")
+        zf.writestr("xl/_rels/workbook.xml.rels",
+                    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + "".join(rels) + "</Relationships>")
+        for nome_arq, xml in sheets_xml:
+            zf.writestr(nome_arq, xml)
+
+
+def teste_18_esteira_governanca_mongo_aws() -> str:
+    """T18: /simular-governanca e /executar-governanca de ponta a ponta (Gate 0.5 -> MongoDB + AWS)."""
+    _limpar_artefatos_workspace()
+    pasta = BASE_DIR / "entrega" / "governanca_dados"
+    pasta.mkdir(parents=True, exist_ok=True)
+    _xlsx_minimo(pasta / "insumos_e2e.xlsx", {
+        "Dados - Insumos": [
+            ["Objeto", "Descrição"],
+            ["Nome da base / sistema de origem", "SIGRH"],
+            ["Tipo de origem (ex: banco, API, File System)", "Banco de dados Oracle"],
+            ["Criticidade dos dados (alta, média, baixa)", "Alta"],
+        ],
+        "Dicionário de Dados": [
+            ["Nome do Campo", "Descrição", "Tipo", "Anonimizar?", "Sensibilidade", "Sensível?", "Obrigatório?", "Chave?"],
+            ["MATRICULA", "Matrícula funcional", "NUMBER(10)", "N", "Confidencial", "S", "S", "S"],
+            ["CPF", "CPF do servidor", "VARCHAR2(11)", "S", "Confidencial", "S", "S", "N"],
+            ["VAL_SALARIO", "Salário bruto", "NUMBER(18,2)", "S", "Confidencial", "S", "N", "N"],
+        ],
+    })
+    (pasta / "amostra_e2e.csv").write_text(
+        "MATRICULA;CPF;VAL_SALARIO\n1001;12345678901;5500.00\n1002;98765432100;6100.50\n", encoding="utf-8"
+    )
+    intake = BASE_DIR / "modulos" / "governanca_dados" / "INTAKE_GOVERNANCA.md"
+    texto_original = intake.read_text(encoding="utf-8")
+    try:
+        intake.write_text(
+            "- **Sigla do Órgão / Cliente (`SIGLA_ORGAO`):** `SAEB`\n"
+            "- **Unidade / Coordenação / Sistema (`UNIDADE`):** `RH`\n"
+            "- **Tema de Negócio (`TEMA`):** `SERVIDOR`\n"
+            "- **Versão do Esquema (`VERSAO`):** `V1`\n"
+            "- [x] **MongoDB Lakehouse:**\n- [x] **Amazon SageMaker Unified Studio:**\n- [x] **Apache Hop (.hpl / .hwf):**\n",
+            encoding="utf-8",
+        )
+        rc_s, out_s, err_s = _executar_cli(["ninho.py", "simular-governanca", "--json"])
+        assert rc_s == 0 and '"SIMULADO"' in out_s, f"/simular-governanca falhou: {out_s}\n{err_s}"
+        saida = BASE_DIR / "saida" / "governanca_dados"
+        assert not (saida / "schemas_mongo").exists(), "Simulação não deveria gravar scripts MongoDB"
+
+        rc, out, err = _executar_cli(["ninho.py", "executar-governanca", "--json"])
+        assert rc == 0 and '"GERADO"' in out, f"/executar-governanca falhou: {out}\n{err}"
+        for rel in ("schemas_mongo/01_schema_tb_dataset.js", "schemas_mongo/07_colecao_trusted_saeb_rh_servidor_v1.js",
+                    "aws_sagemaker_catalog/glue_table_saeb_rh_servidor_v1.json", "matriz_de_para_lgpd_saeb_rh_servidor_v1.csv"):
+            assert (saida / rel).exists(), f"Artefato de governança ausente: {rel}"
+
+        rc_v, out_v, _ = _executar_cli(["core/scripts_comuns/validar_entrega.py", "saida"])
+        assert "<INFORMAR" in out_v or "pendencia" in out_v.lower(), "validar_entrega deveria apontar pendências <INFORMAR>"
+
+        (pasta / "amostra_e2e.csv").write_text("MATRICULA;CPF;COLUNA_FANTASMA\n1001;123;x\n", encoding="utf-8")
+        rc_d, out_d, _ = _executar_cli(["ninho.py", "executar-governanca", "--json"])
+        assert rc_d == 1 and "DEVOLVIDO_AO_CLIENTE" in out_d, "Coluna não catalogada deveria devolver ao cliente"
+    finally:
+        intake.write_text(texto_original, encoding="utf-8")
+        _limpar_artefatos_workspace()
+    return "Esteira de Governança (simulação, MongoDB 01..08, AWS Glue/SageMaker, pendências <INFORMAR> e devolução ao cliente) validada."
+
+
+def executar_suite_completa(manter_arquivos: bool = False, parar_no_erro: bool = False) -> int:
     print("=" * 88)
     print("🦅 PLATAFORMA NINHO — SUÍTE AUTOMATIZADA DE TESTES END-TO-END (E2E)")
     print("=" * 88)
@@ -1806,6 +1919,7 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
         ("T15: Suíte Apache Hop 2.x (SVG Painter, hop-lint, Migrador Kettle, THREAT_MODEL & OraBulkLoader)", teste_15_apache_hop_5_mecanismos),
         ("T16: Prova Real Pós-Carga (DIM+FATO) + Auditor DAX (MED-01..06) + Mockup Populado", teste_16_prova_real_amostra_dim_fato_e_mockup_dax),
         ("T17: Execução Direta (/executar-dw, /executar-projeto) & Convenções 100% no Simulador", teste_17_execucao_direta_e_convencoes_simulacao),
+        ("T18: Esteira de Governança (/simular-governanca, /executar-governanca, MongoDB + AWS, devolução)", teste_18_esteira_governanca_mongo_aws),
     ]
 
     passou = 0
@@ -1831,7 +1945,10 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
                 print(f"  ❌ [FAIL] {nome_teste} ({dur:.2f}s)")
                 print(f"         ↳ Erro: {exc}")
                 falhou += 1
-                break
+                if parar_no_erro:
+                    break
+                # Próximas baterias começam do zero (estamos na sandbox, limpar é seguro)
+                _limpar_artefatos_workspace()
     finally:
         if not manter_arquivos:
             _limpar_artefatos_workspace()
@@ -1849,10 +1966,54 @@ def executar_suite_completa(manter_arquivos: bool = False) -> int:
     if not manter_arquivos:
         status_limpeza = "LIMPO (0 arquivos residuais)" if (qtd_e == 0 and qtd_s == 0) else f"RESÍDUOS ({qtd_e} em entrega/, {qtd_s} em saida/)"
         print(f"🧹 Workspace pós-teste: {status_limpeza}")
-    print(f"📊 Resultado Final: {passou}/{len(testes)} suítes aprovadas em {dur_total:.2f}s.")
+    print(f"📊 Resultado Final: {passou}/{len(testes)} suítes aprovadas, {falhou} com falha, em {dur_total:.2f}s.")
     print("=" * 88)
 
     return 0 if (falhou == 0 and (manter_arquivos or (qtd_e == 0 and qtd_s == 0))) else 1
+
+
+VARIAVEL_SANDBOX = "NINHO_TESTE_SANDBOX"
+PASTAS_IGNORADAS_SANDBOX = {".git", ".venv", "venv", "__pycache__", ".pytest_cache", ".ruff_cache", "ideias"}
+
+
+def _copiar_projeto_para_sandbox(destino: Path) -> None:
+    """Copia o projeto para `destino` sem os insumos/saídas do engenheiro (apenas a estrutura de templates)."""
+
+    def _ignorar(pasta: str, nomes: List[str]) -> List[str]:
+        pasta_rel = Path(pasta).resolve().relative_to(BASE_DIR)
+        ignorados = [n for n in nomes if n in PASTAS_IGNORADAS_SANDBOX]
+        if pasta_rel.parts and pasta_rel.parts[0] in ("entrega", "saida"):
+            ignorados += [
+                n
+                for n in nomes
+                if (Path(pasta) / n).is_file() and n not in ARQUIVOS_PRESERVADOS_TEMPLATE
+            ]
+        return ignorados
+
+    shutil.copytree(BASE_DIR, destino, ignore=_ignorar)
+
+
+def executar_em_sandbox(argv: List[str], manter_arquivos: bool) -> int:
+    """
+    Executa a suíte numa cópia temporária do projeto.
+
+    A suíte limpa `entrega/` e `saida/` entre as baterias; rodando na cópia, os
+    insumos e entregas reais do engenheiro nunca são tocados.
+    """
+    pasta_tmp = Path(tempfile.mkdtemp(prefix="ninho_testes_"))
+    copia = pasta_tmp / "NINHO"
+    print(f"🧪 Preparando sandbox isolada de testes em: {copia}", flush=True)
+    _copiar_projeto_para_sandbox(copia)
+    env = dict(os.environ, **{VARIAVEL_SANDBOX: "1"})
+    script_copia = copia / "core" / "scripts_comuns" / Path(__file__).name
+    try:
+        rc = subprocess.call([sys.executable, str(script_copia)] + argv, cwd=str(copia), env=env)
+    finally:
+        if manter_arquivos:
+            print(f"📂 Artefatos dos testes mantidos em: {copia}")
+        else:
+            shutil.rmtree(pasta_tmp, ignore_errors=True)
+    return rc
 
 
 def main() -> int:
@@ -1860,10 +2021,22 @@ def main() -> int:
     parser.add_argument(
         "--manter-arquivos",
         action="store_true",
-        help="Não limpa as pastas entrega/ e saida/ ao término dos testes (útil para inspeção manual).",
+        help="Mantém a sandbox de testes (entrega/ e saida/ gerados) ao término, para inspeção manual.",
+    )
+    parser.add_argument(
+        "--parar-no-erro",
+        action="store_true",
+        help="Interrompe a suíte na primeira bateria com falha (padrão: roda todas e mostra o placar).",
+    )
+    parser.add_argument(
+        "--sem-sandbox",
+        action="store_true",
+        help="Roda direto neste diretório, sem sandbox. ATENÇÃO: apaga os arquivos de entrega/ e saida/.",
     )
     args = parser.parse_args()
-    return executar_suite_completa(manter_arquivos=args.manter_arquivos)
+    if not args.sem_sandbox and os.environ.get(VARIAVEL_SANDBOX) != "1":
+        return executar_em_sandbox(sys.argv[1:], args.manter_arquivos)
+    return executar_suite_completa(manter_arquivos=args.manter_arquivos, parar_no_erro=args.parar_no_erro)
 
 
 if __name__ == "__main__":

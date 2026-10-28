@@ -1,0 +1,14 @@
+# Normaliza quebras de linha no repositório (LF) e deixa o Git decidir na cópia de trabalho.
+* text=auto
+
+# Scripts executados em servidores Linux (FTPS/Hop) precisam de LF mesmo em clones no Windows.
+*.sh text eol=lf
+
+# Binários de templates (planilhas, imagens) nunca são convertidos.
+*.xlsx binary
+*.ods binary
+*.docx binary
+*.pptx binary
+*.pdf binary
+*.png binary
+*.pbix binary

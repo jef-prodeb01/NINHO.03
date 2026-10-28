@@ -64,12 +64,17 @@ Consulte sempre os documentos de referência desta skill antes de gerar qualquer
      - **Matriz DE/PARA Completa:** `Campo Origem` ➔ `Campo Destino MongoDB (prefixo PRODEB)` ➔ `Tipo Origem` ➔ `Tipo BSON` ➔ `Classificação LGPD/LAI`.
      - **💡 Radar Consultivo da IA:** Alertas de risco LGPD implícito, regras adicionais para a Barreira de 4 Etapas e sugestões de Conceitos Canônicos (`CNC_*`) para cruzamento entre órgãos.
 3. **Fase 3 — Geração Física dos Artefatos MongoDB e AWS SageMaker Catalog:**
-   - Gere os scripts de validação e índices em `saida/governanca_dados/schemas_mongo/`:
-     - `01_schema_tb_dataset.js` (e documento JSON do dataset catalogado)
+   - Execute a esteira determinística `python ninho.py executar-governanca` (`core/scripts_comuns/gerar_artefatos_governanca.py`). Ela refaz o Gate 0.5, lê o Intake e gera os arquivos abaixo. Não escreva esses scripts à mão: revise o `relatorio_governanca_<DATASET>.md` e resolva as pendências `<INFORMAR: ...>` com o engenheiro.
+   - Os scripts das coleções centrais (01 a 04) são extraídos dos blocos `// Script:` destas referências; para mudar o padrão, edite a referência.
+   - Scripts gerados em `saida/governanca_dados/schemas_mongo/`:
+     - `01_schema_tb_dataset.js`
      - `02_schema_tb_sem_dominios.js`
      - `03_schema_tb_sem_conceitos.js`
      - `04_schema_tb_auditoria_eventos.js`
-     - `05_regras_barreira_quarentena_<PROJETO>.js`
+     - `05_regras_barreira_quarentena_<DATASET>.js`
+     - `06_documento_tb_dataset_<DATASET>.js` (upsert idempotente do dataset catalogado)
+     - `07_colecao_trusted_<DATASET>.js` (`$jsonSchema` estrito + índice da chave de negócio)
+     - `08_evento_auditoria_<DATASET>.js`
    - Se AWS estiver marcada no Intake, gere os payloads e Metadata Forms do **Amazon SageMaker Catalog & AWS Glue** em `saida/governanca_dados/aws_sagemaker_catalog/` (ou `aws_datazone/`).
    - Gere o relatório executivo e matriz DE/PARA em `saida/governanca_dados/relatorio_governanca_<PROJETO>.md`.
 

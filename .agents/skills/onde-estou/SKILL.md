@@ -9,7 +9,7 @@ Exibe a Bússola Contextual do projeto com barra de progresso, arquivos detectad
 
 ## Execução Determinística
 
-Ao receber o comando /onde-estou (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /onde-estou (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py onde-estou

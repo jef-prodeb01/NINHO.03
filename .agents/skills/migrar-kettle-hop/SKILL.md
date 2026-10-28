@@ -9,7 +9,7 @@ Migra projetos legados do Pentaho Kettle (.ktr, .kjb, shared.xml) para Apache Ho
 
 ## Execução Determinística
 
-Ao receber o comando /migrar-kettle-hop (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /migrar-kettle-hop (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py migrar-kettle-hop

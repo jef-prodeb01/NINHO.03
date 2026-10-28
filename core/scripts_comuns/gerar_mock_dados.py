@@ -13,6 +13,10 @@ Uso:
     python core/scripts_comuns/gerar_mock_dados.py --linhas 100 --separar-tabelas
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.gerar_mock_dados")
+
 import argparse
 import csv
 import os
@@ -26,8 +30,8 @@ from typing import Dict, List, Optional, Tuple
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (gerar_mock_dados.py:29): %r", _exc)
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -388,7 +392,7 @@ def gerar_dados_mock_dinamico(
     print(f"[OK] Mock dinâmico gerado a partir do modelo real ({fato_principal_nome} + {len(dims)} DIMs): {caminho_saida}")
     print(f"     Colunas geradas ({len(colunas_saida)}): {', '.join(colunas_saida)}")
     print(f"     Total de linhas: {len(linhas_csv)} (Ocorrências de chave -1 Kimball: {qtd_sentinelas_geradas})")
-    print(f"     Separador: ';' (Padrão para Power BI / Excel pt-BR)")
+    print("     Separador: ';' (Padrão para Power BI / Excel pt-BR)")
 
     return {
         "modo": "dinamico",
@@ -488,7 +492,7 @@ def gerar_dados_mock_legado(num_linhas: int, caminho_saida: str) -> dict:
 
     print(f"[OK] Arquivo gerado com sucesso em: {caminho_saida}")
     print(f"     Total de linhas: {len(linhas)}")
-    print(f"     Separador: ';' (Padrão para Power BI / Excel pt-BR)")
+    print("     Separador: ';' (Padrão para Power BI / Excel pt-BR)")
 
     return {
         "modo": "legado",

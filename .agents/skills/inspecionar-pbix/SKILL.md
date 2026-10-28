@@ -9,7 +9,7 @@ Descompacta e audita arquivos .pbix do Power BI, extraindo filtros AST/DAX e exe
 
 ## Execução Determinística
 
-Ao receber o comando /inspecionar-pbix (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /inspecionar-pbix (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py inspecionar-pbix

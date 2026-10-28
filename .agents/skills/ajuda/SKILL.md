@@ -9,7 +9,7 @@ Exibe o catálogo completo de comandos da plataforma NINHO organizado por tópic
 
 ## Execução Determinística
 
-Ao receber o comando /ajuda (ou pedido equivalente), execute imediatamente no terminal via `run_command`:
+Ao receber o comando /ajuda (ou pedido equivalente), execute imediatamente na raiz do projeto, usando a ferramenta de terminal da sua IDE (Bash, PowerShell ou `run_command`):
 
 ```bash
 python ninho.py ajuda

@@ -19,10 +19,15 @@ Uso:
   python core/scripts_comuns/inspecionar_insumos_governanca.py [caminho_opcional] [--salvar-relatorio caminho.md]
 """
 
-import os
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.inspecionar_insumos_governanca")
+
 import re
 import sys
 import csv
+import json
+import zipfile
 import unicodedata
 import argparse
 from pathlib import Path
@@ -38,27 +43,25 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from ninho_core import xml_seguro  # noqa: E402
+from ninho_core.zip_seguro import ler_membro  # noqa: E402
+from ninho_core.console import configurar_saida_utf8  # noqa: E402
+
+from ninho_core.leitores import (  # noqa: E402
+    extrair_texto_pdf_nativo,
+    ler_documento_docx,
+    ler_documento_odt,
+    ler_planilha_ods,
+)
+from ninho_core.lgpd import escanear_pii_em_texto_ou_linhas  # noqa: E402
+
 try:
-    from gerador_artefatos_visuais import (
-        exportar_markdown_para_docx,
-        exportar_markdown_para_pdf,
-        extrair_texto_pdf_nativo,
-        ler_planilha_ods,
-        ler_documento_docx,
-        ler_documento_odt,
-        escanear_pii_em_texto_ou_linhas,
-    )
-except Exception:
+    from gerador_artefatos_visuais import exportar_markdown_para_docx, exportar_markdown_para_pdf
+except Exception:  # exportação .docx/.pdf é opcional: a auditoria do Gate 0.5 roda sem ela
     exportar_markdown_para_docx = None
     exportar_markdown_para_pdf = None
-    extrair_texto_pdf_nativo = None
-    ler_planilha_ods = None
-    ler_documento_docx = None
-    ler_documento_odt = None
-    escanear_pii_em_texto_ou_linhas = None
 
-if hasattr(sys.stdout, "reconfigure"):
-    sys.stdout.reconfigure(encoding="utf-8")
+configurar_saida_utf8()
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_ENTREGA_DIR = BASE_DIR / "entrega" / "governanca_dados"
@@ -100,9 +103,16 @@ KEYWORDS_SENSIVEL_ART11 = [
 ]
 
 PREFIXOS_PRODEB_VALIDOS = (
-    "cod_", "nom_", "des_", "num_", "ind_", "dtc_", "dth_", "val_",
+    "ide_", "cod_", "nom_", "des_", "num_", "ind_", "dtc_", "dth_", "val_",
     "qtd_", "prc_", "sts_", "tip_", "ref_", "lst_", "jsn_", "sig_",
     "txt_", "hor_"
+)
+
+# Números de documento: prefixo `num_` e SEMPRE tipo BSON "string" (preserva zeros à esquerda),
+# conforme a Matriz Oficial de Conversão de Tipos (padrao_nomenclatura_e_tipos_mongodb.md).
+DOCUMENTOS_NUMERICOS = (
+    "cpf", "cnpj", "cep", "rg", "cnh", "renavam", "pis", "pasep", "nis", "titulo_eleitor",
+    "ctps", "matricula", "pernr", "no_pessoal", "telefone", "celular", "processo", "protocolo",
 )
 
 
@@ -139,9 +149,11 @@ def inferir_prefixo_e_nome_mongo(nome_campo: str, descricao: str, tipo_origem: s
     tipo_lower = remover_acentos(tipo_origem or "").strip().lower()
 
     # 1. Determinar tipo BSON e prefixo semântico
-    eh_doc_codigo = any(
-        k in bruto
-        for k in ["cpf", "cnpj", "cep", "rg", "cnh", "renavam", "placa", "pis", "pasep", "nis", "matricula", "pernr", "no_pessoal", "telefone", "celular", "tel", "codigo", "cod_", "_id", "id_", "protocolo", "processo"]
+    tokens = set(bruto.split("_"))
+    eh_documento = any(re.search(rf"(^|_){re.escape(k)}($|_)", bruto) for k in DOCUMENTOS_NUMERICOS)
+    eh_identificador = bool(tokens & {"id", "ide"}) or bruto.startswith(("id_", "ide_"))
+    eh_doc_codigo = eh_documento or eh_identificador or any(
+        k in bruto for k in ["placa", "tel", "codigo", "cod_", "cd_"]
     )
     eh_monetario = (
         any(k in bruto for k in ["val_", "valor", "vlr", "sal_", "salario", "remuneracao", "vencimento", "provento", "desconto", "liquido", "bruto", "custo", "preco", "tarifa", "montante", "soma_sal"])
@@ -176,7 +188,13 @@ def inferir_prefixo_e_nome_mongo(nome_campo: str, descricao: str, tipo_origem: s
         nome_final = bruto
         prefixo = bruto[:4]
     else:
-        sem_pref_legado = re.sub(r"^(cd|id|nm|ds|nr|vl|dt|dh|tp|sg|fl|st|qt|sal)_", "", bruto)
+        # Remove prefixos legados (abreviados e por extenso), que o prefixo PRODEB substitui.
+        sem_pref_legado = re.sub(
+            r"^(cd|id|nm|ds|nr|vl|dt|dh|tp|sg|fl|st|qt|data|dat|valor|vlr|nome|descricao|desc|numero|nro|"
+            r"codigo|quantidade|qtde|tipo|flag|indicador|sigla)_(?=[a-z0-9])",
+            "",
+            bruto,
+        )
         if eh_datahora:
             prefixo = "dth_"
         elif eh_data:
@@ -189,6 +207,10 @@ def inferir_prefixo_e_nome_mongo(nome_campo: str, descricao: str, tipo_origem: s
             prefixo = "hor_"
         elif eh_booleano:
             prefixo = "ind_"
+        elif eh_documento:
+            prefixo = "num_"
+        elif eh_identificador:
+            prefixo = "ide_"
         elif eh_status:
             prefixo = "sts_"
         elif eh_sigla:
@@ -216,15 +238,21 @@ def inferir_prefixo_e_nome_mongo(nome_campo: str, descricao: str, tipo_origem: s
         bson_type = "decimal"
     elif prefixo == "ind_" or eh_booleano:
         bson_type = "bool"
-    elif prefixo == "cod_" or eh_doc_codigo:
+    elif prefixo in ("cod_", "ide_") or eh_doc_codigo:
         bson_type = "string"
     elif prefixo in ("qtd_", "num_") or any(t in tipo_lower for t in ["int", "integer", "number", "numeric", "numérico", "numerico", "bigint", "smallint"]):
-        if any(k in bruto for k in ["cpf", "cnpj", "cep", "rg", "telefone", "celular", "matricula", "processo", "beneficiario"]):
+        precisao = re.search(r"\(\s*(\d+)\s*(?:,\s*0\s*)?\)", tipo_lower)
+        if eh_documento or "beneficiario" in bruto:
             bson_type = "string"
         elif "texto" in tipo_lower or "char" in tipo_lower or "string" in tipo_lower:
             bson_type = "string"
-        elif "dec" in tipo_lower or "float" in tipo_lower or "double" in tipo_lower or "real" in tipo_lower or "money" in tipo_lower:
+        elif (
+            any(t in tipo_lower for t in ("dec", "float", "double", "real", "money"))
+            or re.search(r"\(\s*\d+\s*,\s*[1-9]\d*\s*\)", tipo_lower)
+        ):
             bson_type = "decimal"
+        elif "bigint" in tipo_lower or (precisao and int(precisao.group(1)) >= 10):
+            bson_type = "long"
         else:
             bson_type = "int"
     elif any(t in tipo_lower for t in ["dec", "float", "double", "real", "money", "currency"]):
@@ -251,6 +279,226 @@ def detectar_risco_lgpd(nome_campo: str, descricao: str) -> tuple[bool, bool, st
     return False, False, "Não Pessoal / Operacional"
 
 
+class _CelulaXlsx:
+    __slots__ = ("value",)
+
+    def __init__(self, valor):
+        self.value = valor
+
+
+class _AbaXlsx:
+    """Aba lida sem openpyxl, com a interface mínima usada pelo inspetor (`cell`, `max_row`, `max_column`)."""
+
+    def __init__(self, celulas: dict):
+        self._celulas = celulas
+        self.max_row = max((r for r, _ in celulas), default=0)
+        self.max_column = max((c for _, c in celulas), default=0)
+
+    def cell(self, row: int, column: int) -> _CelulaXlsx:
+        return _CelulaXlsx(self._celulas.get((row, column)))
+
+
+def _indice_coluna(letras: str) -> int:
+    indice = 0
+    for letra in letras:
+        indice = indice * 26 + (ord(letra) - ord("A") + 1)
+    return indice
+
+
+def _carregar_xlsx_sem_openpyxl(caminho_xlsx: Path) -> dict:
+    """Lê um .xlsx (OOXML) só com a biblioteca padrão, preservando a posição real de cada célula."""
+    abas = {}
+    with zipfile.ZipFile(caminho_xlsx) as zf:
+        nomes_zip = set(zf.namelist())
+        compartilhadas = []
+        if "xl/sharedStrings.xml" in nomes_zip:
+            for si in xml_seguro.fromstring(ler_membro(zf, "xl/sharedStrings.xml")).findall(".//{*}si"):
+                compartilhadas.append("".join(t.text or "" for t in si.findall(".//{*}t")))
+
+        rels = {}
+        if "xl/_rels/workbook.xml.rels" in nomes_zip:
+            for rel in xml_seguro.fromstring(ler_membro(zf, "xl/_rels/workbook.xml.rels")).findall(".//{*}Relationship"):
+                alvo = rel.attrib.get("Target", "").lstrip("/")
+                rels[rel.attrib.get("Id", "")] = alvo if alvo.startswith("xl/") else f"xl/{alvo}"
+
+        planilhas = xml_seguro.fromstring(ler_membro(zf, "xl/workbook.xml")).findall(".//{*}sheet")
+        for pos, sheet in enumerate(planilhas, start=1):
+            rid = next((v for k, v in sheet.attrib.items() if k.endswith("}id")), "")
+            arq_aba = rels.get(rid, f"xl/worksheets/sheet{pos}.xml")
+            if arq_aba not in nomes_zip:
+                continue
+            celulas = {}
+            for c in xml_seguro.fromstring(ler_membro(zf, arq_aba)).findall(".//{*}c"):
+                ref = re.match(r"([A-Z]+)(\d+)", c.attrib.get("r", ""))
+                if not ref:
+                    continue
+                tipo = c.attrib.get("t", "")
+                v = c.find("{*}v")
+                if tipo == "s" and v is not None and v.text is not None:
+                    idx = int(v.text)
+                    valor = compartilhadas[idx] if 0 <= idx < len(compartilhadas) else ""
+                elif tipo == "inlineStr":
+                    valor = "".join(t.text or "" for t in c.findall(".//{*}t"))
+                elif tipo == "b" and v is not None:
+                    valor = "TRUE" if v.text == "1" else "FALSE"
+                else:
+                    valor = v.text if v is not None else None
+                if valor is not None and str(valor).strip() != "":
+                    celulas[(int(ref.group(2)), _indice_coluna(ref.group(1)))] = valor
+            abas[sheet.attrib.get("name", f"Sheet{pos}")] = _AbaXlsx(celulas)
+    return abas
+
+
+VALORES_SIM = {"s", "sim", "y", "yes", "true", "1", "x"}
+VALORES_NAO = {"n", "nao", "no", "false", "0"}
+
+BASE_LEGAL_PESSOAL = (
+    "Art. 7º, III da LGPD — tratamento pela administração pública para execução de políticas públicas"
+)
+BASE_LEGAL_SENSIVEL = "Art. 11, II, 'b' da LGPD — tratamento compartilhado necessário à execução de políticas públicas"
+
+
+def _sim_nao(valor) -> bool | None:
+    norm = remover_acentos(str(valor or "")).strip().lower()
+    if norm in VALORES_SIM:
+        return True
+    if norm in VALORES_NAO:
+        return False
+    return None
+
+
+def classificar_campo_lgpd(item: dict) -> dict:
+    """
+    Enquadra um campo nos 4 níveis oficiais (PUBLICO, INTERNO, CONFIDENCIAL, RESTRITO) de `diretrizes_lgpd.md`.
+
+    Combina a declaração do cliente (Sensível?, Anonimizar?, Sensibilidade) com a detecção automática:
+    o nível final nunca fica abaixo do que o nome/descrição do campo indica.
+    """
+    eh_pii, eh_art11, diagnostico = detectar_risco_lgpd(item.get("campo_origem", ""), item.get("descricao", ""))
+    sensivel_cli = _sim_nao(item.get("sensivel_cliente"))
+    anonimizar_cli = _sim_nao(item.get("anonimizar_cliente"))
+    sensib_cli = remover_acentos(str(item.get("sensibilidade_cliente") or "")).strip().upper()
+
+    if eh_art11 or "RESTRIT" in sensib_cli:
+        nivel = "RESTRITO"
+    elif eh_pii or sensivel_cli or "CONFIDENC" in sensib_cli:
+        nivel = "CONFIDENCIAL"
+    elif "PUBLIC" in sensib_cli:
+        nivel = "PUBLICO"
+    else:
+        nivel = "INTERNO"
+
+    dado_pessoal = nivel in ("CONFIDENCIAL", "RESTRITO")
+    anonimizar = bool(anonimizar_cli) or nivel == "RESTRITO"
+    if nivel == "RESTRITO":
+        tecnica = "Anonimização obrigatória no transporte analítico + criptografia em repouso + Termo de Compartilhamento (TC_*)"
+    elif anonimizar:
+        tecnica = "Pseudonimização SHA-256 (hash determinístico com SALT corporativo) + máscara parcial em visões analíticas"
+    else:
+        tecnica = ""
+
+    return {
+        "des_nivel_sensibilidade": nivel,
+        "ind_dado_pessoal": dado_pessoal,
+        "ind_dado_sensivel": nivel == "RESTRITO",
+        "ind_anonimizar": anonimizar,
+        "des_tecnica_anonimizacao": tecnica,
+        "des_base_legal": BASE_LEGAL_SENSIVEL if nivel == "RESTRITO" else (BASE_LEGAL_PESSOAL if dado_pessoal else "Não se aplica (dado não pessoal)"),
+        "diagnostico": diagnostico,
+        "divergente_do_cliente": bool(
+            (eh_pii or eh_art11) and (sensivel_cli is False or "PUBLIC" in sensib_cli)
+        ),
+    }
+
+
+def _normalizar_nome_coluna(nome: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", remover_acentos(str(nome)).lower()).strip("_")
+
+
+def cruzar_dicionario_com_amostras(resultados: list[dict]) -> None:
+    """
+    Etapa 2 e 4 da Barreira (Metadados e LGPD) já no Gate 0.5, cruzando o Dicionário de Dados
+    com as amostras CSV enviadas pelo cliente:
+
+    - coluna presente na amostra e ausente no dicionário  -> bloqueio (campo não catalogado / schema drift);
+    - campo do dicionário ausente em todas as amostras    -> alerta;
+    - PII encontrada no conteúdo de coluna declarada como não sensível -> bloqueio (classificação incoerente).
+    """
+    dicionarios = [r for r in resultados if r.get("de_para_campos") and r["tipo_arquivo"] in ("XLSX", "ODS")]
+    amostras = [r for r in resultados if r["tipo_arquivo"] == "CSV" and r.get("colunas")]
+    if not dicionarios or not amostras:
+        return
+
+    campos_dic = {}
+    for r in dicionarios:
+        for item in r["de_para_campos"]:
+            campos_dic[_normalizar_nome_coluna(item["campo_origem"])] = item
+    colunas_vistas = set()
+
+    for amostra in amostras:
+        for coluna in amostra["colunas"]:
+            chave = _normalizar_nome_coluna(coluna)
+            colunas_vistas.add(chave)
+            item = campos_dic.get(chave)
+            if item is None:
+                amostra["bloqueios_devolucao"].append(
+                    f"[Cruzamento Dicionário x Amostra] Coluna '{coluna}' existe na amostra mas não está catalogada "
+                    "no Dicionário de Dados (campo não documentado / schema drift)."
+                )
+                continue
+            tipos_pii = amostra.get("pii_por_coluna", {}).get(coluna)
+            if tipos_pii and _sim_nao(item.get("sensivel_cliente")) is False and _sim_nao(item.get("anonimizar_cliente")) is False:
+                amostra["bloqueios_devolucao"].append(
+                    f"[Cruzamento Dicionário x Amostra] Coluna '{coluna}' foi declarada como NÃO sensível e sem "
+                    f"anonimização, mas a amostra contém {', '.join(sorted(tipos_pii))}. O Data Owner deve retificar "
+                    "a classificação LGPD (diretrizes_lgpd.md §3.2)."
+                )
+
+    for chave, item in campos_dic.items():
+        if chave not in colunas_vistas:
+            dicionarios[0]["alertas_lgpd"].append(
+                f"[Cruzamento Dicionário x Amostra] Campo '{item['campo_origem']}' está no Dicionário de Dados, "
+                "mas não aparece em nenhuma amostra CSV enviada."
+            )
+
+
+def executar_inspecao(alvo: Path) -> list[dict]:
+    """Inspeciona um arquivo ou diretório de insumos e aplica o cruzamento dicionário x amostras."""
+    if alvo.is_file():
+        arquivos = [alvo]
+    else:
+        arquivos = []
+        for ext in ("*.xlsx", "*.ods", "*.csv", "*.pdf", "*.docx", "*.odt"):
+            arquivos.extend(sorted(alvo.rglob(ext)))
+        arquivos = [f for f in arquivos if not f.name.startswith("~$")]
+
+    inspetores = {
+        ".xlsx": inspecionar_xlsx,
+        ".ods": inspecionar_ods,
+        ".csv": inspecionar_csv,
+        ".pdf": inspecionar_pdf,
+        ".docx": inspecionar_doc_texto,
+        ".odt": inspecionar_doc_texto,
+    }
+    resultados = [inspetores[a.suffix.lower()](a) for a in arquivos if a.suffix.lower() in inspetores]
+    cruzar_dicionario_com_amostras(resultados)
+    for r in resultados:
+        for item in r.get("de_para_campos", []):
+            item["classificacao_lgpd"] = classificar_campo_lgpd(item)
+    return resultados
+
+
+def resultados_para_json(resultados: list[dict]) -> str:
+    """Serializa os resultados (conjuntos viram listas) para consumo por pipelines e agentes."""
+    total = sum(len(r["bloqueios_devolucao"]) for r in resultados)
+    payload = {
+        "veredito": "REPROVADO" if total else "APROVADO",
+        "total_bloqueios": total,
+        "arquivos": resultados,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2, default=lambda o: sorted(o) if isinstance(o, set) else str(o))
+
+
 def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
     resultado = {
         "arquivo": caminho_xlsx.name,
@@ -263,17 +511,17 @@ def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
         "resumo": {}
     }
 
-    if not HAS_OPENPYXL:
-        resultado["bloqueios_devolucao"].append("Biblioteca 'openpyxl' não disponível no ambiente Python.")
-        return resultado
-
     try:
-        wb = openpyxl.load_workbook(caminho_xlsx, data_only=True)
+        if HAS_OPENPYXL:
+            wb = openpyxl.load_workbook(caminho_xlsx, data_only=True)
+            abas_wb = {nome: wb[nome] for nome in wb.sheetnames}
+        else:
+            abas_wb = _carregar_xlsx_sem_openpyxl(caminho_xlsx)
     except Exception as exc:
         resultado["bloqueios_devolucao"].append(f"Arquivo Excel corrompido ou ilegível: {exc}")
         return resultado
 
-    abas = wb.sheetnames
+    abas = list(abas_wb)
     aba_insumos = next((s for s in abas if "insumo" in remover_acentos(s).lower()), None)
     aba_dic = next((s for s in abas if "dicionario" in remover_acentos(s).lower()), None)
 
@@ -288,7 +536,7 @@ def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
 
     # 1. Auditar Aba 'Dados - Insumos' (suporta layout 2 colunas [Objeto|Descrição] ou 3 colunas [Categoria|Objeto|Descrição])
     if aba_insumos:
-        ws_ins = wb[aba_insumos]
+        ws_ins = abas_wb[aba_insumos]
         linhas_insumos = 0
         col_objeto = 1
         col_valor = 2
@@ -324,7 +572,7 @@ def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
 
     # 2. Auditar Aba 'Dicionário de Dados'
     if aba_dic:
-        ws_dic = wb[aba_dic]
+        ws_dic = abas_wb[aba_dic]
         header_row = None
         col_map = {}
 
@@ -346,6 +594,10 @@ def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
                         col_map["sensibilidade"] = c_idx
                     elif "sensivel" in nv and "sensivel" not in col_map:
                         col_map["sensivel"] = c_idx
+                    elif "obrigat" in nv and "obrigatorio" not in col_map:
+                        col_map["obrigatorio"] = c_idx
+                    elif "chave" in nv and "chave" not in col_map:
+                        col_map["chave"] = c_idx
                 break
 
         if not header_row or "nome" not in col_map:
@@ -431,6 +683,10 @@ def inspecionar_xlsx(caminho_xlsx: Path) -> dict:
                     "anonimizar_cliente": str(anon_val or "").strip(),
                     "sensibilidade_cliente": str(sensib_val or "").strip(),
                     "sensivel_cliente": str(sensiv_val or "").strip(),
+                    "obrigatorio_cliente": str(ws_dic.cell(row=r_idx, column=col_map["obrigatorio"]).value or "").strip()
+                    if "obrigatorio" in col_map else "",
+                    "chave_cliente": str(ws_dic.cell(row=r_idx, column=col_map["chave"]).value or "").strip()
+                    if "chave" in col_map else "",
                     "diagnostico_ia_lgpd": diag_lgpd
                 })
 
@@ -546,10 +802,14 @@ def inspecionar_csv(caminho_csv: Path) -> dict:
             f"[Amostra CSV] Coluna(s) com 100% dos registros vazios na amostra ({len(colunas_100_vazias)}): {', '.join(colunas_100_vazias[:10])}."
         )
 
+    resultado["colunas"] = [cabecalho[i].strip() for i in cols_validas_idx]
+    resultado["pii_por_coluna"] = {}
+
     # 3. Scanner de PII Escondido no Conteúdo das Linhas (Redact / LGPD Scanner)
     if escanear_pii_em_texto_ou_linhas is not None:
         achados_pii = escanear_pii_em_texto_ou_linhas(leitor, nome_contexto=caminho_csv.name)
         for ach in achados_pii:
+            resultado["pii_por_coluna"].setdefault(ach["coluna"], set()).add(ach["tipo_pii"])
             resultado["alertas_lgpd"].append(
                 f"[Scanner Conteúdo CSV | Linha {ach['linha']} | Coluna '{ach['coluna']}'] "
                 f"Detectado {ach['tipo_pii']} (`{ach['valor_mascarado']}`) — Classificação recomendada: "
@@ -721,7 +981,7 @@ def gerar_markdown_relatorio(resultados: list[dict]) -> str:
     linhas_md.append("")
 
     for r in resultados:
-        linhas_md.append(f"---")
+        linhas_md.append("---")
         linhas_md.append(f"## 📄 Arquivo: `{r['arquivo']}` ({r['tipo_arquivo']})")
         linhas_md.append("")
 
@@ -749,15 +1009,16 @@ def gerar_markdown_relatorio(resultados: list[dict]) -> str:
         if r.get("de_para_campos"):
             linhas_md.append("### 🔄 Prévia da Matriz DE/PARA Padrão PRODEB MongoDB (`snake_case` + BSON)")
             linhas_md.append("")
-            linhas_md.append("| Linha | Campo Origem | Tipo Origem | Campo Canônico MongoDB | Tipo BSON | Diagnóstico LGPD (IA) |")
-            linhas_md.append("| :---: | :--- | :--- | :--- | :---: | :--- |")
+            linhas_md.append("| Linha | Campo Origem | Tipo Origem | Campo Canônico MongoDB | Tipo BSON | Nível LGPD | Diagnóstico LGPD (IA) |")
+            linhas_md.append("| :---: | :--- | :--- | :--- | :---: | :---: | :--- |")
             for item in r["de_para_campos"][:30]:
+                nivel = item.get("classificacao_lgpd", {}).get("des_nivel_sensibilidade", "-")
                 linhas_md.append(
                     f"| {item['linha']} | `{item['campo_origem']}` | `{item['tipo_origem'] or 'VAZIO'}` | "
-                    f"`{item['campo_mongo']}` | `{item['tipo_bson']}` | {item['diagnostico_ia_lgpd']} |"
+                    f"`{item['campo_mongo']}` | `{item['tipo_bson']}` | `{nivel}` | {item['diagnostico_ia_lgpd']} |"
                 )
             if len(r["de_para_campos"]) > 30:
-                linhas_md.append(f"| ... | *(+{len(r['de_para_campos']) - 30} campos)* | ... | ... | ... | ... |")
+                linhas_md.append(f"| ... | *(+{len(r['de_para_campos']) - 30} campos)* | ... | ... | ... | ... | ... |")
             linhas_md.append("")
 
     return "\n".join(linhas_md)
@@ -779,6 +1040,11 @@ def main():
         default=None,
         help="Caminho opcional para salvar o Relatório de Auditoria/Devolução em Markdown (.md)."
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Imprime o resultado estruturado em JSON (veredito, bloqueios, alertas, DE/PARA e classificação LGPD).",
+    )
     args = parser.parse_args()
 
     alvo = Path(args.caminho)
@@ -786,35 +1052,14 @@ def main():
         print(f"❌ Caminho não encontrado: {alvo}")
         sys.exit(1)
 
-    arquivos = []
-    if alvo.is_file():
-        arquivos = [alvo]
-    else:
-        for ext in ("*.xlsx", "*.ods", "*.csv", "*.pdf", "*.docx", "*.odt"):
-            arquivos.extend(sorted(alvo.rglob(ext)))
-        arquivos = [f for f in arquivos if not f.name.startswith("~$") and f.name.lower() != "readme.md"]
-
-    if not arquivos:
+    resultados = executar_inspecao(alvo)
+    if not resultados:
         print(f"ℹ️ Nenhum arquivo .xlsx, .ods, .csv, .pdf, .docx ou .odt encontrado em: {alvo}")
         print("   Deposite a planilha padrão PRODEB (.xlsx/.ods) e/ou amostras (.csv) em 'entrega/governanca_dados/'.")
         sys.exit(0)
 
-    resultados = []
-    for arq in arquivos:
-        suf = arq.suffix.lower()
-        if suf == ".xlsx":
-            resultados.append(inspecionar_xlsx(arq))
-        elif suf == ".ods":
-            resultados.append(inspecionar_ods(arq))
-        elif suf == ".csv":
-            resultados.append(inspecionar_csv(arq))
-        elif suf == ".pdf":
-            resultados.append(inspecionar_pdf(arq))
-        elif suf in (".docx", ".odt"):
-            resultados.append(inspecionar_doc_texto(arq))
-
     relatorio_md = gerar_markdown_relatorio(resultados)
-    print(relatorio_md)
+    print(resultados_para_json(resultados) if args.json else relatorio_md)
 
     if args.salvar_relatorio:
         out_path = Path(args.salvar_relatorio)
@@ -830,8 +1075,8 @@ def main():
                     titulo="Relatório de Auditoria de Governança & Devolução ao Cliente (Gate 0.5)",
                 )
                 print(f"📄 Relatório Word (.docx) salvo em: {docx_path}")
-            except Exception:
-                pass
+            except Exception as _exc:
+                _LOG.debug("Exceção tratada (inspecionar_insumos_governanca.py:1074): %r", _exc)
         if exportar_markdown_para_pdf is not None:
             try:
                 pdf_path = out_path.with_suffix(".pdf")
@@ -841,8 +1086,8 @@ def main():
                     titulo="Relatorio de Auditoria de Governanca & Devolucao ao Cliente (Gate 0.5)",
                 )
                 print(f"📑 Relatório PDF Oficial (.pdf) salvo em: {pdf_path}")
-            except Exception:
-                pass
+            except Exception as _exc:
+                _LOG.debug("Exceção tratada (inspecionar_insumos_governanca.py:1085): %r", _exc)
 
     total_bloqueios = sum(len(r["bloqueios_devolucao"]) for r in resultados)
     sys.exit(1 if total_bloqueios > 0 else 0)

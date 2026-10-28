@@ -14,8 +14,11 @@ Uso:
     python core/scripts_comuns/validar_entrega.py all
 """
 
+import logging as _logging_ninho
+
+_LOG = _logging_ninho.getLogger("ninho.validar_entrega")
+
 import sys
-import os
 import re
 from pathlib import Path
 
@@ -23,39 +26,18 @@ from pathlib import Path
 if hasattr(sys.stdout, "reconfigure"):
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
-        pass
+    except Exception as _exc:
+        _LOG.debug("Exceção tratada (validar_entrega.py:25): %r", _exc)
 
 # Cores ANSI para terminal
-VERDE = "\033[92m"
-AMARELO = "\033[93m"
-VERMELHO = "\033[91m"
-AZUL = "\033[94m"
-NEGRITO = "\033[1m"
-RESET = "\033[0m"
-
-
-def get_base_dir() -> Path:
-    """Retorna o diretório raiz do projeto."""
-    return Path(__file__).resolve().parent.parent.parent
+from ninho_core.console import VERDE, AMARELO, VERMELHO, AZUL, NEGRITO, RESET, print_ok, print_warn, print_err  # noqa: E402
+from ninho_core.paths import get_base_dir  # noqa: E402
 
 
 def print_header(title: str):
     print(f"\n{AZUL}{NEGRITO}{'=' * 70}{RESET}")
     print(f"{AZUL}{NEGRITO}  {title}{RESET}")
     print(f"{AZUL}{NEGRITO}{'=' * 70}{RESET}\n")
-
-
-def print_ok(msg: str):
-    print(f"  {VERDE}[OK]{RESET} {msg}")
-
-
-def print_warn(msg: str):
-    print(f"  {AMARELO}[AVISO]{RESET} {msg}")
-
-
-def print_err(msg: str):
-    print(f"  {VERMELHO}[ERRO]{RESET} {msg}")
 
 
 def validar_intake_dw(base_dir: Path) -> dict:
@@ -773,6 +755,30 @@ def validar_saida_gerada(base_dir: Path) -> dict:
                         results["erros"] += 1
                 if re.search(r"\b(DIM_TEMPO|SK_TEMPO)\b", txt, re.IGNORECASE):
                     tem_dim_tempo_fk = True
+                # Verificação de Pureza Estrita da Fato: proibição de colunas de texto (VARCHAR2/CHAR/CLOB) em CREATE TABLE FATO_*
+                for m_cf in re.finditer(
+                    r"CREATE\s+TABLE\s+[\w\.\"]*FATO_\w+\s*\((.*?)\)\s*(?:TABLESPACE|PCTFREE|;)",
+                    txt,
+                    re.IGNORECASE | re.DOTALL,
+                ):
+                    corpo_fato = m_cf.group(1)
+                    cols_texto_fato = re.findall(
+                        r"^\s*([A-Z0-9_]+)\s+(?:VARCHAR2|NVARCHAR2|CHAR|CLOB)\b",
+                        corpo_fato,
+                        re.IGNORECASE | re.MULTILINE,
+                    )
+                    if cols_texto_fato:
+                        if is_fast_track_dw:
+                            print_warn(
+                                f"[{f_sql.name}] Coluna(s) textual(is) legada(s) na Fato ({', '.join(cols_texto_fato[:3])}) preservada(s) no modo Fast-Track."
+                            )
+                            results["avisos"] += 1
+                        else:
+                            print_err(
+                                f"[{f_sql.name}] PROIBIDO incluir colunas de texto ({', '.join(cols_texto_fato)}) na tabela Fato! "
+                                f"Fatos devem conter APENAS chaves de dimensao (DIM_*/SK_*/DIMENSION_KEY) e metricas numericas."
+                            )
+                            results["erros"] += 1
                 fk_invalidas = [
                     k for k in re.findall(r"\b([A-Z0-9_]+_KEY)\b", txt.upper())
                     if k != "DIMENSION_KEY"
@@ -1104,6 +1110,21 @@ def validar_saida_gerada(base_dir: Path) -> dict:
     if not sqls_dw and not sqls_sem:
         print_ok("Nenhum script SQL de projeto gerado em 'saida/' no momento (diretorio limpo para novo projeto).")
         results["sucessos"] += 1
+
+    # Governança: artefatos MongoDB/AWS não podem ir para deploy com pendências <INFORMAR: ...>
+    if saida_gov.exists():
+        artefatos_gov = [
+            p for p in saida_gov.rglob("*")
+            if p.is_file() and p.suffix.lower() in (".js", ".json", ".py") and p.name != "README.md"
+        ]
+        com_pendencia = [p for p in artefatos_gov if "<INFORMAR:" in p.read_text(encoding="utf-8", errors="ignore")]
+        for p in com_pendencia:
+            qtd = p.read_text(encoding="utf-8", errors="ignore").count("<INFORMAR:")
+            print_err(f"[governanca/{p.relative_to(saida_gov).as_posix()}] {qtd} pendencia(s) <INFORMAR: ...> antes do deploy.")
+            results["erros"] += 1
+        if artefatos_gov and not com_pendencia:
+            print_ok(f"{len(artefatos_gov)} artefato(s) de governanca sem pendencias <INFORMAR>.")
+            results["sucessos"] += 1
 
     return results
 
