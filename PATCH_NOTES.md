@@ -16,8 +16,8 @@ Esta página foi escrita para ser **simples, direta e amigável para pessoas ler
 | :---: | :---: | :--- |
 | 🎯 **`v1.0.0`** *(Planejada)* | *Em breve* | **Marco Oficial 1.0:** Homologação prática e aprovação final do Módulo de Governança de Dados (MongoDB + AWS SageMaker Catalog) em projeto real. |
 | **[`v0.13.1`](#-versão-0131--28102026-versão-atual)** | `28/10/2026` | **Pureza Estrita das Tabelas Fato (`FATO_*`):** Adequação das tabelas Fato para conterem estritamente chaves de dimensão (`DIM_*`, `SK_*`, `DIMENSION_KEY`) e métricas numéricas (`VAL_*`, `QTD_*` etc.), proibindo colunas de texto (`VARCHAR2`) ou datas brutas (`DATE`) nas Fatos na Demonstração (`/demo`), no Simulador (`/simular-dw`) e na Execução Direta (`/executar-dw`). |
-| **[`v0.13.0`](#-versão-0130--27102026)** | `27/10/2026` | **Fase 3 — Perguntas de Negócio, MCP e Ferramentas DBA:** catálogo com no mínimo 30 perguntas da IA (com SQL) + perguntas do cliente, servidor MCP, `/comparar-modelo`, `/estimar-volumetria`, `/inspecionar-banco` e `/simular-governanca`. |
-| **[`v0.12.0`](#-versão-0120--27102026)** | `27/10/2026` | **Esteira de Governança Real, Testes Seguros & Fundação de Engenharia:** `/executar-governanca` passa a gerar de fato a matriz LGPD (4 níveis), os scripts MongoDB PRODEB (01 a 08) e o catálogo AWS Glue/SageMaker; `/testar-ninho` roda em sandbox sem apagar seus arquivos; `pytest`, `ruff` e CI. |
+| **[`v0.13.0`](#-versão-0130--27102026)** | `27/10/2026` | **Catálogo de Perguntas de Negócio (30+ da IA + Cliente), Simulação de Governança e Ferramentas DBA:** catálogo com no mínimo 30 perguntas da IA (com SQL) + perguntas do cliente, `/comparar-modelo`, `/estimar-volumetria`, `/inspecionar-banco` e `/simular-governanca`. |
+| **[`v0.12.0`](#-versão-0120--27102026)** | `27/10/2026` | **Esteira de Governança Real, Testes em Sandbox & Modularização `ninho_core`:** `/executar-governanca` passa a gerar de fato a matriz LGPD (4 níveis), os scripts MongoDB PRODEB (01 a 08) e o catálogo AWS Glue/SageMaker; `/testar-ninho` roda em sandbox sem apagar seus arquivos. |
 | **[`v0.11.1`](#-versão-0111--27102026)** | `27/10/2026` | **Correção de Convenções no Simulador e Validador:** Adequação 100% do modo Simulador às convenções `CONVENCOES_DW.md` (`DIMENSION_KEY`, `SIN_ATIVO`, `DIM_TEMPO` 24 colunas, FKs `DIM_<ENTIDADE>`, `<PROJETO>_DATA`, `DES_STATUS_REGISTRO` em `ODI_DIM_*`) e remoção do bypass em `validar_entrega.py`. |
 | **[`v0.11.0`](#-versão-0110--27102026)** | `27/10/2026` | **Comandos de Execução Direta & Governança Modular:** Inclusão dos comandos `/executar-dw`, `/executar-semantica`, `/executar-projeto` e `/executar-governanca` (geração direta sem exigir simulação) e protótipo de Governança em 5 etapas validado fora do repositório (incorporado à plataforma na `v0.12.0`). |
 | **[`v0.10.0`](#-versão-0100--26102026)** | `26/10/2026` | **Suíte Visual, Documentos Office/PDF Nativos, Scanner PII (`*Craft`), 5 Motores Apache Hop & Prova Real Pós-Carga:** Mockup BI (`SVG` + *Dev Mode Redlines* + `PNG 2x`), diagramas Star Schema/ODI/Hop Canvas, gerador `.xlsx`/`.pptx`/`.docx`/`.pdf`, leitura `.ods`/`.pdf`/`.docx`/`.odt`, scanner LGPD em linhas, `hop-lint`, migrador Kettle, `THREAT_MODEL.md`, `OraBulkLoader` e `/validar-medidas-bi`. |
@@ -49,7 +49,7 @@ As tabelas Fato (`FATO_*`) passam a obedecer à **Regra de Pureza Estrita**: tod
 ## 🚀 Versão `0.13.0` — `27/10/2026`
 
 ### 🎯 Em poucas palavras
-A Camada Semântica passa a entregar um catálogo de perguntas de negócio de verdade (mínimo de 30 propostas pela IA, todas com SQL, mais as perguntas do cliente), a Governança ganha simulação e teste ponta a ponta, e chegam as primeiras funcionalidades da Fase 3: servidor MCP e ferramentas de DBA.
+A Camada Semântica passa a entregar um catálogo de perguntas de negócio de verdade (mínimo de 30 propostas pela IA, todas com SQL, mais as perguntas do cliente), a Governança ganha simulação e teste ponta a ponta, e chegam as ferramentas de DBA para evolução de modelo, volumetria e inspeção de banco.
 
 ### ✨ Novidades
 * **Catálogo de perguntas de negócio (`META_CONSULTA_NEGOCIO`):**
@@ -59,7 +59,6 @@ A Camada Semântica passa a entregar um catálogo de perguntas de negócio de ve
   * **Perguntas do cliente** da Seção 5.1 do `INTAKE_SEMANTICA.md` (e de `entrega/camada_semantica/perguntas_cliente.md`) entram sempre, com a pergunta da IA mais parecida indicada como ponto de partida do SQL.
   * A Blueprint Semântica (Seção 6.2) lista o catálogo completo para o engenheiro desmarcar ou ajustar; a Seção 6.3 mostra as perguntas do cliente.
 * **`/simular-governanca`:** prévia do Gate 0.5 e da classificação LGPD sem gravar scripts MongoDB/AWS.
-* **Servidor MCP (`ninho_mcp_server.py` + `.mcp.json`):** todos os comandos do NINHO como ferramentas para Claude Code, Cursor, Antigravity e agentes internos.
 * **`/comparar-modelo`:** DW em produção x modelo novo, com ALTERs incrementais seguros (alargamentos ativos; estreitamentos, remoções e `NOT NULL` com backfill comentados).
 * **`/estimar-volumetria`:** tamanho de tabelas e índices, crescimento em 5 anos, recomendação de particionamento e script de tablespaces.
 * **`/inspecionar-banco`:** extrai o DDL real de um schema Oracle via `DBMS_METADATA` (com `oracledb`) ou gera o script de extração para o DBA.
@@ -70,7 +69,7 @@ A Camada Semântica passa a entregar um catálogo de perguntas de negócio de ve
 ## 🚀 Versão `0.12.0` — `27/10/2026`
 
 ### 🎯 Em poucas palavras
-O módulo de Governança deixou de ser só auditoria: `/executar-governanca` agora entrega os artefatos que a documentação prometia. Ao mesmo tempo, a plataforma ganhou uma base de engenharia para crescer sem quebrar: testes que não apagam seus arquivos, testes unitários, lint e CI.
+O módulo de Governança deixou de ser só auditoria: `/executar-governanca` agora entrega os artefatos que a documentação prometia. Ao mesmo tempo, a plataforma ganhou modularização em `ninho_core` e execução de testes em sandbox isolada para não apagar os arquivos do engenheiro.
 
 ### ✨ Novidades
 * **Esteira determinística de Governança (`gerar_artefatos_governanca.py`):**
@@ -80,10 +79,9 @@ O módulo de Governança deixou de ser só auditoria: `/executar-governanca` ago
 * **Classificação LGPD em 4 níveis** (`PUBLICO`, `INTERNO`, `CONFIDENCIAL`, `RESTRITO`) com base legal e técnica de anonimização; o cliente nunca rebaixa um campo pessoal detectado.
 * **Cruzamento Dicionário x Amostras no Gate 0.5:** coluna não catalogada e PII encontrada em coluna declarada não sensível passam a bloquear e voltar ao cliente.
 * **`--json`** no `/inspecionar-governanca` e no `/executar-governanca`, para agentes e pipelines.
-* **`ninho_core`**: utilitários compartilhados (`console`, `paths`, `xml_seguro`).
+* **`ninho_core`**: utilitários compartilhados (`console`, `paths`, `xml_seguro`, `zip_seguro`, `dw_modelo`, `odi`, `perguntas_semanticas`, `comparador_modelo`, `volumetria`).
 * **`/doctor`** checa Python, pacotes opcionais, skills instaladas e a proteção LGPD do `.gitignore`.
 * **Comando digitado errado** agora recebe sugestão (`Você quis dizer: /simular-dw?`).
-* **Testes unitários (`pytest`)**, **lint (`ruff`)**, `pyproject.toml`, `requirements*.txt`, `CONTRIBUTING.md` e CI para GitHub Actions e GitLab.
 
 ### 🐛 Erros e Problemas Resolvidos
 * **`/testar-ninho` apagava os arquivos reais de `entrega/` e `saida/`.** Agora roda numa cópia temporária do projeto (`--sem-sandbox` mantém o modo antigo).
@@ -109,14 +107,13 @@ O módulo de Governança deixou de ser só auditoria: `/executar-governanca` ago
 * **DDL de Fato** traz recomendação comentada de particionamento mensal por intervalo e compressão (com as exigências de licença).
 
 ### 🧱 Engenharia
-* **Golden files** (`tests/golden/`): 22 scripts SQL de referência congelados; qualquer mudança no SQL gerado aparece como diff.
-* **Desmembramento dos arquivos gigantes (Fase 2), sem alterar nenhum SQL gerado (golden files idênticos):**
+* **Modularização dos motores principais em `ninho_core/`:**
   * `gerador_artefatos_visuais.py`: 4.777 → ~290 linhas. Novos módulos `ninho_core/`: `leitores`, `lgpd`, `visual_comum`, `pdf`, `prova_dax`, `mockup_bi`, `diagramas`, `office`.
   * `melhorar_dw_existente.py`: 3.871 → ~600 linhas. Novos módulos: `dw_modelo`, `dw_patches`, `odi`, `guia_bi` (e o Fast-Track deixou de carregar o gerador visual inteiro).
   * `auditar_esteira_hop.py`: 1.867 → ~1.050 linhas. Gerador de pacote e migrador Kettle em `ninho_core/hop_gerador.py`.
-  * Fachadas mantêm todos os imports antigos funcionando; `tests/test_arquitetura.py` impede que `ninho_core` dependa dos scripts e que os arquivos desmembrados voltem a crescer.
+  * Fachadas mantêm todos os imports antigos funcionando.
 * **35 blocos `except: pass` silenciosos** passaram a registrar a exceção em log de depuração (`NINHO_LOG_LEVEL=DEBUG`), sem mudar o comportamento padrão.
-* **`/testar-ninho`** roda todas as baterias e mostra o placar completo (`--parar-no-erro` para o modo antigo).
+* **`/testar-ninho`** roda todas as 18 baterias em sandbox isolada e mostra o placar completo (`--parar-no-erro` para o modo antigo).
 * **Radar da Governança** sugere conceitos canônicos `CNC_*`/`DOM_*` para `tb_sem_conceitos`.
 
 ---
